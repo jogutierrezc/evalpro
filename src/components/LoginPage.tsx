@@ -3,7 +3,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { LogIn } from 'lucide-react';
 
 export function LoginPage() {
-  const [identification, setIdentification] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const { signIn } = useAuth();
@@ -13,7 +14,7 @@ export function LoginPage() {
     setError('');
     setLoading(true);
 
-    const result = await signIn(identification);
+    const result = await signIn(email, password);
 
     if (!result.success) {
       setError(result.error || 'Error al iniciar sesión');
@@ -28,16 +29,14 @@ export function LoginPage() {
         <div className="bg-white rounded-2xl shadow-xl p-8">
           <div className="text-center mb-8">
             <img
-              src="https://cjuridico.unicesar.edu.co/scp/logo.php?login"
-              alt="Logo"
+              src="https://udes.edu.co/images/logo/udes-logo-principal.svg"
+              alt="Logo UDES"
               className="h-20 mx-auto mb-6"
               onError={(e) => {
                 e.currentTarget.style.display = 'none';
               }}
             />
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">
-              Sistema de Evaluación
-            </h1>
+            {/* Title removed as requested */}
             <p className="text-gray-600">
               Evaluación de Habilidades Blandas y Perfiles Laborales
             </p>
@@ -45,15 +44,31 @@ export function LoginPage() {
 
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
-              <label htmlFor="identification" className="block text-sm font-medium text-gray-700 mb-2">
-                Número de Cédula
+              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
+                Correo electrónico
               </label>
               <input
-                id="identification"
-                type="text"
-                value={identification}
-                onChange={(e) => setIdentification(e.target.value)}
-                placeholder="Ingrese su número de cédula"
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Ingrese su correo"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                required
+                disabled={loading}
+              />
+            </div>
+
+            <div>
+              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
+                Contraseña
+              </label>
+              <input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Ingrese su contraseña"
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                 required
                 disabled={loading}

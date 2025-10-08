@@ -1,10 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+// Use VITE env vars from Vite. If VITE_SUPABASE_URL is not provided, default
+// to the Supabase project URL you supplied.
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL ?? 'https://abchjsydqtfbwivygpet.supabase.co';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Missing Supabase environment variables');
+if (!supabaseAnonKey) {
+  throw new Error('Missing VITE_SUPABASE_ANON_KEY in environment. Add it to a local .env (see .env.example) and restart the dev server.');
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);

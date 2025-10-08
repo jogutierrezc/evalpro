@@ -43,16 +43,14 @@ export function Layout({ children, activeModule, onModuleChange }: LayoutProps) 
           <div className="flex justify-between h-16">
             <div className="flex items-center">
               <img
-                src="https://cjuridico.unicesar.edu.co/scp/logo.php?login"
-                alt="Logo"
+                src="https://udes.edu.co/images/logo/udes-logo-principal.svg"
+                alt="Logo UDES"
                 className="h-10"
                 onError={(e) => {
                   e.currentTarget.style.display = 'none';
                 }}
               />
-              <span className="ml-4 text-xl font-bold text-gray-900 hidden sm:block">
-                Sistema de Evaluación
-              </span>
+                {/* Application title removed */}
             </div>
 
             <div className="hidden md:flex items-center space-x-1">

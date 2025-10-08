@@ -6,7 +6,7 @@ interface AuthContextType {
   session: Session | null;
   user: User | null;
   loading: boolean;
-  signIn: (identification: string) => Promise<{ success: boolean; error?: string }>;
+  signIn: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   signOut: () => Promise<void>;
 }
 
@@ -57,53 +57,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const signIn = async (identification: string): Promise<{ success: boolean; error?: string }> => {
+  const signIn = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
     try {
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('identification', identification)
-        .maybeSingle();
+      // Try to sign in using Supabase Auth directly
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
-      if (userError) throw userError;
-      if (!userData) {
-        return { success: false, error: 'Usuario no encontrado' };
+      if (error) {
+        // If credentials are invalid, return a useful message
+        console.error('Auth signIn error:', error);
+        return { success: false, error: error.message || 'Error al iniciar sesión' };
       }
 
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email: `${identification}@evaluation.local`,
-        password: identification,
-      });
-
-      if (authError) {
-        if (authError.message.includes('Invalid login credentials')) {
-          const { error: signUpError } = await supabase.auth.signUp({
-            email: `${identification}@evaluation.local`,
-            password: identification,
-            options: {
-              data: {
-                user_id: userData.id,
-              },
-            },
-          });
-
-          if (signUpError) throw signUpError;
-
-          const { error: signInRetryError } = await supabase.auth.signInWithPassword({
-            email: `${identification}@evaluation.local`,
-            password: identification,
-          });
-
-          if (signInRetryError) throw signInRetryError;
-        } else {
-          throw authError;
-        }
+      // If sign in succeeded, load the user profile from public.users
+      const session = data?.session ?? null;
+      if (session?.user?.id) {
+        await loadUserProfile(session.user.id);
       }
 
       return { success: true };
-    } catch (error: any) {
-      console.error('Sign in error:', error);
-      return { success: false, error: error.message || 'Error al iniciar sesión' };
+    } catch (err: any) {
+      console.error('Sign in error:', err);
+      return { success: false, error: err.message || 'Error al iniciar sesión' };
     }
   };
 
