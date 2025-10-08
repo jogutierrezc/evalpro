@@ -27,6 +27,7 @@ export function TemplateForm({ template, onClose }: TemplateFormProps) {
 
   const [sections, setSections] = useState<{
     title: string;
+    domain_key?: string | null;
     questions: Partial<EvaluationQuestion>[];
   }[]>([]);
 
@@ -45,7 +46,7 @@ export function TemplateForm({ template, onClose }: TemplateFormProps) {
       });
       loadQuestions(template.id);
     } else {
-      setSections([{ title: 'General', questions: [{ question_text: '', question_type: 'rating', options: null }] }]);
+      setSections([{ title: 'General', domain_key: null, questions: [{ question_text: '', question_type: 'rating', options: null }] }]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [template]);
@@ -60,7 +61,7 @@ export function TemplateForm({ template, onClose }: TemplateFormProps) {
 
       if (secsErr) throw secsErr;
 
-      const builtSections: { title: string; questions: Partial<EvaluationQuestion>[] }[] = [];
+  const builtSections: { title: string; domain_key?: string | null; questions: Partial<EvaluationQuestion>[] }[] = [];
       const sectionsList: any[] = secs || [];
 
       for (const s of sectionsList) {
@@ -73,7 +74,7 @@ export function TemplateForm({ template, onClose }: TemplateFormProps) {
 
         if (qsErr) throw qsErr;
 
-        builtSections.push({ title: s.title || 'Sección', questions: qs || [] });
+  builtSections.push({ title: s.title || 'Sección', domain_key: s.domain_key || null, questions: qs || [] });
       }
 
       // fallback: if no sections found, include orphan questions under General
@@ -88,12 +89,12 @@ export function TemplateForm({ template, onClose }: TemplateFormProps) {
         if (orphanErr) throw orphanErr;
 
         if ((orphanQs || []).length > 0) {
-          builtSections.push({ title: 'General', questions: orphanQs || [] });
+          builtSections.push({ title: 'General', domain_key: null, questions: orphanQs || [] });
         }
       }
 
       if (builtSections.length === 0) {
-        builtSections.push({ title: 'General', questions: [{ question_text: '', question_type: 'rating', options: null }] });
+        builtSections.push({ title: 'General', domain_key: null, questions: [{ question_text: '', question_type: 'rating', options: null }] });
       }
 
       setSections(builtSections);
@@ -102,7 +103,7 @@ export function TemplateForm({ template, onClose }: TemplateFormProps) {
     }
   };
 
-  const addSection = (title = 'Nueva Sección') => setSections(prev => [...prev, { title, questions: [{ question_text: '', question_type: 'rating', options: null }] }]);
+  const addSection = (title = 'Nueva Sección') => setSections(prev => [...prev, { title, domain_key: null, questions: [{ question_text: '', question_type: 'rating', options: null }] }]);
 
   const addQuestionToSection = (sectionIndex: number) => {
     setSections(prev => {
@@ -130,7 +131,7 @@ export function TemplateForm({ template, onClose }: TemplateFormProps) {
       } else {
         next[sectionIndex].questions.splice(questionIndex, 1);
       }
-      if (next.length === 0) next.push({ title: 'General', questions: [{ question_text: '', question_type: 'rating', options: null }] });
+  if (next.length === 0) next.push({ title: 'General', domain_key: null, questions: [{ question_text: '', question_type: 'rating', options: null }] });
       return next;
     });
   };
@@ -140,7 +141,7 @@ export function TemplateForm({ template, onClose }: TemplateFormProps) {
     setSections(prev => {
       const next = [...prev];
       next.splice(sectionIndex, 1);
-      if (next.length === 0) next.push({ title: 'General', questions: [{ question_text: '', question_type: 'rating', options: null }] });
+  if (next.length === 0) next.push({ title: 'General', domain_key: null, questions: [{ question_text: '', question_type: 'rating', options: null }] });
       return next;
     });
   };
@@ -190,7 +191,7 @@ export function TemplateForm({ template, onClose }: TemplateFormProps) {
         const sec = sections[sIndex];
         const { data: secData, error: secErr } = await supabase
           .from('evaluation_sections')
-          .insert([{ template_id: templateId, title: sec.title, order_index: sIndex }])
+          .insert([{ template_id: templateId, title: sec.title, order_index: sIndex, domain_key: sec.domain_key || null }])
           .select()
           .single();
 
@@ -303,6 +304,13 @@ export function TemplateForm({ template, onClose }: TemplateFormProps) {
                   <div className="flex items-center gap-3">
                     <GripVertical className="w-5 h-5 text-gray-400" />
                     <input placeholder="Título de sección" type="text" value={sec.title} onChange={(e) => { const newSections = [...sections]; newSections[sIndex] = { ...newSections[sIndex], title: e.target.value }; setSections(newSections); }} className="text-lg font-semibold px-2 py-1 border-b border-gray-200 bg-transparent focus:outline-none" aria-label={`Título de sección ${sec.title || sIndex + 1}`} />
+                    <select value={sec.domain_key || ''} onChange={(e) => { const newSections = [...sections]; newSections[sIndex] = { ...newSections[sIndex], domain_key: e.target.value || null }; setSections(newSections); }} className="ml-4 px-2 py-1 border rounded text-sm">
+                      <option value="">Sin asignar</option>
+                      <option value="autoconciencia">Autoconciencia</option>
+                      <option value="autogestion">Autogestión</option>
+                      <option value="conciencia_social">Conciencia Social</option>
+                      <option value="gestion_relaciones">Gestión de Relaciones</option>
+                    </select>
                   </div>
                   <div className="flex items-center gap-2">
                     <button type="button" onClick={() => addQuestionToSection(sIndex)} className="text-sm text-blue-600 hover:bg-blue-50 px-2 py-1 rounded">+ Pregunta</button>

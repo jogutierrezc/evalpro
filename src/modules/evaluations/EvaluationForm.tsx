@@ -99,13 +99,90 @@ export function EvaluationForm({ evaluation, onClose }: EvaluationFormProps) {
 
         const overallScore = calculateOverallScore();
 
-        await supabase.from('evaluation_results').insert([
-          {
-            evaluation_id: evaluation.id,
-            overall_score: overallScore,
-            category_scores: {},
-          },
-        ]);
+        // compute category scores by section (attempt to map section titles to Goleman domains)
+        let category_scores: Record<string, number> = {};
+        try {
+          const { data: sections } = await supabase
+            .from('evaluation_sections')
+            .select('*')
+            .eq('template_id', evaluation.template_id);
+
+          // domain synonyms mapping (same keys used in IndividualAnalysis)
+          const DOMAIN_KEYS: { key: string; synonyms: string[] }[] = [
+            { key: 'autoconciencia', synonyms: ['autoconciencia', 'self_awareness', 'selfawareness', 'self-awareness', 'autoconsciencia'] },
+            { key: 'autogestion', synonyms: ['autogestion', 'autogestión', 'self_management', 'selfmanagement', 'autocontrol'] },
+            { key: 'conciencia_social', synonyms: ['conciencia_social', 'concienciasocial', 'conciencia social', 'social_awareness', 'empatía', 'empathy'] },
+            { key: 'gestion_relaciones', synonyms: ['gestion_relaciones', 'gestión_relaciones', 'relationship_management', 'relationshipmanagement', 'gestion de relaciones', 'relationship'] },
+          ];
+
+          const normalize = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+          const sectionIdToDomainKey: Record<string, string> = {};
+          (sections || []).forEach((sec: any) => {
+            // Prefer explicit domain_key set in the DB
+            if (sec.domain_key) {
+              sectionIdToDomainKey[sec.id] = String(sec.domain_key);
+              return;
+            }
+
+            // fallback: try to infer from section title
+            const title = sec.title || '';
+            const nt = normalize(title);
+            for (const d of DOMAIN_KEYS) {
+              for (const syn of d.synonyms) {
+                if (nt.includes(syn.replace(/[^a-z0-9]/g, ''))) {
+                  sectionIdToDomainKey[sec.id] = d.key;
+                  return;
+                }
+              }
+            }
+          });
+
+          // fallback: if no mapping by section title, try to map by question text keywords
+
+          const sums: Record<string, number> = {};
+          const counts: Record<string, number> = {};
+
+          questions.forEach((q) => {
+            if (q.question_type !== 'rating') return;
+            const qid = q.id;
+            const resp = responses[qid];
+            const num = typeof resp === 'number' ? resp : Number(resp) || 0;
+            const secId = (q as any).section_id;
+            const domainKey = sectionIdToDomainKey[secId] || null;
+            if (domainKey) {
+              sums[domainKey] = (sums[domainKey] || 0) + num;
+              counts[domainKey] = (counts[domainKey] || 0) + 1;
+            }
+          });
+
+          // populate all domains with computed averages (0 if none)
+          const allDomainKeys = DOMAIN_KEYS.map((d) => d.key);
+          allDomainKeys.forEach((k) => {
+            if (sums[k]) {
+              category_scores[k] = Number((sums[k] / (counts[k] || 1)).toFixed(2));
+            } else {
+              category_scores[k] = 0;
+            }
+          });
+
+        } catch (err) {
+          console.error('Error computing category scores:', err);
+        }
+
+        try {
+          // remove any existing result for this evaluation and insert new
+          await supabase.from('evaluation_results').delete().eq('evaluation_id', evaluation.id);
+          await supabase.from('evaluation_results').insert([
+            {
+              evaluation_id: evaluation.id,
+              overall_score: Number(overallScore),
+              category_scores,
+            },
+          ]);
+        } catch (err) {
+          console.error('Error saving evaluation results:', err);
+        }
 
         alert('Evaluación completada exitosamente');
         onClose();

@@ -11,9 +11,12 @@ export function EvaluationsModule() {
   >([]);
   const [loading, setLoading] = useState(true);
   const [selectedEvaluation, setSelectedEvaluation] = useState<Evaluation | null>(null);
+  const [availableSoftTemplates, setAvailableSoftTemplates] = useState<EvaluationTemplate[]>([]);
+  const [takenTemplatesMap, setTakenTemplatesMap] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     loadEvaluations();
+    loadAvailableSoftTemplates();
   }, [user]);
 
   const loadEvaluations = async () => {
@@ -62,8 +65,87 @@ export function EvaluationsModule() {
     }
   };
 
+  const loadAvailableSoftTemplates = async () => {
+    try {
+      // load active soft_skills templates
+      const { data: templates, error: tplErr } = await supabase
+        .from('evaluation_templates')
+        .select('*')
+        .eq('type', 'soft_skills')
+        .eq('is_active', true)
+        .order('created_at', { ascending: false });
+
+      if (tplErr) throw tplErr;
+
+      const tplList: EvaluationTemplate[] = templates || [];
+      setAvailableSoftTemplates(tplList);
+
+      if (!user || tplList.length === 0) {
+        setTakenTemplatesMap({});
+        return;
+      }
+
+      const templateIds = tplList.map((t) => t.id);
+
+      // fetch evaluations for this user that use these templates
+      const { data: existingEvals, error: evalErr } = await supabase
+        .from('evaluations')
+        .select('template_id')
+        .eq('evaluated_id', user.id)
+        .in('template_id', templateIds);
+
+      if (evalErr) throw evalErr;
+
+      const taken: Record<string, boolean> = {};
+      (existingEvals || []).forEach((e: any) => {
+        if (e.template_id) taken[e.template_id] = true;
+      });
+
+      setTakenTemplatesMap(taken);
+    } catch (error) {
+      console.error('Error loading available soft-skill templates:', error);
+    }
+  };
+
   const handleStartEvaluation = (evaluation: Evaluation) => {
     setSelectedEvaluation(evaluation);
+  };
+
+  const handleTakeSoftSkill = async (template: EvaluationTemplate) => {
+    if (!user) return;
+
+    // double-check if already taken
+    if (takenTemplatesMap[template.id]) {
+      alert('Ya has tomado esta prueba');
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('evaluations')
+        .insert([
+          {
+            template_id: template.id,
+            evaluator_id: user.id,
+            evaluated_id: user.id,
+            status: 'pending',
+          },
+        ])
+        .select('*')
+        .single();
+
+      if (error) throw error;
+
+      // mark as taken locally
+      setTakenTemplatesMap((m) => ({ ...m, [template.id]: true }));
+
+      if (data) {
+        setSelectedEvaluation(data as Evaluation);
+      }
+    } catch (error) {
+      console.error('Error creating evaluation:', error);
+      alert('No se pudo iniciar la evaluación');
+    }
   };
 
   const handleCloseForm = () => {
@@ -112,6 +194,36 @@ export function EvaluationsModule() {
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Evaluaciones</h1>
         <p className="text-gray-600">Gestiona y completa tus evaluaciones</p>
       </div>
+      {/* Available global soft-skills tests (single-use per user) */}
+      {availableSoftTemplates.length > 0 && (
+        <div className="mb-8">
+          <h2 className="text-xl font-semibold text-gray-900 mb-4">Pruebas de Habilidades Blandas</h2>
+          <div className="space-y-3">
+            {availableSoftTemplates.map((template) => (
+              <div
+                key={template.id}
+                className="bg-white rounded-lg border border-gray-200 p-5 hover:shadow-md transition-shadow flex items-center justify-between"
+              >
+                <div>
+                  <h3 className="font-semibold text-gray-900">{template.name}</h3>
+                  <p className="text-sm text-gray-600">{template.description}</p>
+                </div>
+                <div>
+                  <button
+                    onClick={() => handleTakeSoftSkill(template)}
+                    disabled={!!takenTemplatesMap[template.id]}
+                    className={`px-4 py-2 rounded-lg text-white transition-colors ${
+                      takenTemplatesMap[template.id] ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
+                    }`}
+                  >
+                    {takenTemplatesMap[template.id] ? 'Ya tomado' : 'Tomar prueba'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {myEvaluations.length > 0 && (
         <div className="mb-8">

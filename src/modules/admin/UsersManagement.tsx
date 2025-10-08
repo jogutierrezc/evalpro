@@ -66,25 +66,37 @@ export function UsersManagement() {
       };
 
       if (editingUser) {
-        const { error } = await supabase
-          .from('users')
-          .update(userData)
-          .eq('id', editingUser.id);
-
+        const { error } = await supabase.from('users').update(userData).eq('id', editingUser.id);
         if (error) throw error;
       } else {
-        const { data: authData, error: authError } = await supabase.auth.signUp({
-          email: `${formData.identification}@evaluation.local`,
-          password: formData.identification,
+        // Ensure employees and office managers have an email; fall back to identification@evaluation.local
+        const identification = formData.identification.trim();
+        const emailToUse = (formData.email || '').trim() || `${identification}@evaluation.local`;
+        const passwordToUse = identification; // requirement: cedula as password
+
+        console.debug('Creating auth user with email:', emailToUse);
+
+        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+          email: emailToUse,
+          password: passwordToUse,
         });
 
-        if (authError) throw authError;
+        if (signUpError) {
+          console.error('Auth signUp error:', signUpError);
+          throw signUpError;
+        }
 
-        const { error: userError } = await supabase
-          .from('users')
-          .insert([{ ...userData, id: authData.user?.id }]);
+        // supabase.auth.signUp may return different shapes; try to read the created user id robustly
+        const createdUserId = (signUpData as any)?.user?.id || (signUpData as any)?.id || (signUpData as any)?.userId;
+        if (!createdUserId) {
+          console.warn('Could not determine created user id from signUp response:', signUpData);
+        }
 
-        if (userError) throw userError;
+        const { error: userError } = await supabase.from('users').insert([{ ...userData, id: createdUserId || undefined, email: emailToUse }]);
+        if (userError) {
+          console.error('Error inserting into users table:', userError);
+          throw userError;
+        }
       }
 
       resetForm();

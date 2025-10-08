@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, EvaluationResult, Evaluation, User, Office, EvaluationTemplate } from '../lib/supabase';
 import { TrendingUp, Users, Building2, BarChart3, ChevronRight, ChevronDown } from 'lucide-react';
+import IndividualAnalysis from './IndividualAnalysis';
 
 interface ResultWithDetails extends EvaluationResult {
   evaluation?: Evaluation;
@@ -18,6 +19,7 @@ export function ResultsModule() {
   const [expandedOffices, setExpandedOffices] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<'individual' | 'office'>('individual');
+  const [selectedResultForAnalysis, setSelectedResultForAnalysis] = useState<ResultWithDetails | null>(null);
 
   useEffect(() => {
     loadResults();
@@ -244,6 +246,14 @@ export function ResultsModule() {
                               <p className="text-sm text-gray-700">{result.ai_analysis}</p>
                             </div>
                           )}
+                          <div className="mt-4 flex gap-2">
+                            <button
+                              onClick={() => setSelectedResultForAnalysis(result)}
+                              className="px-3 py-2 bg-blue-600 text-white rounded-md"
+                            >
+                              Ver Análisis
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -309,10 +319,22 @@ export function ResultsModule() {
                 <p className="text-xs text-gray-500">
                   Evaluación completada el {new Date(result.created_at).toLocaleString()}
                 </p>
+                <div className="mt-3">
+                  <button
+                    onClick={() => setSelectedResultForAnalysis(result)}
+                    className="px-3 py-2 bg-blue-600 text-white rounded-md"
+                  >
+                    Ver Análisis
+                  </button>
+                </div>
               </div>
             </div>
           ))}
         </div>
+      )}
+
+      {selectedResultForAnalysis && (
+        <IndividualAnalysis result={selectedResultForAnalysis} onClose={() => setSelectedResultForAnalysis(null)} />
       )}
 
       {results.length === 0 && (

@@ -1,15 +1,19 @@
 import { useState, useEffect } from 'react';
-import { supabase, EvaluationTemplate, EvaluationQuestion } from '../../lib/supabase';
+import { supabase, EvaluationTemplate } from '../../lib/supabase';
+import { useAuth } from '../../contexts/AuthContext';
 import { Plus, Edit2, Trash2, Eye } from 'lucide-react';
 import { TemplateForm } from './TemplateForm';
 import { TemplatePreview } from './TemplatePreview';
 
 export function TemplatesManagement() {
+  const { user } = useAuth();
   const [templates, setTemplates] = useState<EvaluationTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<EvaluationTemplate | null>(null);
   const [previewTemplate, setPreviewTemplate] = useState<EvaluationTemplate | null>(null);
+  // map template_id -> enabled for current user's office
+  const [officeAccess, setOfficeAccess] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     loadTemplates();
@@ -24,6 +28,21 @@ export function TemplatesManagement() {
 
       if (error) throw error;
       setTemplates(data || []);
+      // if current user is office_manager, load office-specific access
+      if (user?.role === 'office_manager' && user.office_id) {
+        try {
+          const { data: accessData, error: accessError } = await supabase
+            .from('office_template_access')
+            .select('template_id, enabled')
+            .eq('office_id', user.office_id);
+          if (accessError) throw accessError;
+          const map: Record<string, boolean> = {};
+          (accessData || []).forEach((r: any) => { map[r.template_id] = r.enabled; });
+          setOfficeAccess(map);
+        } catch (err) {
+          console.error('Error loading office access:', err);
+        }
+      }
     } catch (error) {
       console.error('Error loading templates:', error);
     } finally {
@@ -81,6 +100,21 @@ export function TemplatesManagement() {
       employee_to_manager: 'Evaluación Colaborador a Jefe',
     };
     return labels[type] || type;
+  };
+
+  const handleToggleOfficeAccess = async (template: EvaluationTemplate) => {
+    if (!user?.office_id) return;
+    try {
+      const currently = !!officeAccess[template.id];
+      const { error } = await supabase.from('office_template_access').upsert([
+        { office_id: user.office_id, template_id: template.id, enabled: !currently }
+      ], { onConflict: 'office_id,template_id' });
+      if (error) throw error;
+      setOfficeAccess((prev) => ({ ...prev, [template.id]: !currently }));
+    } catch (err) {
+      console.error('Error toggling office access:', err);
+      alert('No se pudo actualizar el estado para la oficina');
+    }
   };
 
   if (loading) {
@@ -162,6 +196,17 @@ export function TemplatesManagement() {
                 <Eye className="w-4 h-4" />
                 Ver
               </button>
+                {user?.role === 'office_manager' && user.office_id && (
+                  <label className="flex items-center gap-2 text-sm px-3 py-1.5">
+                    <input
+                      type="checkbox"
+                      checked={!!officeAccess[template.id]}
+                      onChange={() => handleToggleOfficeAccess(template)}
+                      className="sr-only peer"
+                    />
+                    <div className={`px-2 py-1 rounded ${officeAccess[template.id] ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>{officeAccess[template.id] ? 'Habilitado en mi oficina' : 'No habilitado'}</div>
+                  </label>
+                )}
               <button
                 onClick={() => handleEdit(template)}
                 className="flex items-center gap-1 text-blue-600 hover:bg-blue-50 px-3 py-1.5 rounded transition-colors text-sm"
