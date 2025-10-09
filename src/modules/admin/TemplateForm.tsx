@@ -17,17 +17,20 @@ export function TemplateForm({ template, onClose }: TemplateFormProps) {
     type: 'soft_skills' | 'self_evaluation' | 'manager_to_employee' | 'employee_to_manager';
     job_position: string;
     is_active: boolean;
+    categories?: string[];
   }>({
     name: '',
     description: '',
     type: 'soft_skills',
     job_position: '',
     is_active: true,
+    categories: [],
   });
 
   const [sections, setSections] = useState<{
     title: string;
     domain_key?: string | null;
+    category?: string | null;
     questions: Partial<EvaluationQuestion>[];
   }[]>([]);
 
@@ -43,10 +46,11 @@ export function TemplateForm({ template, onClose }: TemplateFormProps) {
         type: template.type,
         job_position: template.job_position || '',
         is_active: template.is_active,
+        categories: (template as any).categories || [],
       });
       loadQuestions(template.id);
     } else {
-      setSections([{ title: 'General', domain_key: null, questions: [{ question_text: '', question_type: 'rating', options: null }] }]);
+      setSections([{ title: 'General', domain_key: null, category: null, questions: [{ question_text: '', question_type: 'rating', options: null }] }]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [template]);
@@ -74,7 +78,7 @@ export function TemplateForm({ template, onClose }: TemplateFormProps) {
 
         if (qsErr) throw qsErr;
 
-  builtSections.push({ title: s.title || 'Sección', domain_key: s.domain_key || null, questions: qs || [] });
+  builtSections.push({ title: s.title || 'Sección', domain_key: s.domain_key || null, category: s.category || null, questions: qs || [] });
       }
 
       // fallback: if no sections found, include orphan questions under General
@@ -89,12 +93,12 @@ export function TemplateForm({ template, onClose }: TemplateFormProps) {
         if (orphanErr) throw orphanErr;
 
         if ((orphanQs || []).length > 0) {
-          builtSections.push({ title: 'General', domain_key: null, questions: orphanQs || [] });
+    builtSections.push({ title: 'General', domain_key: null, category: null, questions: orphanQs || [] });
         }
       }
 
       if (builtSections.length === 0) {
-        builtSections.push({ title: 'General', domain_key: null, questions: [{ question_text: '', question_type: 'rating', options: null }] });
+  builtSections.push({ title: 'General', domain_key: null, category: null, questions: [{ question_text: '', question_type: 'rating', options: null }] });
       }
 
       setSections(builtSections);
@@ -109,6 +113,14 @@ export function TemplateForm({ template, onClose }: TemplateFormProps) {
     setSections(prev => {
       const next = [...prev];
       next[sectionIndex].questions.push({ question_text: '', question_type: 'rating', options: null });
+      return next;
+    });
+  };
+
+  const updateSectionCategory = (sectionIndex: number, category: string | null) => {
+    setSections(prev => {
+      const next = [...prev];
+      next[sectionIndex] = { ...next[sectionIndex], category };
       return next;
     });
   };
@@ -168,13 +180,13 @@ export function TemplateForm({ template, onClose }: TemplateFormProps) {
       if (template) {
         const { error } = await supabase
           .from('evaluation_templates')
-          .update({ ...formData, updated_at: new Date().toISOString() })
+          .update({ ...formData, updated_at: new Date().toISOString(), categories: formData.categories || [] })
           .eq('id', template.id);
         if (error) throw error;
       } else {
         const { data, error } = await supabase
           .from('evaluation_templates')
-          .insert([{ ...formData, created_by: user?.id }])
+          .insert([{ ...formData, created_by: user?.id, categories: formData.categories || [] }])
           .select()
           .single();
         if (error) throw error;
@@ -191,7 +203,7 @@ export function TemplateForm({ template, onClose }: TemplateFormProps) {
         const sec = sections[sIndex];
         const { data: secData, error: secErr } = await supabase
           .from('evaluation_sections')
-          .insert([{ template_id: templateId, title: sec.title, order_index: sIndex, domain_key: sec.domain_key || null }])
+          .insert([{ template_id: templateId, title: sec.title, order_index: sIndex, domain_key: sec.domain_key || null, category: sec.category || null }])
           .select()
           .single();
 
