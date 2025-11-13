@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, EvaluationResult, Evaluation, User, Office, EvaluationTemplate } from '../lib/supabase';
-import { TrendingUp, Users, Building2, BarChart3, ChevronRight, ChevronDown } from 'lucide-react';
+import { Building2, BarChart3, ChevronRight, ChevronDown } from 'lucide-react';
 import IndividualAnalysis from './IndividualAnalysis';
+import CompetencyAnalysis from './CompetencyAnalysis';
+import CollaboratorAnalysis from './CollaboratorAnalysis';
 
 interface ResultWithDetails extends EvaluationResult {
   evaluation?: Evaluation;
@@ -334,7 +336,14 @@ export function ResultsModule() {
       )}
 
       {selectedResultForAnalysis && (
-        <IndividualAnalysis result={selectedResultForAnalysis} onClose={() => setSelectedResultForAnalysis(null)} />
+        selectedResultForAnalysis.template?.type === 'soft_skills' ? (
+          <IndividualAnalysis result={selectedResultForAnalysis} onClose={() => setSelectedResultForAnalysis(null)} />
+        ) : (selectedResultForAnalysis.template?.type === 'manager_to_employee') ? (
+          <CollaboratorAnalysis evaluation={selectedResultForAnalysis.evaluation as any} onClose={() => setSelectedResultForAnalysis(null)} />
+        ) : (
+          // for other evaluation types render the competency matrix analysis
+          <CompetencyAnalysis evaluation={selectedResultForAnalysis.evaluation as any} onClose={() => setSelectedResultForAnalysis(null)} />
+        )
       )}
 
       {results.length === 0 && (

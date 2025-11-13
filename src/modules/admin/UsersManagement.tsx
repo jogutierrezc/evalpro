@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase, User, Office, UserRole } from '../../lib/supabase';
-import { Plus, Edit2, Trash2, Search } from 'lucide-react';
+import { Plus, Edit2, Trash2, Search, Upload } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 export function UsersManagement() {
   const [users, setUsers] = useState<(User & { office?: Office; manager?: User })[]>([]);
@@ -9,6 +10,8 @@ export function UsersManagement() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [showImport, setShowImport] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [formData, setFormData] = useState({
     identification: '',
@@ -17,6 +20,7 @@ export function UsersManagement() {
     role: 'employee' as UserRole,
     office_id: '',
     manager_id: '',
+    campus: '',
   });
 
   useEffect(() => {
@@ -62,6 +66,7 @@ export function UsersManagement() {
         role: formData.role,
         office_id: formData.office_id || null,
         manager_id: formData.manager_id || null,
+        campus: formData.campus || null,
         updated_at: new Date().toISOString(),
       };
 
@@ -116,6 +121,7 @@ export function UsersManagement() {
       role: user.role,
       office_id: user.office_id || '',
       manager_id: user.manager_id || '',
+      campus: user.campus || '',
     });
     setShowForm(true);
   };
@@ -141,6 +147,7 @@ export function UsersManagement() {
       role: 'employee',
       office_id: '',
       manager_id: '',
+      campus: '',
     });
     setEditingUser(null);
     setShowForm(false);
@@ -152,6 +159,92 @@ export function UsersManagement() {
       user.identification.includes(searchTerm)
   );
 
+  const handleImport = async () => {
+    if (!importFile) return;
+
+    try {
+      const data = await importFile.arrayBuffer();
+      const workbook = XLSX.read(data);
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const jsonData = XLSX.utils.sheet_to_json(sheet);
+
+      const roleMap: Record<string, UserRole> = {
+        'Colaborador': 'employee',
+        'Jefe de Oficina': 'office_manager',
+        'Jefe VAF': 'jefe_vaf',
+        'Jefe Campus VAF': 'jefe_campus_vaf',
+        'Administrador': 'admin',
+      };
+
+      const officeMap = offices.reduce((acc, office) => {
+        acc[office.name] = office.id;
+        return acc;
+      }, {} as Record<string, string>);
+
+      const managerMap = users.reduce((acc, user) => {
+        acc[user.full_name] = user.id;
+        return acc;
+      }, {} as Record<string, string>);
+
+      for (const row of jsonData as any[]) {
+        const identification = row['No. de Cedula']?.toString().trim();
+        const full_name = row['Nombre Completo']?.toString().trim();
+        const email = row['Correo']?.toString().trim() || null;
+        const roleStr = row['Rol']?.toString().trim();
+        const officeName = row['Oficina']?.toString().trim();
+        const managerName = row['Jefe Inmediato']?.toString().trim();
+        const campus = row['Campus']?.toString().trim() || null;
+
+        if (!identification || !full_name || !roleStr) continue;
+
+        const role = roleMap[roleStr];
+        if (!role) continue;
+
+        const office_id = officeName ? officeMap[officeName] : null;
+        const manager_id = managerName ? managerMap[managerName] : null;
+
+        const emailToUse = email || `${identification}@evaluation.local`;
+        const passwordToUse = identification;
+
+        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+          email: emailToUse,
+          password: passwordToUse,
+        });
+
+        if (signUpError) {
+          console.error('Auth signUp error for', full_name, signUpError);
+          continue;
+        }
+
+        const createdUserId = (signUpData as any)?.user?.id || (signUpData as any)?.id;
+
+        const { error: userError } = await supabase.from('users').insert([{
+          id: createdUserId,
+          identification,
+          full_name,
+          email: emailToUse,
+          role,
+          office_id,
+          manager_id,
+          campus,
+        }]);
+
+        if (userError) {
+          console.error('Error inserting user', full_name, userError);
+        }
+      }
+
+      alert('Importación completada');
+      setShowImport(false);
+      setImportFile(null);
+      loadData();
+    } catch (error) {
+      console.error('Error importing:', error);
+      alert('Error al importar');
+    }
+  };
+
   if (loading) {
     return <div className="text-center py-8">Cargando...</div>;
   }
@@ -160,14 +253,23 @@ export function UsersManagement() {
     <div>
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-xl font-semibold text-gray-900">Gestión de Personal</h2>
-        {!showForm && (
-          <button
-            onClick={() => setShowForm(true)}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
-          >
-            <Plus className="w-5 h-5" />
-            Nuevo Usuario
-          </button>
+        {!showForm && !showImport && (
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowForm(true)}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
+            >
+              <Plus className="w-5 h-5" />
+              Nuevo Usuario
+            </button>
+            <button
+              onClick={() => setShowImport(true)}
+              className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors"
+            >
+              <Upload className="w-5 h-5" />
+              Importar Excel
+            </button>
+          </div>
         )}
       </div>
 
@@ -217,6 +319,8 @@ export function UsersManagement() {
               >
                 <option value="employee">Colaborador</option>
                 <option value="office_manager">Jefe de Oficina</option>
+                <option value="jefe_vaf">Jefe VAF</option>
+                <option value="jefe_campus_vaf">Jefe Campus VAF</option>
                 <option value="admin">Administrador</option>
               </select>
             </div>
@@ -233,6 +337,22 @@ export function UsersManagement() {
                     {office.name}
                   </option>
                 ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Campus</label>
+              <select
+                value={formData.campus}
+                onChange={(e) => setFormData({ ...formData, campus: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="">Sin asignar</option>
+                <option value="Valledupar">Valledupar</option>
+                <option value="Bogota">Bogota</option>
+                <option value="Cúcuta">Cúcuta</option>
+                <option value="Bucaramanga">Bucaramanga</option>
+                <option value="Arauca">Arauca</option>
+                <option value="Todas">Todas</option>
               </select>
             </div>
             {formData.role === 'employee' && (
@@ -273,6 +393,41 @@ export function UsersManagement() {
         </form>
       )}
 
+      {showImport && (
+        <div className="bg-gray-50 rounded-lg p-6 mb-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Importar Usuarios desde Excel</h3>
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Archivo Excel</label>
+            <input
+              type="file"
+              accept=".xlsx,.xls"
+              onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={handleImport}
+              disabled={!importFile}
+              className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg transition-colors"
+            >
+              Importar
+            </button>
+            <button
+              onClick={() => { setShowImport(false); setImportFile(null); }}
+              className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg transition-colors"
+            >
+              Cancelar
+            </button>
+          </div>
+          <p className="text-sm text-gray-600 mt-2">
+            El archivo debe tener las columnas: Nombre Completo, No. de Cedula, Correo, Rol, Oficina, Jefe Inmediato, Campus
+            <br />
+            <a href="/plantilla_usuarios.xlsx" download className="text-blue-600 underline">Descargar plantilla</a>
+          </p>
+        </div>
+      )}
+
       <div className="mb-4">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
@@ -295,6 +450,7 @@ export function UsersManagement() {
                 <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Cédula</th>
                 <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Rol</th>
                 <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Oficina</th>
+                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Campus</th>
                 <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Jefe</th>
                 <th className="px-4 py-3 text-right text-sm font-semibold text-gray-900">Acciones</th>
               </tr>
@@ -310,6 +466,7 @@ export function UsersManagement() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600">{user.office?.name || '-'}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{user.campus || '-'}</td>
                   <td className="px-4 py-3 text-sm text-gray-600">{user.manager?.full_name || '-'}</td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex justify-end gap-2">

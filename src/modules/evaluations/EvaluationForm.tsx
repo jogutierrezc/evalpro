@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
-import { supabase, Evaluation, EvaluationQuestion, EvaluationResponse } from '../../lib/supabase';
+import { supabase, Evaluation, EvaluationQuestion } from '../../lib/supabase';
 import { ArrowLeft, Save } from 'lucide-react';
-import { useAuth } from '../../contexts/AuthContext';
 
 interface EvaluationFormProps {
   evaluation: Evaluation;
@@ -9,8 +8,14 @@ interface EvaluationFormProps {
 }
 
 export function EvaluationForm({ evaluation, onClose }: EvaluationFormProps) {
-  const { user } = useAuth();
   const [questions, setQuestions] = useState<EvaluationQuestion[]>([]);
+    const [groupedSections, setGroupedSections] = useState<{
+      id: string | null;
+      title: string;
+      domain_key?: string | null;
+      category?: string | null;
+      questions: EvaluationQuestion[];
+    }[]>([]);
   const [responses, setResponses] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -21,24 +26,39 @@ export function EvaluationForm({ evaluation, onClose }: EvaluationFormProps) {
 
   const loadQuestionsAndResponses = async () => {
     try {
-      const [questionsRes, responsesRes] = await Promise.all([
-        supabase
-          .from('evaluation_questions')
-          .select('*')
-          .eq('template_id', evaluation.template_id)
-          .order('order_index'),
-        supabase
-          .from('evaluation_responses')
-          .select('*')
-          .eq('evaluation_id', evaluation.id),
+      const [questionsRes, responsesRes, sectionsRes] = await Promise.all([
+        supabase.from('evaluation_questions').select('*').eq('template_id', evaluation.template_id).order('order_index'),
+        supabase.from('evaluation_responses').select('*').eq('evaluation_id', evaluation.id),
+        supabase.from('evaluation_sections').select('*').eq('template_id', evaluation.template_id).order('order_index'),
       ]);
 
       if (questionsRes.error) throw questionsRes.error;
       if (responsesRes.error) throw responsesRes.error;
 
-      setQuestions(questionsRes.data || []);
+      const flatQuestions: EvaluationQuestion[] = questionsRes.data || [];
+      setQuestions(flatQuestions);
 
-      const responsesMap: Record<string, any> = {};
+      // build grouped sections for UI
+  const sectionsData: any[] = sectionsRes.data || [];
+      const sectionsOrder = sectionsData.map((s) => ({ id: s.id, title: s.title || 'Sección', domain_key: s.domain_key || null, category: s.category || null }));
+
+      const grouped: { id: string | null; title: string; domain_key?: string | null; category?: string | null; questions: EvaluationQuestion[] }[] = [];
+
+      // for each defined section keep order
+      for (const sec of sectionsOrder) {
+        const qs = flatQuestions.filter((q) => (q as any).section_id === sec.id);
+        grouped.push({ id: sec.id, title: sec.title, domain_key: sec.domain_key, category: sec.category, questions: qs });
+      }
+
+      // orphan questions (no section) -> add as General at the end
+      const orphanQs = flatQuestions.filter((q) => !(q as any).section_id);
+      if (orphanQs.length > 0) {
+        grouped.push({ id: null, title: 'General', domain_key: null, category: null, questions: orphanQs });
+      }
+
+      setGroupedSections(grouped);
+
+  const responsesMap: Record<string, any> = {};
       responsesRes.data?.forEach((response) => {
         responsesMap[response.question_id] = response.response_value;
       });
@@ -85,7 +105,7 @@ export function EvaluationForm({ evaluation, onClose }: EvaluationFormProps) {
       }
 
       if (complete) {
-        const allAnswered = questions.every((q) => responses[q.id] !== undefined);
+  const allAnswered = questions.every((q) => responses[q.id] !== undefined);
         if (!allAnswered) {
           alert('Por favor responde todas las preguntas antes de completar');
           setSaving(false);
@@ -97,16 +117,99 @@ export function EvaluationForm({ evaluation, onClose }: EvaluationFormProps) {
           .update({ status: 'completed', completed_at: new Date().toISOString() })
           .eq('id', evaluation.id);
 
-        const overallScore = calculateOverallScore();
+        // compute overall score: prefer category-weighted (global competencies weights) if possible,
+        // otherwise fall back to the existing question-weighted calculation
+        let overallScore: any = calculateOverallScore();
+
+        // fetch sections once and reuse
+        let sectionsList: any[] | undefined = undefined;
+        try {
+          const resSections = await supabase
+            .from('evaluation_sections')
+            .select('*')
+            .eq('template_id', evaluation.template_id);
+          sectionsList = resSections.data || [];
+
+          const sectionCategoryMap: Record<string, string | null> = {};
+          (sectionsList || []).forEach((s: any) => {
+            sectionCategoryMap[s.id] = s.category || null;
+          });
+
+          // accumulate per-category weighted sums (by question weight) and counts
+          const sumsWeightedCat: Record<string, number> = {};
+          const weightsSumCat: Record<string, number> = {};
+          const sumsRawCat: Record<string, number> = {};
+          const countsCat: Record<string, number> = {};
+
+          questions.forEach((q) => {
+            if (q.question_type !== 'rating') return;
+            const qid = q.id;
+            const resp = responses[qid];
+            const num = typeof resp === 'number' ? resp : Number(resp) || 0;
+            const secId = (q as any).section_id;
+            const catName = secId ? sectionCategoryMap[secId] : null;
+            if (!catName) return;
+
+            const w = Number((q as any).weight || 0);
+            const key = String(catName || 'Sin categoría');
+            if (w > 0) {
+              sumsWeightedCat[key] = (sumsWeightedCat[key] || 0) + (num * w);
+              weightsSumCat[key] = (weightsSumCat[key] || 0) + w;
+            } else {
+              sumsRawCat[key] = (sumsRawCat[key] || 0) + num;
+              countsCat[key] = (countsCat[key] || 0) + 1;
+            }
+          });
+
+          // compute per-category scores
+          const categoryScoresByName: Record<string, number> = {};
+          Object.keys({ ...sumsWeightedCat, ...sumsRawCat }).forEach((k) => {
+            if (weightsSumCat[k] && weightsSumCat[k] > 0) {
+              categoryScoresByName[k] = Number((sumsWeightedCat[k] / weightsSumCat[k]).toFixed(2));
+            } else if (sumsRawCat[k]) {
+              categoryScoresByName[k] = Number((sumsRawCat[k] / (countsCat[k] || 1)).toFixed(2));
+            } else {
+              categoryScoresByName[k] = 0;
+            }
+          });
+
+          // predefined category weights (same used by CompetencyAnalysis)
+          const CATEGORY_WEIGHTS: { name: string; weightPercent: number }[] = [
+            { name: 'Integridad', weightPercent: 15 },
+            { name: 'Compromiso con la calidad del trabajo', weightPercent: 16 },
+            { name: 'Institucional', weightPercent: 16 },
+            { name: 'Liderazgo o Empowerment', weightPercent: 20 },
+            { name: 'Proactividad', weightPercent: 15 },
+            { name: 'Orientación a los resultados con calidad', weightPercent: 18 },
+          ];
+
+          const normalize = (s: string) => (s || '').toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/[^a-z0-9]+/gi, '').trim();
+
+          // compute overall using category weights if any category matches
+          let totalCategoryWeightUsed = 0;
+          let weightedCategorySum = 0;
+          for (const cw of CATEGORY_WEIGHTS) {
+            // try to find a matching category key in categoryScoresByName
+            const target = normalize(cw.name);
+            const foundKey = Object.keys(categoryScoresByName).find((k) => normalize(k) === target || normalize(k).includes(target) || target.includes(normalize(k)));
+            if (foundKey) {
+              const catScore = categoryScoresByName[foundKey] || 0;
+              weightedCategorySum += catScore * (cw.weightPercent / 100);
+              totalCategoryWeightUsed += cw.weightPercent;
+            }
+          }
+
+          if (totalCategoryWeightUsed > 0) {
+            // normalize by total percent (should be 100 but guard anyway)
+            overallScore = Number((weightedCategorySum / (totalCategoryWeightUsed / 100)).toFixed(2));
+          }
+        } catch (err) {
+          console.error('Error computing overall by category weights:', err);
+        }
 
         // compute category scores by section (attempt to map section titles to Goleman domains)
         let category_scores: Record<string, number> = {};
         try {
-          const { data: sections } = await supabase
-            .from('evaluation_sections')
-            .select('*')
-            .eq('template_id', evaluation.template_id);
-
           // domain synonyms mapping (same keys used in IndividualAnalysis)
           const DOMAIN_KEYS: { key: string; synonyms: string[] }[] = [
             { key: 'autoconciencia', synonyms: ['autoconciencia', 'self_awareness', 'selfawareness', 'self-awareness', 'autoconsciencia'] },
@@ -118,7 +221,7 @@ export function EvaluationForm({ evaluation, onClose }: EvaluationFormProps) {
           const normalize = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
           const sectionIdToDomainKey: Record<string, string> = {};
-          (sections || []).forEach((sec: any) => {
+          (sectionsList || []).forEach((sec: any) => {
             // Prefer explicit domain_key set in the DB
             if (sec.domain_key) {
               sectionIdToDomainKey[sec.id] = String(sec.domain_key);
@@ -140,31 +243,42 @@ export function EvaluationForm({ evaluation, onClose }: EvaluationFormProps) {
 
           // fallback: if no mapping by section title, try to map by question text keywords
 
-          const sums: Record<string, number> = {};
-          const counts: Record<string, number> = {};
+            // use weights if provided on questions; otherwise fallback to simple averages
+            const sumsWeighted: Record<string, number> = {};
+            const weightsSum: Record<string, number> = {};
+            const sumsRaw: Record<string, number> = {};
+            const counts: Record<string, number> = {};
 
-          questions.forEach((q) => {
-            if (q.question_type !== 'rating') return;
-            const qid = q.id;
-            const resp = responses[qid];
-            const num = typeof resp === 'number' ? resp : Number(resp) || 0;
-            const secId = (q as any).section_id;
-            const domainKey = sectionIdToDomainKey[secId] || null;
-            if (domainKey) {
-              sums[domainKey] = (sums[domainKey] || 0) + num;
-              counts[domainKey] = (counts[domainKey] || 0) + 1;
-            }
-          });
+            questions.forEach((q) => {
+              if (q.question_type !== 'rating') return;
+              const qid = q.id;
+              const resp = responses[qid];
+              const num = typeof resp === 'number' ? resp : Number(resp) || 0;
+              const secId = (q as any).section_id;
+              const domainKey = sectionIdToDomainKey[secId] || null;
+              if (!domainKey) return;
 
-          // populate all domains with computed averages (0 if none)
-          const allDomainKeys = DOMAIN_KEYS.map((d) => d.key);
-          allDomainKeys.forEach((k) => {
-            if (sums[k]) {
-              category_scores[k] = Number((sums[k] / (counts[k] || 1)).toFixed(2));
-            } else {
-              category_scores[k] = 0;
-            }
-          });
+              const w = Number((q as any).weight || 0);
+              if (w > 0) {
+                sumsWeighted[domainKey] = (sumsWeighted[domainKey] || 0) + (num * w);
+                weightsSum[domainKey] = (weightsSum[domainKey] || 0) + w;
+              } else {
+                sumsRaw[domainKey] = (sumsRaw[domainKey] || 0) + num;
+                counts[domainKey] = (counts[domainKey] || 0) + 1;
+              }
+            });
+
+            // populate all domains with computed averages (0 if none)
+            const allDomainKeys = DOMAIN_KEYS.map((d) => d.key);
+            allDomainKeys.forEach((k) => {
+              if (weightsSum[k] && weightsSum[k] > 0) {
+                category_scores[k] = Number((sumsWeighted[k] / weightsSum[k]).toFixed(2));
+              } else if (sumsRaw[k]) {
+                category_scores[k] = Number((sumsRaw[k] / (counts[k] || 1)).toFixed(2));
+              } else {
+                category_scores[k] = 0;
+              }
+            });
 
         } catch (err) {
           console.error('Error computing category scores:', err);
@@ -201,6 +315,18 @@ export function EvaluationForm({ evaluation, onClose }: EvaluationFormProps) {
     const ratingQuestions = questions.filter((q) => q.question_type === 'rating');
     if (ratingQuestions.length === 0) return 0;
 
+    // if any question has weight > 0, compute weighted average
+    const totalWeights = ratingQuestions.reduce((acc, q) => acc + (Number((q as any).weight) || 0), 0);
+    if (totalWeights > 0) {
+      const weightedSum = ratingQuestions.reduce((acc, q) => {
+        const value = responses[q.id] || 0;
+        const num = typeof value === 'number' ? value : Number(value) || 0;
+        const w = Number((q as any).weight) || 0;
+        return acc + (num * w);
+      }, 0);
+      return (weightedSum / totalWeights).toFixed(2);
+    }
+
     const total = ratingQuestions.reduce((sum, q) => {
       const value = responses[q.id] || 0;
       return sum + (typeof value === 'number' ? value : 0);
@@ -208,7 +334,6 @@ export function EvaluationForm({ evaluation, onClose }: EvaluationFormProps) {
 
     return (total / ratingQuestions.length).toFixed(2);
   };
-
   const renderQuestion = (question: EvaluationQuestion) => {
     switch (question.question_type) {
       case 'rating':
@@ -265,6 +390,28 @@ export function EvaluationForm({ evaluation, onClose }: EvaluationFormProps) {
     }
   };
 
+  // build render blocks grouped by section to show section titles
+  const renderBlocks: JSX.Element[] = [];
+  let globalIndex = 0;
+  groupedSections.forEach((sec, sIdx) => {
+    renderBlocks.push(
+      <div key={`sec-${sec.id || 'general'}-${sIdx}`} className="pb-8 border-b border-gray-200 last:border-0">
+        <h2 className="text-xl font-semibold text-gray-800 mb-4">{sec.title}</h2>
+        <div className="space-y-6">
+          {sec.questions.map((question) => {
+            globalIndex += 1;
+            return (
+              <div key={question.id} className="pb-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">{globalIndex}. {question.question_text}</h3>
+                {renderQuestion(question)}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  });
+
   if (loading) {
     return <div className="text-center py-8">Cargando...</div>;
   }
@@ -290,14 +437,22 @@ export function EvaluationForm({ evaluation, onClose }: EvaluationFormProps) {
         </div>
 
         <div className="space-y-8">
-          {questions.map((question, index) => (
-            <div key={question.id} className="pb-8 border-b border-gray-200 last:border-0">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                {index + 1}. {question.question_text}
-              </h3>
-              {renderQuestion(question)}
+          {groupedSections && groupedSections.length > 0 ? (
+            // render grouped sections (we built renderBlocks earlier)
+            <div>{renderBlocks}</div>
+          ) : (
+            // fallback: render flat questions
+            <div className="space-y-8">
+              {questions.map((question, index) => (
+                <div key={question.id} className="pb-8 border-b border-gray-200 last:border-0">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                    {index + 1}. {question.question_text}
+                  </h3>
+                  {renderQuestion(question)}
+                </div>
+              ))}
             </div>
-          ))}
+          )}
         </div>
 
         {questions.length === 0 && (

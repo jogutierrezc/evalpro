@@ -31,7 +31,7 @@ export function TemplateForm({ template, onClose }: TemplateFormProps) {
     title: string;
     domain_key?: string | null;
     category?: string | null;
-    questions: Partial<EvaluationQuestion>[];
+    questions: (Partial<EvaluationQuestion> & { weight?: number })[];
   }[]>([]);
 
   const [saving, setSaving] = useState(false);
@@ -50,10 +50,12 @@ export function TemplateForm({ template, onClose }: TemplateFormProps) {
       });
       loadQuestions(template.id);
     } else {
-      setSections([{ title: 'General', domain_key: null, category: null, questions: [{ question_text: '', question_type: 'rating', options: null }] }]);
+  setSections([{ title: 'General', domain_key: null, category: null, questions: [{ question_text: '', question_type: 'rating', options: null, weight: 0 } as any] }]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [template]);
+
+  const CATEGORY_TYPES = ['self_evaluation', 'manager_to_employee', 'employee_to_manager'];
 
   const loadQuestions = async (templateId: string) => {
     try {
@@ -65,7 +67,7 @@ export function TemplateForm({ template, onClose }: TemplateFormProps) {
 
       if (secsErr) throw secsErr;
 
-  const builtSections: { title: string; domain_key?: string | null; questions: Partial<EvaluationQuestion>[] }[] = [];
+    const builtSections: { title: string; domain_key?: string | null; category?: string | null; questions: Partial<EvaluationQuestion>[] }[] = [];
       const sectionsList: any[] = secs || [];
 
       for (const s of sectionsList) {
@@ -93,13 +95,14 @@ export function TemplateForm({ template, onClose }: TemplateFormProps) {
         if (orphanErr) throw orphanErr;
 
         if ((orphanQs || []).length > 0) {
-    builtSections.push({ title: 'General', domain_key: null, category: null, questions: orphanQs || [] });
+          // ensure orphan questions have weight defined for local editing
+          builtSections.push({ title: 'General', domain_key: null, category: null, questions: (orphanQs || []).map((q: any) => ({ ...q, weight: q.weight ?? 0 } as any)) });
         }
       }
 
-      if (builtSections.length === 0) {
-  builtSections.push({ title: 'General', domain_key: null, category: null, questions: [{ question_text: '', question_type: 'rating', options: null }] });
-      }
+    if (builtSections.length === 0) {
+  builtSections.push({ title: 'General', domain_key: null, category: null, questions: [{ question_text: '', question_type: 'rating', options: null, weight: 0 } as any] });
+    }
 
       setSections(builtSections);
     } catch (error) {
@@ -107,12 +110,12 @@ export function TemplateForm({ template, onClose }: TemplateFormProps) {
     }
   };
 
-  const addSection = (title = 'Nueva Sección') => setSections(prev => [...prev, { title, domain_key: null, questions: [{ question_text: '', question_type: 'rating', options: null }] }]);
+  const addSection = (title = 'Nueva Sección') => setSections(prev => [...prev, { title, domain_key: null, questions: [{ question_text: '', question_type: 'rating', options: null, weight: 0 } as any] }]);
 
   const addQuestionToSection = (sectionIndex: number) => {
     setSections(prev => {
       const next = [...prev];
-      next[sectionIndex].questions.push({ question_text: '', question_type: 'rating', options: null });
+      next[sectionIndex].questions.push({ question_text: '', question_type: 'rating', options: null, weight: 0 });
       return next;
     });
   };
@@ -134,6 +137,17 @@ export function TemplateForm({ template, onClose }: TemplateFormProps) {
     });
   };
 
+  const computeTotalWeight = () => {
+    let total = 0;
+    for (const s of sections) {
+      for (const q of s.questions) {
+        const w = Number((q as any).weight || 0);
+        if (!isNaN(w)) total += w;
+      }
+    }
+    return Math.round(total * 100) / 100;
+  };
+
   const removeQuestion = (sectionIndex: number, questionIndex: number) => {
     setSections(prev => {
       const next = [...prev];
@@ -153,13 +167,18 @@ export function TemplateForm({ template, onClose }: TemplateFormProps) {
     setSections(prev => {
       const next = [...prev];
       next.splice(sectionIndex, 1);
-  if (next.length === 0) next.push({ title: 'General', domain_key: null, questions: [{ question_text: '', question_type: 'rating', options: null }] });
+  if (next.length === 0) next.push({ title: 'General', domain_key: null, questions: [{ question_text: '', question_type: 'rating', options: null, weight: 0 } as any] });
       return next;
     });
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const total = computeTotalWeight();
+    if (total > 100) {
+      alert(`La suma de los pesos es ${total}%. No puede superar 100%. Ajusta los pesos antes de continuar.`);
+      return;
+    }
 
     const payload = {
       template: { ...formData, id: template?.id },
@@ -175,6 +194,12 @@ export function TemplateForm({ template, onClose }: TemplateFormProps) {
     setSaving(true);
 
     try {
+      const total = computeTotalWeight();
+      if (total > 100) {
+        alert(`La suma de los pesos es ${total}%. No puede superar 100%. Ajusta los pesos antes de guardar.`);
+        setSaving(false);
+        return;
+      }
       let templateId = template?.id;
 
       if (template) {
@@ -226,6 +251,7 @@ export function TemplateForm({ template, onClose }: TemplateFormProps) {
             question_text: q.question_text,
             question_type: q.question_type || 'rating',
             options: q.options || null,
+            weight: typeof q.weight !== 'undefined' && q.weight !== null ? q.weight : 0,
             order_index: (sIndex * 1000) + qi,
             order_in_section: qi + 1,
           }));
@@ -296,6 +322,47 @@ export function TemplateForm({ template, onClose }: TemplateFormProps) {
             <label className="block text-sm font-medium text-gray-700 mb-2">Descripción</label>
             <textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" rows={3} />
           </div>
+
+          {CATEGORY_TYPES.includes(formData.type) && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Categorías (por tipo de evaluación)</label>
+              <p className="text-xs text-gray-500 mb-2">Define las categorías que estarán disponibles para las secciones de este formulario. Presiona Enter o el botón + para añadir.</p>
+              <div className="flex gap-2 items-center">
+                <input
+                  type="text"
+                  placeholder="Agregar categoría y presionar Enter"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      const v = (e.target as HTMLInputElement).value.trim();
+                      if (v && !(formData.categories || []).includes(v)) {
+                        setFormData({ ...formData, categories: [...(formData.categories || []), v] });
+                        (e.target as HTMLInputElement).value = '';
+                      }
+                    }
+                  }}
+                  className="px-3 py-2 border rounded w-full"
+                />
+                <button type="button" onClick={() => {
+                  const el = document.querySelector('input[placeholder="Agregar categoría y presionar Enter"]') as HTMLInputElement | null;
+                  if (!el) return;
+                  const v = el.value.trim();
+                  if (v && !(formData.categories || []).includes(v)) {
+                    setFormData({ ...formData, categories: [...(formData.categories || []), v] });
+                    el.value = '';
+                  }
+                }} className="px-3 py-2 bg-blue-600 text-white rounded">+</button>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {(formData.categories || []).map((c) => (
+                  <span key={c} className="inline-flex items-center gap-2 bg-gray-100 px-3 py-1 rounded">
+                    <span className="text-sm">{c}</span>
+                    <button type="button" onClick={() => setFormData({ ...formData, categories: (formData.categories || []).filter(x => x !== c) })} className="text-red-600">x</button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="bg-white rounded-lg border border-gray-200 p-6">
@@ -322,6 +389,12 @@ export function TemplateForm({ template, onClose }: TemplateFormProps) {
                       <option value="autogestion">Autogestión</option>
                       <option value="conciencia_social">Conciencia Social</option>
                       <option value="gestion_relaciones">Gestión de Relaciones</option>
+                    </select>
+                    <select value={sec.category || ''} onChange={(e) => updateSectionCategory(sIndex, e.target.value || null)} className="ml-3 px-2 py-1 border rounded text-sm">
+                      <option value="">Categoría</option>
+                      {(formData.categories && formData.categories.length ? formData.categories : ['Integridad','Compromiso con la calidad del trabajo','Institucional','Liderazgo','Empowerment','Proactividad','Orientacion a los resultados']).map((cat) => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
                     </select>
                   </div>
                   <div className="flex items-center gap-2">
@@ -359,6 +432,10 @@ export function TemplateForm({ template, onClose }: TemplateFormProps) {
                                 <input type="text" value={Array.isArray(question.options) ? question.options.join(', ') : ''} onChange={(e) => updateQuestion(sIndex, qIndex, 'options', e.target.value.split(',').map((opt) => opt.trim()))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Opción 1, Opción 2, Opción 3" />
                               </div>
                             )}
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">Peso (%)</label>
+                              <input type="number" min={0} max={100} step={0.1} value={(question as any).weight ?? 0} onChange={(e) => updateQuestion(sIndex, qIndex, 'weight', Number(e.target.value))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                            </div>
                           </div>
                         </div>
 
@@ -375,7 +452,11 @@ export function TemplateForm({ template, onClose }: TemplateFormProps) {
         </div>
 
         <div className="flex gap-3">
-          <button type="submit" disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg transition-colors disabled:opacity-50">{saving ? 'Guardando...' : template ? 'Actualizar Formulario' : 'Crear Formulario'}</button>
+            <div className="flex items-center gap-4 mr-4">
+              <div className="text-sm text-gray-700">Total peso: <span className={`font-semibold ${computeTotalWeight() > 100 ? 'text-red-600' : 'text-gray-900'}`}>{computeTotalWeight()}%</span></div>
+              {computeTotalWeight() > 100 && <div className="text-sm text-red-600">La suma de pesos excede 100%</div>}
+            </div>
+            <button type="submit" disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg transition-colors disabled:opacity-50">{saving ? 'Guardando...' : template ? 'Actualizar Formulario' : 'Crear Formulario'}</button>
           <button type="button" onClick={onClose} className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-6 py-2 rounded-lg transition-colors">Cancelar</button>
         </div>
       </form>

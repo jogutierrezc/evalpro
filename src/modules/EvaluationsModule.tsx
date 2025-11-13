@@ -67,13 +67,10 @@ export function EvaluationsModule() {
 
   const loadAvailableSoftTemplates = async () => {
     try {
-      // load active soft_skills templates
-      const { data: templates, error: tplErr } = await supabase
-        .from('evaluation_templates')
-        .select('*')
-        .eq('type', 'soft_skills')
-        .eq('is_active', true)
-        .order('created_at', { ascending: false });
+      // load active templates (for admins show all types, otherwise soft_skills only)
+      let query = supabase.from('evaluation_templates').select('*').eq('is_active', true).order('created_at', { ascending: false });
+      if (user?.role !== 'admin') query = query.eq('type', 'soft_skills');
+      const { data: templates, error: tplErr } = await query;
 
       if (tplErr) throw tplErr;
 
@@ -106,6 +103,32 @@ export function EvaluationsModule() {
       console.error('Error loading available soft-skill templates:', error);
     }
   };
+
+    const handleAdminTakeTemplate = async (template: EvaluationTemplate) => {
+      if (!user) return;
+      // allow admin to create a test evaluation for themselves
+      try {
+        const { data, error } = await supabase
+          .from('evaluations')
+          .insert([
+            {
+              template_id: template.id,
+              evaluator_id: user.id,
+              evaluated_id: user.id,
+              status: 'pending',
+            },
+          ])
+          .select('*')
+          .single();
+
+        if (error) throw error;
+
+        if (data) setSelectedEvaluation(data as Evaluation);
+      } catch (err) {
+        console.error('Error creating admin test evaluation', err);
+        alert('No se pudo crear la evaluación de prueba');
+      }
+    };
 
   const handleStartEvaluation = (evaluation: Evaluation) => {
     setSelectedEvaluation(evaluation);
@@ -197,7 +220,7 @@ export function EvaluationsModule() {
       {/* Available global soft-skills tests (single-use per user) */}
       {availableSoftTemplates.length > 0 && (
         <div className="mb-8">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">Pruebas de Habilidades Blandas</h2>
+          <h2 className="text-xl font-semibold text-gray-900 mb-4">Pruebas Disponibles</h2>
           <div className="space-y-3">
             {availableSoftTemplates.map((template) => (
               <div
@@ -209,15 +232,19 @@ export function EvaluationsModule() {
                   <p className="text-sm text-gray-600">{template.description}</p>
                 </div>
                 <div>
-                  <button
-                    onClick={() => handleTakeSoftSkill(template)}
-                    disabled={!!takenTemplatesMap[template.id]}
-                    className={`px-4 py-2 rounded-lg text-white transition-colors ${
-                      takenTemplatesMap[template.id] ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
-                    }`}
-                  >
-                    {takenTemplatesMap[template.id] ? 'Ya tomado' : 'Tomar prueba'}
-                  </button>
+                  {user?.role === 'admin' ? (
+                    <button onClick={() => handleAdminTakeTemplate(template)} className="px-4 py-2 rounded-lg text-white bg-green-600 hover:bg-green-700">Crear prueba (Admin)</button>
+                  ) : (
+                    <button
+                      onClick={() => handleTakeSoftSkill(template)}
+                      disabled={!!takenTemplatesMap[template.id]}
+                      className={`px-4 py-2 rounded-lg text-white transition-colors ${
+                        takenTemplatesMap[template.id] ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
+                      }`}
+                    >
+                      {takenTemplatesMap[template.id] ? 'Ya tomado' : 'Tomar prueba'}
+                    </button>
+                  )}
                 </div>
               </div>
             ))}

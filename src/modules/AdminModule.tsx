@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Building2, Users, FileEdit, Layers } from 'lucide-react';
+import { Building2, Users, FileEdit } from 'lucide-react';
 import { OfficesManagement } from './admin/OfficesManagement';
 import { UsersManagement } from './admin/UsersManagement';
 import { TemplatesManagement } from './admin/TemplatesManagement';

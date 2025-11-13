@@ -11,7 +11,7 @@ if (!supabaseAnonKey) {
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-export type UserRole = 'admin' | 'office_manager' | 'employee';
+export type UserRole = 'admin' | 'office_manager' | 'employee' | 'jefe_vaf' | 'jefe_campus_vaf';
 
 export interface User {
   id: string;
@@ -21,6 +21,7 @@ export interface User {
   role: UserRole;
   office_id: string | null;
   manager_id: string | null;
+  campus: string | null;
   created_at: string;
   updated_at: string;
 }
