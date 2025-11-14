@@ -408,9 +408,10 @@ export function UsersManagement() {
 
       resetForm();
       loadData();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving user:', error);
-      alert('Error al guardar el usuario');
+      const msg = error && (error.message || error.error || JSON.stringify(error));
+      alert('Error al guardar el usuario: ' + (msg || 'ver detalles en la consola'));
     }
   };
 
