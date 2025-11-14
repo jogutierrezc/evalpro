@@ -16,6 +16,7 @@ export function EvaluationsModule() {
   const [takenTemplatesMap, setTakenTemplatesMap] = useState<Record<string, boolean>>({});
   const [managerCandidates, setManagerCandidates] = useState<User[]>([]);
   const [selectedCandidate, setSelectedCandidate] = useState<Record<string, string>>({});
+  const [evaluateOther, setEvaluateOther] = useState<Record<string, boolean>>({});
   const [personId, setPersonId] = useState<string | null>(null);
 
   // After migrating colaboradores into users, prefer the users.id as the person identifier
@@ -115,6 +116,27 @@ export function EvaluationsModule() {
       const period = (periodData && periodData.length > 0) ? periodData[0] : null;
       setActivePeriod(period || null);
 
+      // Normalize user's role to canonical role.key using `roles` table (fallback: treat stored label as key)
+      let canonicalRole: string | null = null;
+      if (user) {
+        try {
+          const { data: rolesData } = await supabase.from('roles').select('*');
+          if (rolesData && rolesData.length > 0) {
+            // if user's role already matches a key, use it; otherwise try to match by label
+            const byKey = (rolesData || []).find((r: any) => r.key === user.role);
+            if (byKey) canonicalRole = byKey.key;
+            else {
+              const byLabel = (rolesData || []).find((r: any) => (r.label || '').toString().toLowerCase() === (user.role || '').toString().toLowerCase());
+              canonicalRole = byLabel ? byLabel.key : (user.role as string);
+            }
+          } else {
+            canonicalRole = user.role as string;
+          }
+        } catch (err) {
+          canonicalRole = user.role as string;
+        }
+      }
+
       // If there is an active period, only show templates whose type is linked to the period
       if (period) {
         const { data: pfts } = await supabase.from('evaluation_period_form_types').select('form_type_key').eq('period_id', period.id);
@@ -130,8 +152,8 @@ export function EvaluationsModule() {
         const { data: fts } = await supabase.from('form_types').select('*').in('key', allowedKeys);
         const allowedForUser = (fts || []).filter((ft: any) => {
           if (!user) return false;
-          // ft.roles is text[] containing role keys
-          return Array.isArray(ft.roles) ? ft.roles.includes(user.role as any) : false;
+          // ft.roles is text[] containing role keys; compare against canonicalRole
+          return Array.isArray(ft.roles) ? ft.roles.includes(canonicalRole as any) : false;
         }).map((ft: any) => ft.key);
 
         if (allowedForUser.length === 0) {
@@ -149,27 +171,48 @@ export function EvaluationsModule() {
 
         if (tplErr) throw tplErr;
 
-        const tplList: EvaluationTemplate[] = templates || [];
-        setAvailableSoftTemplates(tplList);
+        let tplList: EvaluationTemplate[] = templates || [];
+        // If no templates found by `type` keys, be tolerant: fetch all active templates
+        // and match template.type against allowed keys OR allowed labels (in case DB stored labels)
+        if (tplList.length === 0) {
+          const { data: allTemplates, error: allTplErr } = await supabase
+            .from('evaluation_templates')
+            .select('*')
+            .eq('is_active', true)
+            .order('created_at', { ascending: false });
 
-        // If user is a manager-type, load their candidates (from users table)
-        const managerRoles = ['office_manager', 'jefe_vaf', 'jefe_campus_vaf'];
-        if (user && managerRoles.includes(user.role as any)) {
+          if (allTplErr) throw allTplErr;
+
+          const allowedLabels = (fts || []).map((ft: any) => (ft.label || '').toString().toLowerCase());
+
+          const tolerant = (allTemplates || []).filter((t: any) => {
+            const tType = (t.type || '').toString();
+            if (allowedForUser.includes(tType)) return true;
+            if (allowedLabels.includes(tType.toLowerCase())) return true;
+            return false;
+          });
+
+          tplList.push(...(tolerant as EvaluationTemplate[]));
+          // assign below once for unified flow
+        }
+
+        // Load candidate users from same office so any user can evaluate colleagues if needed
+        if (user) {
           try {
-            const currentPersonId = await getPersonIdForUser(user) || user.id;
             const { data: candidates } = await supabase
               .from('users')
               .select('*')
-              .or(`office_id.eq.${user.office_id},manager_id.eq.${currentPersonId}`);
+              .eq('office_id', user.office_id);
             setManagerCandidates((candidates as any) || []);
           } catch (err) {
-            console.error('Error loading manager candidates', err);
+            console.error('Error loading candidates', err);
             setManagerCandidates([]);
           }
         }
 
         if (!user || tplList.length === 0) {
           setTakenTemplatesMap({});
+          setAvailableSoftTemplates(tplList);
           return;
         }
 
@@ -195,14 +238,36 @@ export function EvaluationsModule() {
         return;
       }
 
-      // Default: no active period — original behavior
-      let query = supabase.from('evaluation_templates').select('*').eq('is_active', true).order('created_at', { ascending: false });
-      if (user?.role !== 'admin') query = query.eq('type', 'soft_skills');
-      const { data: templates, error: tplErr } = await query;
+      // Default: no active period — show templates according to user's role (non-admins)
+      let tplList: EvaluationTemplate[] = [];
+      if (user && (user.role as string) !== 'admin') {
+        // Load all form types and pick those that include the user's role
+        const { data: allFormTypes, error: ftErr } = await supabase.from('form_types').select('*');
+        if (ftErr) throw ftErr;
+        const allowedKeysForUser = (allFormTypes || []).filter((ft: any) => Array.isArray(ft.roles) ? ft.roles.includes(canonicalRole) : false).map((ft: any) => ft.key);
 
-      if (tplErr) throw tplErr;
+        if (allowedKeysForUser.length === 0) {
+          setAvailableSoftTemplates([]);
+          setTakenTemplatesMap({});
+          return;
+        }
 
-      const tplList: EvaluationTemplate[] = templates || [];
+        const { data: templates, error: tplErr } = await supabase
+          .from('evaluation_templates')
+          .select('*')
+          .eq('is_active', true)
+          .in('type', allowedKeysForUser)
+          .order('created_at', { ascending: false });
+
+        if (tplErr) throw tplErr;
+
+        tplList = templates || [];
+      } else {
+        // admin: show all active templates
+        const { data: templates, error: tplErr } = await supabase.from('evaluation_templates').select('*').eq('is_active', true).order('created_at', { ascending: false });
+        if (tplErr) throw tplErr;
+        tplList = templates || [];
+      }
       setAvailableSoftTemplates(tplList);
 
       if (!user || tplList.length === 0) {
@@ -401,36 +466,45 @@ export function EvaluationsModule() {
                   {user?.role === 'admin' ? (
                     <button onClick={() => handleAdminTakeTemplate(template)} className="px-4 py-2 rounded-lg text-white bg-green-600 hover:bg-green-700">Crear prueba (Admin)</button>
                   ) : (() => {
-                    const managerRoles = ['office_manager', 'jefe_vaf', 'jefe_campus_vaf'];
-                    if (user && managerRoles.includes(user.role as any)) {
-                      return (
-                        <div className="flex items-center gap-2">
-                          <select className="border rounded p-2 text-sm" value={selectedCandidate[template.id] || ''} onChange={(e) => setSelectedCandidate({ ...selectedCandidate, [template.id]: e.target.value })}>
-                            <option value="">Selecciona colaborador</option>
-                            {managerCandidates.map((c) => (
-                              <option key={c.id} value={c.id}>{c.full_name} ({c.identification})</option>
-                            ))}
-                          </select>
-                          <button
-                            onClick={() => handleTakeForEvaluated(template, selectedCandidate[template.id])}
-                            className="px-4 py-2 rounded-lg text-white bg-blue-600 hover:bg-blue-700"
-                          >
-                            Crear evaluación
-                          </button>
-                        </div>
-                      );
-                    }
-
+                    // Allow any user to take the test for themselves; optionally evaluate a colleague
                     return (
-                      <button
-                        onClick={() => handleTakeSoftSkill(template)}
-                        disabled={!!takenTemplatesMap[template.id]}
-                        className={`px-4 py-2 rounded-lg text-white transition-colors ${
-                          takenTemplatesMap[template.id] ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
-                        }`}
-                      >
-                        {takenTemplatesMap[template.id] ? 'Ya tomado' : 'Tomar prueba'}
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <label className="flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={!!evaluateOther[template.id]}
+                            onChange={(e) => setEvaluateOther({ ...evaluateOther, [template.id]: e.target.checked })}
+                          />
+                          Evaluar a otro colaborador
+                        </label>
+
+                        {evaluateOther[template.id] ? (
+                          <>
+                            <select className="border rounded p-2 text-sm" value={selectedCandidate[template.id] || ''} onChange={(e) => setSelectedCandidate({ ...selectedCandidate, [template.id]: e.target.value })}>
+                              <option value="">Selecciona colaborador</option>
+                              {managerCandidates.map((c) => (
+                                <option key={c.id} value={c.id}>{c.full_name} ({c.identification})</option>
+                              ))}
+                            </select>
+                            <button
+                              onClick={() => handleTakeForEvaluated(template, selectedCandidate[template.id])}
+                              className="px-4 py-2 rounded-lg text-white bg-blue-600 hover:bg-blue-700"
+                            >
+                              Crear evaluación
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            onClick={() => handleTakeSoftSkill(template)}
+                            disabled={!!takenTemplatesMap[template.id]}
+                            className={`px-4 py-2 rounded-lg text-white transition-colors ${
+                              takenTemplatesMap[template.id] ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
+                            }`}
+                          >
+                            {takenTemplatesMap[template.id] ? 'Ya tomado' : 'Tomar prueba'}
+                          </button>
+                        )}
+                      </div>
                     );
                   })()}
                 </div>

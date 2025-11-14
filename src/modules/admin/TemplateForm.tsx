@@ -284,9 +284,10 @@ export function TemplateForm({ template, onClose }: TemplateFormProps) {
       }
 
       onClose();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving template:', error);
-      alert('Error al guardar el formulario');
+      const msg = error && (error.message || error.error || JSON.stringify(error));
+      alert('Error al guardar el formulario: ' + (msg || 'ver detalles en la consola'));
     } finally {
       setSaving(false);
     }
