@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { supabase, Evaluation, EvaluationTemplate, User, Collaborator } from '../lib/supabase';
+import { supabase, Evaluation, EvaluationTemplate, User } from '../lib/supabase';
 import { FileText, Clock, CheckCircle, Play } from 'lucide-react';
 import { EvaluationForm } from './evaluations/EvaluationForm';
 
@@ -14,38 +14,22 @@ export function EvaluationsModule() {
   const [selectedEvaluation, setSelectedEvaluation] = useState<Evaluation | null>(null);
   const [availableSoftTemplates, setAvailableSoftTemplates] = useState<EvaluationTemplate[]>([]);
   const [takenTemplatesMap, setTakenTemplatesMap] = useState<Record<string, boolean>>({});
-  const [managerCandidates, setManagerCandidates] = useState<Collaborator[]>([]);
+  const [managerCandidates, setManagerCandidates] = useState<User[]>([]);
   const [selectedCandidate, setSelectedCandidate] = useState<Record<string, string>>({});
   const [personId, setPersonId] = useState<string | null>(null);
 
-  // helper: try to resolve a colaboradores.id for the given user object
-  const getCollaboratorIdForUser = async (u: any) => {
+  // After migrating colaboradores into users, prefer the users.id as the person identifier
+  const getPersonIdForUser = async (u: any) => {
     if (!u) return null;
-    try {
-      const { data: byId } = await supabase.from('colaboradores').select('id').eq('id', u.id).maybeSingle();
-      if (byId) return byId.id;
-    } catch (e) {}
-    try {
-      if ((u as any).identification) {
-        const { data: byIdentification } = await supabase.from('colaboradores').select('id').eq('identification', (u as any).identification).maybeSingle();
-        if (byIdentification) return byIdentification.id;
-      }
-    } catch (e) {}
-    try {
-      if ((u as any).email) {
-        const { data: byEmail } = await supabase.from('colaboradores').select('id').eq('email', (u as any).email).maybeSingle();
-        if (byEmail) return byEmail.id;
-      }
-    } catch (e) {}
-    return null;
+    return (u as any).id || null;
   };
 
   useEffect(() => {
     // resolve current actor id (prefer colaboradores.id when available)
     (async () => {
       try {
-        const cid = await getCollaboratorIdForUser(user);
-        setPersonId(cid || (user ? (user as any).id : null));
+        const pid = await getPersonIdForUser(user);
+        setPersonId(pid || (user ? (user as any).id : null));
       } catch (e) {
         setPersonId(user ? (user as any).id : null);
       }
@@ -80,7 +64,7 @@ export function EvaluationsModule() {
         (evaluationsData || []).map(async (evaluation) => {
           const templateRes = await supabase.from('evaluation_templates').select('*').eq('id', evaluation.template_id).single();
 
-          // Try to load evaluator from users, fallback to colaboradores
+          // Try to load evaluator from users (colaboradores migrated into users)
           let evaluatorData: any = null;
           try {
             const { data: u } = await supabase.from('users').select('*').eq('id', evaluation.evaluator_id).maybeSingle();
@@ -88,30 +72,14 @@ export function EvaluationsModule() {
           } catch (e) {
             evaluatorData = null;
           }
-          if (!evaluatorData) {
-            try {
-              const { data: c } = await supabase.from('colaboradores').select('*').eq('id', evaluation.evaluator_id).maybeSingle();
-              evaluatorData = c || null;
-            } catch (e) {
-              evaluatorData = null;
-            }
-          }
 
-          // Try to load evaluated from users, fallback to colaboradores
+          // Try to load evaluated from users
           let evaluatedData: any = null;
           try {
             const { data: u2 } = await supabase.from('users').select('*').eq('id', evaluation.evaluated_id).maybeSingle();
             evaluatedData = u2 || null;
           } catch (e) {
             evaluatedData = null;
-          }
-          if (!evaluatedData) {
-            try {
-              const { data: c2 } = await supabase.from('colaboradores').select('*').eq('id', evaluation.evaluated_id).maybeSingle();
-              evaluatedData = c2 || null;
-            } catch (e) {
-              evaluatedData = null;
-            }
           }
 
           return {
@@ -184,15 +152,15 @@ export function EvaluationsModule() {
         const tplList: EvaluationTemplate[] = templates || [];
         setAvailableSoftTemplates(tplList);
 
-        // If user is a manager-type, load their candidates (from colaboradores)
+        // If user is a manager-type, load their candidates (from users table)
         const managerRoles = ['office_manager', 'jefe_vaf', 'jefe_campus_vaf'];
         if (user && managerRoles.includes(user.role as any)) {
           try {
-            const currentCollabId = await getCollaboratorIdForUser(user) || user.id;
+            const currentPersonId = await getPersonIdForUser(user) || user.id;
             const { data: candidates } = await supabase
-              .from('colaboradores')
+              .from('users')
               .select('*')
-              .or(`office_id.eq.${user.office_id},manager_id.eq.${currentCollabId}`);
+              .or(`office_id.eq.${user.office_id},manager_id.eq.${currentPersonId}`);
             setManagerCandidates((candidates as any) || []);
           } catch (err) {
             console.error('Error loading manager candidates', err);
@@ -208,8 +176,8 @@ export function EvaluationsModule() {
         const templateIds = tplList.map((t) => t.id);
 
         // fetch evaluations for this user that use these templates
-        const collaboratorId = await getCollaboratorIdForUser(user);
-        const evaluatedLookupId = collaboratorId || user.id;
+        const personIdLookup = await getPersonIdForUser(user);
+        const evaluatedLookupId = personIdLookup || user.id;
         const { data: existingEvals, error: evalErr } = await supabase
           .from('evaluations')
           .select('template_id')
@@ -245,8 +213,8 @@ export function EvaluationsModule() {
       const templateIds = tplList.map((t) => t.id);
 
       // fetch evaluations for this user that use these templates
-      const collaboratorId = await getCollaboratorIdForUser(user);
-      const evaluatedLookupId = collaboratorId || user.id;
+      const personIdLookup = await getPersonIdForUser(user);
+      const evaluatedLookupId = personIdLookup || user.id;
       const { data: existingEvals, error: evalErr } = await supabase
       .from('evaluations')
       .select('template_id')
@@ -301,7 +269,7 @@ export function EvaluationsModule() {
     if (!evaluatedId) { alert('Selecciona un colaborador para evaluar'); return; }
 
     try {
-      const evaluatorId = await getCollaboratorIdForUser(user) || (user as any).id;
+      const evaluatorId = await getPersonIdForUser(user) || (user as any).id;
       const { data, error } = await supabase
         .from('evaluations')
         .insert([
@@ -334,7 +302,7 @@ export function EvaluationsModule() {
     }
 
     try {
-      const collabId = await getCollaboratorIdForUser(user) || (user as any).id;
+      const collabId = await getPersonIdForUser(user) || (user as any).id;
       const { data, error } = await supabase
         .from('evaluations')
         .insert([

@@ -11,7 +11,7 @@ if (!supabaseAnonKey) {
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-export type UserRole = 'admin' | 'office_manager' | 'employee' | 'jefe_vaf' | 'jefe_campus_vaf';
+export type UserRole = 'admin' | 'office_manager' | 'employee' | 'jefe_vaf' | 'jefe_campus_vaf' | 'colaborador_vaf';
 
 export interface User {
   id: string;
@@ -86,18 +86,8 @@ export interface EvaluationResult {
   updated_at: string;
 }
 
-export interface Collaborator {
-  id: string;
-  identification: string;
-  full_name: string;
-  email: string | null;
-  role: 'colaborador_vaf' | 'jefe_vaf' | 'jefe_campus_vaf' | 'employee' | 'office_manager';
-  office_id: string | null;
-  manager_id: string | null;
-  campus: string;
-  created_at: string;
-  updated_at: string;
-}
+// After migrating colaboradores into users, treat Collaborator as an alias of User
+export type Collaborator = User;
 
 export interface FormType {
   id: string;
