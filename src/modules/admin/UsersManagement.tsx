@@ -74,33 +74,42 @@ export function UsersManagement() {
         const { error } = await supabase.from('users').update(userData).eq('id', editingUser.id);
         if (error) throw error;
       } else {
-        // Ensure employees and office managers have an email; fall back to identification@evaluation.local
-        const identification = formData.identification.trim();
-        const emailToUse = (formData.email || '').trim() || `${identification}@evaluation.local`;
-        const passwordToUse = identification; // requirement: cedula as password
+        if (formData.role === 'admin') {
+          // Create auth user for admin
+          const identification = formData.identification.trim();
+          const emailToUse = (formData.email || '').trim() || `${identification}@evaluation.local`;
+          const passwordToUse = identification; // requirement: cedula as password
 
-        console.debug('Creating auth user with email:', emailToUse);
+          console.debug('Creating auth user with email:', emailToUse);
 
-        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-          email: emailToUse,
-          password: passwordToUse,
-        });
+          const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+            email: emailToUse,
+            password: passwordToUse,
+          });
 
-        if (signUpError) {
-          console.error('Auth signUp error:', signUpError);
-          throw signUpError;
-        }
+          if (signUpError) {
+            console.error('Auth signUp error:', signUpError);
+            throw signUpError;
+          }
 
-        // supabase.auth.signUp may return different shapes; try to read the created user id robustly
-        const createdUserId = (signUpData as any)?.user?.id || (signUpData as any)?.id || (signUpData as any)?.userId;
-        if (!createdUserId) {
-          console.warn('Could not determine created user id from signUp response:', signUpData);
-        }
+          const createdUserId = (signUpData as any)?.user?.id || (signUpData as any)?.id || (signUpData as any)?.userId;
+          if (!createdUserId) {
+            console.warn('Could not determine created user id from signUp response:', signUpData);
+          }
 
-        const { error: userError } = await supabase.from('users').insert([{ ...userData, id: createdUserId || undefined, email: emailToUse }]);
-        if (userError) {
-          console.error('Error inserting into users table:', userError);
-          throw userError;
+          const { error: userError } = await supabase.from('users').insert([{ ...userData, id: createdUserId || undefined, email: emailToUse }]);
+          if (userError) {
+            console.error('Error inserting into users table:', userError);
+            throw userError;
+          }
+        } else {
+          // For non-admin users, insert directly
+          const userId = crypto.randomUUID();
+          const { error: userError } = await supabase.from('users').insert([{ ...userData, id: userId }]);
+          if (userError) {
+            console.error('Error inserting into users table:', userError);
+            throw userError;
+          }
         }
       }
 
@@ -204,34 +213,54 @@ export function UsersManagement() {
         const office_id = officeName ? officeMap[officeName] : null;
         const manager_id = managerName ? managerMap[managerName] : null;
 
-        const emailToUse = email || `${identification}@evaluation.local`;
-        const passwordToUse = identification;
+        if (role === 'admin') {
+          // Create auth user for admin
+          const emailToUse = email || `${identification}@evaluation.local`;
+          const passwordToUse = identification;
 
-        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-          email: emailToUse,
-          password: passwordToUse,
-        });
+          const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+            email: emailToUse,
+            password: passwordToUse,
+          });
 
-        if (signUpError) {
-          console.error('Auth signUp error for', full_name, signUpError);
-          continue;
-        }
+          if (signUpError) {
+            console.error('Auth signUp error for', full_name, signUpError);
+            continue;
+          }
 
-        const createdUserId = (signUpData as any)?.user?.id || (signUpData as any)?.id;
+          const createdUserId = (signUpData as any)?.user?.id || (signUpData as any)?.id;
 
-        const { error: userError } = await supabase.from('users').insert([{
-          id: createdUserId,
-          identification,
-          full_name,
-          email: emailToUse,
-          role,
-          office_id,
-          manager_id,
-          campus,
-        }]);
+          const { error: userError } = await supabase.from('users').insert([{
+            id: createdUserId,
+            identification,
+            full_name,
+            email: emailToUse,
+            role,
+            office_id,
+            manager_id,
+            campus,
+          }]);
 
-        if (userError) {
-          console.error('Error inserting user', full_name, userError);
+          if (userError) {
+            console.error('Error inserting user', full_name, userError);
+          }
+        } else {
+          // For non-admin, insert directly
+          const userId = crypto.randomUUID();
+          const { error: userError } = await supabase.from('users').insert([{
+            id: userId,
+            identification,
+            full_name,
+            email: email || null,
+            role,
+            office_id,
+            manager_id,
+            campus,
+          }]);
+
+          if (userError) {
+            console.error('Error inserting user', full_name, userError);
+          }
         }
       }
 

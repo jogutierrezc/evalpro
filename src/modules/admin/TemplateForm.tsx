@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase, EvaluationTemplate, EvaluationQuestion } from '../../lib/supabase';
+import { supabase, EvaluationTemplate, EvaluationQuestion, FormType } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { Plus, Trash2, ArrowLeft, GripVertical } from 'lucide-react';
 
@@ -11,10 +11,12 @@ interface TemplateFormProps {
 export function TemplateForm({ template, onClose }: TemplateFormProps) {
   const { user } = useAuth();
 
+  const [formTypes, setFormTypes] = useState<FormType[]>([]);
+
   const [formData, setFormData] = useState<{
     name: string;
     description: string;
-    type: 'soft_skills' | 'self_evaluation' | 'manager_to_employee' | 'employee_to_manager';
+    type: string;
     job_position: string;
     is_active: boolean;
     categories?: string[];
@@ -43,7 +45,7 @@ export function TemplateForm({ template, onClose }: TemplateFormProps) {
       setFormData({
         name: template.name,
         description: template.description || '',
-        type: template.type,
+        type: template.type as string,
         job_position: template.job_position || '',
         is_active: template.is_active,
         categories: (template as any).categories || [],
@@ -54,6 +56,20 @@ export function TemplateForm({ template, onClose }: TemplateFormProps) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [template]);
+
+  useEffect(() => {
+    // load form types from DB
+    const loadFormTypes = async () => {
+      try {
+        const { data, error } = await supabase.from('form_types').select('*').order('created_at', { ascending: false });
+        if (error) throw error;
+        setFormTypes((data as any) || []);
+      } catch (err) {
+        console.error('Error loading form types:', err);
+      }
+    };
+    loadFormTypes();
+  }, []);
 
   const CATEGORY_TYPES = ['self_evaluation', 'manager_to_employee', 'employee_to_manager'];
 
@@ -297,11 +313,14 @@ export function TemplateForm({ template, onClose }: TemplateFormProps) {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Tipo</label>
-              <select value={formData.type} onChange={(e) => setFormData({ ...formData, type: e.target.value as any })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" required>
-                <option value="soft_skills">Habilidades Blandas</option>
-                <option value="self_evaluation">Autoevaluación</option>
-                <option value="manager_to_employee">Evaluación Jefe a Colaborador</option>
-                <option value="employee_to_manager">Evaluación Colaborador a Jefe</option>
+              <select value={formData.type} onChange={(e) => setFormData({ ...formData, type: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" required>
+                {formTypes.length === 0 ? (
+                  <option value="soft_skills">Habilidades Blandas</option>
+                ) : (
+                  formTypes.map((ft) => (
+                    <option key={ft.id} value={ft.key}>{ft.label}</option>
+                  ))
+                )}
               </select>
             </div>
 

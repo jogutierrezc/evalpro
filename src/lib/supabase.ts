@@ -85,3 +85,37 @@ export interface EvaluationResult {
   created_at: string;
   updated_at: string;
 }
+
+export interface Collaborator {
+  id: string;
+  identification: string;
+  full_name: string;
+  email: string | null;
+  role: 'colaborador_vaf' | 'jefe_vaf' | 'jefe_campus_vaf' | 'employee' | 'office_manager';
+  office_id: string | null;
+  manager_id: string | null;
+  campus: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FormType {
+  id: string;
+  key: string;
+  label: string;
+  description: string | null;
+  roles: string[];
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Role {
+  id: string;
+  key: string;
+  label: string;
+  description: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}

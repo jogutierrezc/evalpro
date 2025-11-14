@@ -4,6 +4,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { Plus, Edit2, Trash2, Eye } from 'lucide-react';
 import { TemplateForm } from './TemplateForm';
 import { TemplatePreview } from './TemplatePreview';
+import TemplateImport from './TemplateImport';
 
 export function TemplatesManagement() {
   const { user } = useAuth();
@@ -12,6 +13,7 @@ export function TemplatesManagement() {
   const [showForm, setShowForm] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<EvaluationTemplate | null>(null);
   const [previewTemplate, setPreviewTemplate] = useState<EvaluationTemplate | null>(null);
+  const [showImportModal, setShowImportModal] = useState(false);
   // map template_id -> enabled for current user's office
   const [officeAccess, setOfficeAccess] = useState<Record<string, boolean>>({});
 
@@ -139,17 +141,41 @@ export function TemplatesManagement() {
     );
   }
 
+  if (showImportModal) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="absolute inset-0 bg-black opacity-40" onClick={() => setShowImportModal(false)} />
+        <div className="relative max-w-3xl w-full bg-white rounded-lg shadow-lg p-4 m-4">
+          <div className="flex justify-between items-center mb-3">
+            <h3 className="text-lg font-semibold">Importar formulario desde Excel</h3>
+            <button className="text-gray-600" onClick={() => setShowImportModal(false)}>Cerrar</button>
+          </div>
+          <TemplateImport onClose={() => setShowImportModal(false)} onImported={() => { setShowImportModal(false); loadTemplates(); }} />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-xl font-semibold text-gray-900">Formularios de Evaluación</h2>
-        <button
-          onClick={() => setShowForm(true)}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
-        >
-          <Plus className="w-5 h-5" />
-          Nuevo Formulario
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowImportModal(true)}
+            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors"
+          >
+            <Plus className="w-5 h-5" />
+            Importar (Excel)
+          </button>
+          <button
+            onClick={() => setShowForm(true)}
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
+          >
+            <Plus className="w-5 h-5" />
+            Nuevo Formulario
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

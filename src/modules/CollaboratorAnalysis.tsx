@@ -21,7 +21,7 @@ export default function CollaboratorAnalysis({ evaluation, onClose }: Props) {
   const [rawQuestionsState, setRawQuestionsState] = useState<any[] | null>(null);
   const [rawResponsesState, setRawResponsesState] = useState<any[] | null>(null);
   const [rawTemplateState, setRawTemplateState] = useState<any | null>(null);
-  const [rawResultsState, setRawResultsState] = useState<any | null>(null);
+  const [collaborator, setCollaborator] = useState<any>(null);
 
   useEffect(() => {
     load();
@@ -60,9 +60,26 @@ export default function CollaboratorAnalysis({ evaluation, onClose }: Props) {
         supabase.from('evaluation_responses').select('*').eq('evaluation_id', evaluation.id),
       ]);
 
+      const { data: collabData } = await supabase.from('colaboradores').select(`
+        *,
+        collaborator_offices (
+          offices (
+            id,
+            name
+          )
+        )
+      `).eq('id', evaluation.evaluated_id).maybeSingle();
+
       const sectionsList: any[] = sections || [];
       const questionsList: any[] = questions || [];
       const responsesList: any[] = responses || [];
+
+      if (collabData) {
+        setCollaborator({
+          ...collabData,
+          offices: collabData.collaborator_offices?.map((co: any) => co.offices).filter(Boolean) || []
+        });
+      }
 
   // shared containers/vars used across the function (declare early to avoid TDZ runtime errors)
   const breakdownArr: any[] = [];
@@ -92,7 +109,6 @@ export default function CollaboratorAnalysis({ evaluation, onClose }: Props) {
         try {
           const { data: resultsData } = await supabase.from('evaluation_results').select('overall_score,category_scores').eq('evaluation_id', evaluation.id).limit(1);
           if (resultsData && resultsData.length > 0) storedResult = resultsData[0];
-          setRawResultsState(resultsData && resultsData.length ? resultsData[0] : null);
         } catch (err) {
           console.error('Error loading stored evaluation_results fallback:', err);
         }
@@ -327,6 +343,13 @@ export default function CollaboratorAnalysis({ evaluation, onClose }: Props) {
           <div>
             <h3 className="text-lg font-bold">Informe - Colaboradores</h3>
             <div className="text-sm text-gray-600">Evaluación: {evaluation.id}</div>
+            {collaborator && (
+              <div className="text-sm text-gray-600 mt-1">
+                Colaborador: {collaborator.full_name} ({collaborator.identification})<br />
+                Oficinas: {collaborator.offices?.map((o: any) => o.name).join(', ') || 'Ninguna'}<br />
+                Rol: {collaborator.role.replace('_', ' ')} | Campus: {collaborator.campus}
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <button onClick={exportCSV} className="px-3 py-2 bg-gray-100 rounded text-sm">Exportar CSV</button>
@@ -426,10 +449,7 @@ export default function CollaboratorAnalysis({ evaluation, onClose }: Props) {
                   <div className="font-medium">Responses (first 500)</div>
                   <pre className="whitespace-pre-wrap max-h-40 overflow-auto">{JSON.stringify(rawResponsesState || [], null, 2)}</pre>
                 </div>
-                <div>
-                  <div className="font-medium">Stored Result</div>
-                  <pre className="whitespace-pre-wrap">{JSON.stringify(rawResultsState || {}, null, 2)}</pre>
-                </div>
+                {/* Stored Result removed from debug display; kept in debugInfo if needed */}
               </div>
             </div>
           )}
