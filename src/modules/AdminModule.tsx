@@ -1,13 +1,14 @@
 import { useState } from 'react';
-import { Building2, Users, FileEdit, UserCheck, Layers, Slash } from 'lucide-react';
+import { Building2, Users, FileEdit, UserCheck, Layers, Slash, Clock } from 'lucide-react';
 import { OfficesManagement } from './admin/OfficesManagement';
 import { UsersManagement } from './admin/UsersManagement';
 import { CollaboratorsManagement } from './admin/CollaboratorsManagement';
 import { TemplatesManagement } from './admin/TemplatesManagement';
 import FormTypesManagement from './admin/FormTypesManagement';
 import RolesManagement from './admin/RolesManagement';
+import EvaluationPeriodsManagement from './admin/EvaluationPeriodsManagement';
 
-type AdminTab = 'offices' | 'users' | 'collaborators' | 'templates' | 'form_types' | 'roles';
+type AdminTab = 'offices' | 'users' | 'collaborators' | 'templates' | 'form_types' | 'roles' | 'periods';
 
 export function AdminModule() {
   const [activeTab, setActiveTab] = useState<AdminTab>('offices');
@@ -19,6 +20,7 @@ export function AdminModule() {
     { id: 'templates' as AdminTab, label: 'Formularios', icon: FileEdit },
     { id: 'form_types' as AdminTab, label: 'Tipos de Formulario', icon: Layers },
     { id: 'roles' as AdminTab, label: 'Roles', icon: Slash },
+    { id: 'periods' as AdminTab, label: 'Periodos', icon: Clock },
   ];
 
   return (
@@ -58,6 +60,7 @@ export function AdminModule() {
           {activeTab === 'templates' && <TemplatesManagement />}
           {activeTab === 'form_types' && <FormTypesManagement />}
           {activeTab === 'roles' && <RolesManagement />}
+          {activeTab === 'periods' && <EvaluationPeriodsManagement />}
         </div>
       </div>
     </div>

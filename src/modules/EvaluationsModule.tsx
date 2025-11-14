@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { supabase, Evaluation, EvaluationTemplate, User } from '../lib/supabase';
+import { supabase, Evaluation, EvaluationTemplate, User, Collaborator } from '../lib/supabase';
 import { FileText, Clock, CheckCircle, Play } from 'lucide-react';
 import { EvaluationForm } from './evaluations/EvaluationForm';
 
 export function EvaluationsModule() {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
+  const [activePeriod, setActivePeriod] = useState<null | { id: string; year: number; start_date: string; end_date: string }>(null);
   const [evaluations, setEvaluations] = useState<
     (Evaluation & { template?: EvaluationTemplate; evaluator?: User; evaluated?: User })[]
   >([]);
@@ -13,6 +14,8 @@ export function EvaluationsModule() {
   const [selectedEvaluation, setSelectedEvaluation] = useState<Evaluation | null>(null);
   const [availableSoftTemplates, setAvailableSoftTemplates] = useState<EvaluationTemplate[]>([]);
   const [takenTemplatesMap, setTakenTemplatesMap] = useState<Record<string, boolean>>({});
+  const [managerCandidates, setManagerCandidates] = useState<Collaborator[]>([]);
+  const [selectedCandidate, setSelectedCandidate] = useState<Record<string, string>>({});
 
   useEffect(() => {
     loadEvaluations();
@@ -42,17 +45,47 @@ export function EvaluationsModule() {
 
       const evaluationsWithDetails = await Promise.all(
         (evaluationsData || []).map(async (evaluation) => {
-          const [templateRes, evaluatorRes, evaluatedRes] = await Promise.all([
-            supabase.from('evaluation_templates').select('*').eq('id', evaluation.template_id).single(),
-            supabase.from('users').select('*').eq('id', evaluation.evaluator_id).single(),
-            supabase.from('users').select('*').eq('id', evaluation.evaluated_id).single(),
-          ]);
+          const templateRes = await supabase.from('evaluation_templates').select('*').eq('id', evaluation.template_id).single();
+
+          // Try to load evaluator from users, fallback to colaboradores
+          let evaluatorData: any = null;
+          try {
+            const { data: u } = await supabase.from('users').select('*').eq('id', evaluation.evaluator_id).maybeSingle();
+            evaluatorData = u || null;
+          } catch (e) {
+            evaluatorData = null;
+          }
+          if (!evaluatorData) {
+            try {
+              const { data: c } = await supabase.from('colaboradores').select('*').eq('id', evaluation.evaluator_id).maybeSingle();
+              evaluatorData = c || null;
+            } catch (e) {
+              evaluatorData = null;
+            }
+          }
+
+          // Try to load evaluated from users, fallback to colaboradores
+          let evaluatedData: any = null;
+          try {
+            const { data: u2 } = await supabase.from('users').select('*').eq('id', evaluation.evaluated_id).maybeSingle();
+            evaluatedData = u2 || null;
+          } catch (e) {
+            evaluatedData = null;
+          }
+          if (!evaluatedData) {
+            try {
+              const { data: c2 } = await supabase.from('colaboradores').select('*').eq('id', evaluation.evaluated_id).maybeSingle();
+              evaluatedData = c2 || null;
+            } catch (e) {
+              evaluatedData = null;
+            }
+          }
 
           return {
             ...evaluation,
             template: templateRes.data,
-            evaluator: evaluatorRes.data,
-            evaluated: evaluatedRes.data,
+            evaluator: evaluatorData,
+            evaluated: evaluatedData,
           };
         })
       );
@@ -67,7 +100,96 @@ export function EvaluationsModule() {
 
   const loadAvailableSoftTemplates = async () => {
     try {
-      // load active templates (for admins show all types, otherwise soft_skills only)
+      // Find active period covering today
+      const today = new Date().toISOString().slice(0, 10);
+      const { data: periodData } = await supabase
+        .from('evaluation_periods')
+        .select('*')
+        .lte('start_date', today)
+        .gte('end_date', today)
+        .limit(1);
+
+      const period = (periodData && periodData.length > 0) ? periodData[0] : null;
+      setActivePeriod(period || null);
+
+      // If there is an active period, only show templates whose type is linked to the period
+      if (period) {
+        const { data: pfts } = await supabase.from('evaluation_period_form_types').select('form_type_key').eq('period_id', period.id);
+        const allowedKeys = (pfts || []).map((r: any) => r.form_type_key);
+
+        if (allowedKeys.length === 0) {
+          setAvailableSoftTemplates([]);
+          setTakenTemplatesMap({});
+          return;
+        }
+
+        // load form_types to check role membership
+        const { data: fts } = await supabase.from('form_types').select('*').in('key', allowedKeys);
+        const allowedForUser = (fts || []).filter((ft: any) => {
+          if (!user) return false;
+          // ft.roles is text[] containing role keys
+          return Array.isArray(ft.roles) ? ft.roles.includes(user.role as any) : false;
+        }).map((ft: any) => ft.key);
+
+        if (allowedForUser.length === 0) {
+          setAvailableSoftTemplates([]);
+          setTakenTemplatesMap({});
+          return;
+        }
+
+        const { data: templates, error: tplErr } = await supabase
+          .from('evaluation_templates')
+          .select('*')
+          .eq('is_active', true)
+          .in('type', allowedForUser)
+          .order('created_at', { ascending: false });
+
+        if (tplErr) throw tplErr;
+
+        const tplList: EvaluationTemplate[] = templates || [];
+        setAvailableSoftTemplates(tplList);
+
+        // If user is a manager-type, load their candidates (from colaboradores: same office or manager_id = user.id)
+        const managerRoles = ['office_manager', 'jefe_vaf', 'jefe_campus_vaf'];
+        if (user && managerRoles.includes(user.role as any)) {
+          try {
+            const { data: candidates } = await supabase
+              .from('colaboradores')
+              .select('*')
+              .or(`office_id.eq.${user.office_id},manager_id.eq.${user.id}`);
+            setManagerCandidates((candidates as any) || []);
+          } catch (err) {
+            console.error('Error loading manager candidates', err);
+            setManagerCandidates([]);
+          }
+        }
+
+        if (!user || tplList.length === 0) {
+          setTakenTemplatesMap({});
+          return;
+        }
+
+        const templateIds = tplList.map((t) => t.id);
+
+        // fetch evaluations for this user that use these templates
+        const { data: existingEvals, error: evalErr } = await supabase
+          .from('evaluations')
+          .select('template_id')
+          .eq('evaluated_id', user.id)
+          .in('template_id', templateIds);
+
+        if (evalErr) throw evalErr;
+
+        const taken: Record<string, boolean> = {};
+        (existingEvals || []).forEach((e: any) => {
+          if (e.template_id) taken[e.template_id] = true;
+        });
+
+        setTakenTemplatesMap(taken);
+        return;
+      }
+
+      // Default: no active period — original behavior
       let query = supabase.from('evaluation_templates').select('*').eq('is_active', true).order('created_at', { ascending: false });
       if (user?.role !== 'admin') query = query.eq('type', 'soft_skills');
       const { data: templates, error: tplErr } = await query;
@@ -105,7 +227,7 @@ export function EvaluationsModule() {
   };
 
     const handleAdminTakeTemplate = async (template: EvaluationTemplate) => {
-      if (!user) return;
+        if (!user) return;
       // allow admin to create a test evaluation for themselves
       try {
         const { data, error } = await supabase
@@ -113,8 +235,8 @@ export function EvaluationsModule() {
           .insert([
             {
               template_id: template.id,
-              evaluator_id: user.id,
-              evaluated_id: user.id,
+                evaluator_id: user.id,
+                evaluated_id: user.id,
               status: 'pending',
             },
           ])
@@ -132,6 +254,33 @@ export function EvaluationsModule() {
 
   const handleStartEvaluation = (evaluation: Evaluation) => {
     setSelectedEvaluation(evaluation);
+  };
+
+  const handleTakeForEvaluated = async (template: EvaluationTemplate, evaluatedId: string) => {
+    if (!user) return;
+    if (!evaluatedId) { alert('Selecciona un colaborador para evaluar'); return; }
+
+    try {
+      const { data, error } = await supabase
+        .from('evaluations')
+        .insert([
+          {
+            template_id: template.id,
+            evaluator_id: user.id,
+            evaluated_id: evaluatedId,
+            status: 'pending',
+          },
+        ])
+        .select('*')
+        .single();
+
+      if (error) throw error;
+
+      setSelectedEvaluation(data as Evaluation);
+    } catch (err) {
+      console.error('Error creating evaluation for evaluated:', err);
+      alert('No se pudo crear la evaluación');
+    }
   };
 
   const handleTakeSoftSkill = async (template: EvaluationTemplate) => {
@@ -217,6 +366,12 @@ export function EvaluationsModule() {
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Evaluaciones</h1>
         <p className="text-gray-600">Gestiona y completa tus evaluaciones</p>
       </div>
+      {activePeriod && (
+        <div className="mb-6 p-4 rounded bg-yellow-50 border border-yellow-200">
+          <div className="font-medium">Periodo activo: {activePeriod.year}</div>
+          <div className="text-sm text-gray-700">Abierto desde {new Date(activePeriod.start_date).toLocaleDateString()} hasta {new Date(activePeriod.end_date).toLocaleDateString()}</div>
+        </div>
+      )}
       {/* Available global soft-skills tests (single-use per user) */}
       {availableSoftTemplates.length > 0 && (
         <div className="mb-8">
@@ -234,17 +389,39 @@ export function EvaluationsModule() {
                 <div>
                   {user?.role === 'admin' ? (
                     <button onClick={() => handleAdminTakeTemplate(template)} className="px-4 py-2 rounded-lg text-white bg-green-600 hover:bg-green-700">Crear prueba (Admin)</button>
-                  ) : (
-                    <button
-                      onClick={() => handleTakeSoftSkill(template)}
-                      disabled={!!takenTemplatesMap[template.id]}
-                      className={`px-4 py-2 rounded-lg text-white transition-colors ${
-                        takenTemplatesMap[template.id] ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
-                      }`}
-                    >
-                      {takenTemplatesMap[template.id] ? 'Ya tomado' : 'Tomar prueba'}
-                    </button>
-                  )}
+                  ) : (() => {
+                    const managerRoles = ['office_manager', 'jefe_vaf', 'jefe_campus_vaf'];
+                    if (user && managerRoles.includes(user.role as any)) {
+                      return (
+                        <div className="flex items-center gap-2">
+                          <select className="border rounded p-2 text-sm" value={selectedCandidate[template.id] || ''} onChange={(e) => setSelectedCandidate({ ...selectedCandidate, [template.id]: e.target.value })}>
+                            <option value="">Selecciona colaborador</option>
+                            {managerCandidates.map((c) => (
+                              <option key={c.id} value={c.id}>{c.full_name} ({c.identification})</option>
+                            ))}
+                          </select>
+                          <button
+                            onClick={() => handleTakeForEvaluated(template, selectedCandidate[template.id])}
+                            className="px-4 py-2 rounded-lg text-white bg-blue-600 hover:bg-blue-700"
+                          >
+                            Crear evaluación
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <button
+                        onClick={() => handleTakeSoftSkill(template)}
+                        disabled={!!takenTemplatesMap[template.id]}
+                        className={`px-4 py-2 rounded-lg text-white transition-colors ${
+                          takenTemplatesMap[template.id] ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
+                        }`}
+                      >
+                        {takenTemplatesMap[template.id] ? 'Ya tomado' : 'Tomar prueba'}
+                      </button>
+                    );
+                  })()}
                 </div>
               </div>
             ))}
