@@ -5,7 +5,7 @@ import { FileText, Clock, CheckCircle, Play } from 'lucide-react';
 import { EvaluationForm } from './evaluations/EvaluationForm';
 
 export function EvaluationsModule() {
-  const { user, session } = useAuth();
+  const { user } = useAuth();
   const [activePeriod, setActivePeriod] = useState<null | { id: string; year: number; start_date: string; end_date: string }>(null);
   const [evaluations, setEvaluations] = useState<
     (Evaluation & { template?: EvaluationTemplate; evaluator?: User; evaluated?: User })[]
@@ -16,8 +16,41 @@ export function EvaluationsModule() {
   const [takenTemplatesMap, setTakenTemplatesMap] = useState<Record<string, boolean>>({});
   const [managerCandidates, setManagerCandidates] = useState<Collaborator[]>([]);
   const [selectedCandidate, setSelectedCandidate] = useState<Record<string, string>>({});
+  const [personId, setPersonId] = useState<string | null>(null);
+
+  // helper: try to resolve a colaboradores.id for the given user object
+  const getCollaboratorIdForUser = async (u: any) => {
+    if (!u) return null;
+    try {
+      const { data: byId } = await supabase.from('colaboradores').select('id').eq('id', u.id).maybeSingle();
+      if (byId) return byId.id;
+    } catch (e) {}
+    try {
+      if ((u as any).identification) {
+        const { data: byIdentification } = await supabase.from('colaboradores').select('id').eq('identification', (u as any).identification).maybeSingle();
+        if (byIdentification) return byIdentification.id;
+      }
+    } catch (e) {}
+    try {
+      if ((u as any).email) {
+        const { data: byEmail } = await supabase.from('colaboradores').select('id').eq('email', (u as any).email).maybeSingle();
+        if (byEmail) return byEmail.id;
+      }
+    } catch (e) {}
+    return null;
+  };
 
   useEffect(() => {
+    // resolve current actor id (prefer colaboradores.id when available)
+    (async () => {
+      try {
+        const cid = await getCollaboratorIdForUser(user);
+        setPersonId(cid || (user ? (user as any).id : null));
+      } catch (e) {
+        setPersonId(user ? (user as any).id : null);
+      }
+    })();
+
     loadEvaluations();
     loadAvailableSoftTemplates();
   }, [user]);
@@ -100,6 +133,8 @@ export function EvaluationsModule() {
 
   const loadAvailableSoftTemplates = async () => {
     try {
+      
+
       // Find active period covering today
       const today = new Date().toISOString().slice(0, 10);
       const { data: periodData } = await supabase
@@ -149,14 +184,15 @@ export function EvaluationsModule() {
         const tplList: EvaluationTemplate[] = templates || [];
         setAvailableSoftTemplates(tplList);
 
-        // If user is a manager-type, load their candidates (from colaboradores: same office or manager_id = user.id)
+        // If user is a manager-type, load their candidates (from colaboradores)
         const managerRoles = ['office_manager', 'jefe_vaf', 'jefe_campus_vaf'];
         if (user && managerRoles.includes(user.role as any)) {
           try {
+            const currentCollabId = await getCollaboratorIdForUser(user) || user.id;
             const { data: candidates } = await supabase
               .from('colaboradores')
               .select('*')
-              .or(`office_id.eq.${user.office_id},manager_id.eq.${user.id}`);
+              .or(`office_id.eq.${user.office_id},manager_id.eq.${currentCollabId}`);
             setManagerCandidates((candidates as any) || []);
           } catch (err) {
             console.error('Error loading manager candidates', err);
@@ -172,10 +208,12 @@ export function EvaluationsModule() {
         const templateIds = tplList.map((t) => t.id);
 
         // fetch evaluations for this user that use these templates
+        const collaboratorId = await getCollaboratorIdForUser(user);
+        const evaluatedLookupId = collaboratorId || user.id;
         const { data: existingEvals, error: evalErr } = await supabase
           .from('evaluations')
           .select('template_id')
-          .eq('evaluated_id', user.id)
+          .eq('evaluated_id', evaluatedLookupId)
           .in('template_id', templateIds);
 
         if (evalErr) throw evalErr;
@@ -207,11 +245,13 @@ export function EvaluationsModule() {
       const templateIds = tplList.map((t) => t.id);
 
       // fetch evaluations for this user that use these templates
+      const collaboratorId = await getCollaboratorIdForUser(user);
+      const evaluatedLookupId = collaboratorId || user.id;
       const { data: existingEvals, error: evalErr } = await supabase
-        .from('evaluations')
-        .select('template_id')
-        .eq('evaluated_id', user.id)
-        .in('template_id', templateIds);
+      .from('evaluations')
+      .select('template_id')
+      .eq('evaluated_id', evaluatedLookupId)
+      .in('template_id', templateIds);
 
       if (evalErr) throw evalErr;
 
@@ -261,12 +301,13 @@ export function EvaluationsModule() {
     if (!evaluatedId) { alert('Selecciona un colaborador para evaluar'); return; }
 
     try {
+      const evaluatorId = await getCollaboratorIdForUser(user) || (user as any).id;
       const { data, error } = await supabase
         .from('evaluations')
         .insert([
           {
             template_id: template.id,
-            evaluator_id: user.id,
+            evaluator_id: evaluatorId,
             evaluated_id: evaluatedId,
             status: 'pending',
           },
@@ -293,13 +334,14 @@ export function EvaluationsModule() {
     }
 
     try {
+      const collabId = await getCollaboratorIdForUser(user) || (user as any).id;
       const { data, error } = await supabase
         .from('evaluations')
         .insert([
           {
             template_id: template.id,
-            evaluator_id: user.id,
-            evaluated_id: user.id,
+            evaluator_id: collabId,
+            evaluated_id: collabId,
             status: 'pending',
           },
         ])
@@ -357,8 +399,9 @@ export function EvaluationsModule() {
     return <EvaluationForm evaluation={selectedEvaluation} onClose={handleCloseForm} />;
   }
 
-  const myEvaluations = evaluations.filter((e) => e.evaluator_id === user?.id);
-  const otherEvaluations = evaluations.filter((e) => e.evaluator_id !== user?.id);
+  const currentPersonId = personId || (user ? (user as any).id : null);
+  const myEvaluations = evaluations.filter((e) => e.evaluator_id === currentPersonId);
+  const otherEvaluations = evaluations.filter((e) => e.evaluator_id !== currentPersonId);
 
   return (
     <div>

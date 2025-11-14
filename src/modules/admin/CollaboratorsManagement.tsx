@@ -202,81 +202,141 @@ export function CollaboratorsManagement() {
       const workbook = XLSX.read(data);
       const sheetName = workbook.SheetNames[0];
       const sheet = workbook.Sheets[sheetName];
-      const jsonData = XLSX.utils.sheet_to_json(sheet);
+      const jsonData = XLSX.utils.sheet_to_json(sheet, { defval: null }) as any[];
 
-      // Build a flexible lookup where incoming Excel values (label or key)
-      // map to the canonical role key stored in `roles.key`.
+      // Build role lookup (case-insensitive) including DB roles
       const roleLookup: Record<string, string> = {};
-      // include some known legacy labels
-      roleLookup['Colaborador'] = 'employee';
-      roleLookup['Jefe de Oficina'] = 'office_manager';
-      roleLookup['Colaborador VAF'] = 'colaborador_vaf';
-      roleLookup['Jefe VAF'] = 'jefe_vaf';
-      roleLookup['Jefe Campus VAF'] = 'jefe_campus_vaf';
-      // include available roles from roles table (both key and label)
-      (availableRoles || []).forEach(r => {
-        roleLookup[r.key] = r.key;
-        if (r.label) roleLookup[r.label] = r.key;
+      // legacy labels
+      roleLookup['colaborador'] = 'colaborador_vaf';
+      roleLookup['colaborador vaf'] = 'colaborador_vaf';
+      roleLookup['colaborador_vaf'] = 'colaborador_vaf';
+      roleLookup['jefe de oficina'] = 'office_manager';
+      roleLookup['jefe_vaf'] = 'jefe_vaf';
+      roleLookup['jefe vaf'] = 'jefe_vaf';
+      roleLookup['jefe campus vaf'] = 'jefe_campus_vaf';
+      roleLookup['employee'] = 'colaborador_vaf';
+
+      (availableRoles || []).forEach((r) => {
+        roleLookup[(r.key || '').toString().toLowerCase()] = r.key;
+        if (r.label) roleLookup[r.label.toString().toLowerCase()] = r.key;
       });
 
+      // Map offices by name (case-insensitive)
       const officeMap = offices.reduce((acc, office) => {
-        acc[office.name] = office.id;
+        acc[office.name.toLowerCase()] = office.id;
         return acc;
       }, {} as Record<string, string>);
 
-      const managerMap = collaborators.reduce((acc, collaborator) => {
-        acc[collaborator.full_name] = collaborator.id;
-        return acc;
-      }, {} as Record<string, string>);
+      let inserted = 0;
+      let updated = 0;
 
-      for (const row of jsonData as any[]) {
-        const identification = row['No. de Cedula']?.toString().trim();
-        const full_name = row['Nombre Completo']?.toString().trim();
-        const email = row['Correo']?.toString().trim() || null;
-        const roleStr = row['Rol']?.toString().trim();
-        const officeName = row['Oficina']?.toString().trim();
-        const managerName = row['Jefe Inmediato']?.toString().trim();
-        const campus = row['Campus']?.toString().trim();
+      for (const row of jsonData) {
+        // support different header names
+        const identification = (row['No. de Cedula'] || row['Cédula'] || row['Cedula'] || row['identificacion'] || row['identification'] || row['Identificación'] || row['Identificacion'])?.toString().trim();
+        const full_name = (row['Nombre Completo'] || row['Nombre'] || row['Full Name'])?.toString().trim();
+        const email = (row['Correo'] || row['Email'] || row['E-mail'])?.toString().trim() || null;
+        const roleStr = (row['Rol'] || row['Role'])?.toString().trim();
+        const officeCell = (row['Oficina'] || row['Office'])?.toString().trim() || '';
+        const managerName = (row['Jefe Inmediato'] || row['Jefe'] || row['Manager'])?.toString().trim() || '';
+        const campus = (row['Campus'] || row['Sede'])?.toString().trim() || '';
 
-        if (!identification || !full_name || !roleStr || !campus) continue;
+        if (!identification || !full_name || !roleStr) continue;
 
-        const role = roleLookup[roleStr] || roleLookup[roleStr?.toLowerCase?.()] || null;
-        if (!role) {
+        const roleKey = roleLookup[roleStr.toLowerCase()] || null;
+        if (!roleKey) {
           console.warn('Role not recognized from import row:', roleStr);
           continue;
         }
 
-        const office_id = officeName ? officeMap[officeName] : null;
-        const manager_id = managerName ? managerMap[managerName] : null;
+        // resolve existing collaborator by identification
+        let collaboratorId: string | null = null;
+        try {
+          const { data: existing } = await supabase.from('colaboradores').select('id').eq('identification', identification).maybeSingle();
+          if (existing) collaboratorId = existing.id;
+        } catch (e) {
+          console.error('Error checking existing collaborator', e);
+        }
 
-        const collaboratorId = crypto.randomUUID();
-        const { error } = await supabase.from('colaboradores').insert([{
-          id: collaboratorId,
+        // resolve manager id by name (prefer exact, fallback ilike)
+        let manager_id: string | null = null;
+        if (managerName) {
+          try {
+            const { data: mgr } = await supabase.from('colaboradores').select('id').ilike('full_name', managerName).limit(1).maybeSingle();
+            if (mgr) manager_id = mgr.id;
+          } catch (e) {
+            // ignore
+          }
+        }
+
+        const collabPayload: any = {
           identification,
           full_name,
           email,
-          role,
-          manager_id,
-          campus,
-        }]);
+          role: roleKey,
+          manager_id: manager_id || null,
+          campus: campus || null,
+          updated_at: new Date().toISOString(),
+        };
 
-        if (error) {
-          console.error('Error inserting collaborator', full_name, error);
+        try {
+          if (collaboratorId) {
+            const { error: upErr } = await supabase.from('colaboradores').update(collabPayload).eq('id', collaboratorId);
+            if (upErr) {
+              console.error('Error updating collaborator', full_name, upErr);
+            } else {
+              updated += 1;
+            }
+          } else {
+            collaboratorId = crypto.randomUUID();
+            const { error: insErr } = await supabase.from('colaboradores').insert([{ id: collaboratorId, ...collabPayload }]);
+            if (insErr) {
+              console.error('Error inserting collaborator', full_name, insErr);
+              continue;
+            } else {
+              inserted += 1;
+            }
+          }
+        } catch (e) {
+          console.error('Error upserting collaborator', full_name, e);
+          continue;
         }
 
-        // Insert offices
-        if (office_id) {
-          const { error: officeError } = await supabase.from('collaborator_offices').insert([{
-            collaborator_id: collaboratorId,
-            office_id,
-          }]);
-          if (officeError) {
-            console.error('Error inserting office for', full_name, officeError);
+        // handle offices (support multiple separated by comma or semicolon)
+        try {
+          // remove previous offices for this collaborator to keep sync
+          await supabase.from('collaborator_offices').delete().eq('collaborator_id', collaboratorId);
+
+          const officeNames = officeCell ? officeCell.split(/[,;|]/).map((s: string) => s.trim()).filter(Boolean) : [];
+          const officeInserts: any[] = [];
+          for (const name of officeNames) {
+            const low = name.toLowerCase();
+            let office_id = officeMap[low];
+            if (!office_id) {
+              // try DB lookup
+              try {
+                const { data: off } = await supabase.from('offices').select('id').ilike('name', name).limit(1).maybeSingle();
+                if (off) {
+                  office_id = off.id;
+                  officeMap[low] = office_id;
+                }
+              } catch (e) {
+                console.error('Error looking up office', name, e);
+              }
+            }
+            if (office_id) officeInserts.push({ collaborator_id: collaboratorId, office_id });
+            else console.warn('Office not found for import row:', name);
           }
+
+          if (officeInserts.length > 0) {
+            const { error: officeError } = await supabase.from('collaborator_offices').insert(officeInserts);
+            if (officeError) console.error('Error inserting offices for collaborator', full_name, officeError);
+          }
+        } catch (e) {
+          console.error('Error handling offices for collaborator', full_name, e);
         }
       }
 
-      alert('Importación completada');
+      alert(`Importación completada. Insertados: ${inserted}, Actualizados: ${updated}`);
       setShowImport(false);
       setImportFile(null);
       loadCollaborators();
