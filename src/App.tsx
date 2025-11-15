@@ -5,6 +5,7 @@ import { Layout } from './components/Layout';
 import { DashboardModule } from './modules/DashboardModule';
 import { AdminModule } from './modules/AdminModule';
 import { EvaluationsModule } from './modules/EvaluationsModule';
+import EvaluationsManagement from './modules/admin/EvaluationsManagement';
 import { ResultsModule } from './modules/ResultsModule';
 
 function AppContent() {
@@ -29,7 +30,15 @@ function AppContent() {
   return (
     <Layout activeModule={activeModule} onModuleChange={setActiveModule}>
       {activeModule === 'dashboard' && <DashboardModule />}
-      {activeModule === 'evaluations' && <EvaluationsModule />}
+      {activeModule === 'evaluations' && (
+        // show admin/manager view when role is admin or manager-like
+        (user && (() => {
+          const lower = (user.role || '').toString().toLowerCase();
+          const managerKeywords = ['director', 'programa', 'lider', 'vaf', 'proceso', 'rectoria', 'vicerectoria', 'jefe'];
+          const isManager = managerKeywords.some(k => lower.includes(k));
+          return (user.role === 'admin' || isManager) ? <EvaluationsManagement /> : <EvaluationsModule />;
+        })())
+      )}
       {activeModule === 'results' && <ResultsModule />}
       {activeModule === 'admin' && user.role === 'admin' && <AdminModule />}
     </Layout>

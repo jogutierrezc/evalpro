@@ -18,6 +18,7 @@ export function EvaluationsModule() {
   const [selectedCandidate, setSelectedCandidate] = useState<Record<string, string>>({});
   const [evaluateOther, setEvaluateOther] = useState<Record<string, boolean>>({});
   const [personId, setPersonId] = useState<string | null>(null);
+  const [evaluationCandidatesByTemplate, setEvaluationCandidatesByTemplate] = useState<Record<string, User[]>>({});
 
   // After migrating colaboradores into users, prefer the users.id as the person identifier
   const getPersonIdForUser = async (u: any) => {
@@ -150,11 +151,34 @@ export function EvaluationsModule() {
 
         // load form_types to check role membership
         const { data: fts } = await supabase.from('form_types').select('*').in('key', allowedKeys);
-        const allowedForUser = (fts || []).filter((ft: any) => {
-          if (!user) return false;
-          // ft.roles is text[] containing role keys; compare against canonicalRole
-          return Array.isArray(ft.roles) ? ft.roles.includes(canonicalRole as any) : false;
-        }).map((ft: any) => ft.key);
+        // DEBUG: show role and allowed keys
+        console.debug('[Evaluations] canonicalRole=', canonicalRole, 'allowedKeys=', allowedKeys, 'fts_count=', (fts||[]).length);
+        // Also include form types that explicitly target this user's role via form_type_relations (evaluated_role_key)
+        let relationKeys: string[] = [];
+        if (canonicalRole) {
+          // ensure allowedKeys are canonical form_type keys; if not, try to resolve labels
+          const normalizedAllowed: string[] = [];
+          for (const k of allowedKeys) {
+            let kKey = k;
+            try {
+              const { data: ft1 } = await supabase.from('form_types').select('key').eq('key', k).limit(1);
+              if (!ft1 || ft1.length === 0) {
+                const { data: ft2 } = await supabase.from('form_types').select('key,label');
+                const matched = (ft2 || []).find((f: any) => (f.label || '').toString().toLowerCase() === (k || '').toString().toLowerCase());
+                if (matched) kKey = matched.key;
+              }
+            } catch (e) {
+              // ignore
+            }
+            normalizedAllowed.push(kKey);
+          }
+
+          const { data: rels } = await supabase.from('form_type_relations').select('form_type_key').in('form_type_key', normalizedAllowed).eq('evaluated_role_key', canonicalRole);
+          relationKeys = (rels || []).map((r: any) => r.form_type_key);
+        }
+
+        const allowedForUser = Array.from(new Set([...(fts || []).filter((ft: any) => Array.isArray(ft.roles) ? ft.roles.includes(canonicalRole as any) : false).map((ft: any) => ft.key), ...relationKeys]));
+        console.debug('[Evaluations] relationKeys=', relationKeys, 'allowedForUser=', allowedForUser);
 
         if (allowedForUser.length === 0) {
           setAvailableSoftTemplates([]);
@@ -196,9 +220,104 @@ export function EvaluationsModule() {
           // assign below once for unified flow
         }
 
-        // Load candidate users from same office so any user can evaluate colleagues if needed
-        if (user) {
+        // Load evaluation candidates per template based on form_type_relations where user is evaluator
+        if (user && canonicalRole) {
           try {
+            console.debug('[EvaluationsModule] Loading relation-based candidates. User role:', user.role, 'Canonical role:', canonicalRole);
+            
+            // find all form_type_keys where user's role is evaluator
+            const { data: evaluatorRels } = await supabase
+              .from('form_type_relations')
+              .select('form_type_key,evaluated_role_key')
+              .eq('evaluator_role_key', canonicalRole);
+
+            console.debug('[EvaluationsModule] Evaluator relations found:', evaluatorRels);
+
+            if (evaluatorRels && evaluatorRels.length > 0) {
+              // group by form_type_key -> evaluated_role_keys
+              const relsByFormType: Record<string, string[]> = {};
+              evaluatorRels.forEach((rel: any) => {
+                if (!relsByFormType[rel.form_type_key]) relsByFormType[rel.form_type_key] = [];
+                relsByFormType[rel.form_type_key].push(rel.evaluated_role_key);
+              });
+
+              // Helper to filter candidates by office and campus with exceptions
+              const filterByOfficeAndCampus = async (cands: any[], roleKey: string): Promise<any[]> => {
+                if (!user) return [];
+                const evaluatorId = (user as any).id;
+                const evaluatorCampus = (user as any).campus || '';
+
+                // Load office mappings for evaluator and candidates in one query
+                const candidateIds = cands.map((c) => c.id);
+                const { data: officeLinks } = await supabase
+                  .from('collaborator_offices')
+                  .select('collaborator_id,office_id')
+                  .in('collaborator_id', [evaluatorId, ...candidateIds]);
+
+                const officesByUser: Record<string, Set<string>> = {};
+                (officeLinks || []).forEach((l: any) => {
+                  if (!officesByUser[l.collaborator_id]) officesByUser[l.collaborator_id] = new Set();
+                  officesByUser[l.collaborator_id].add(l.office_id);
+                });
+
+                const evalOffices = officesByUser[evaluatorId] || new Set<string>();
+
+                // Map role key -> label for exceptions
+                const { data: rolesRef } = await supabase.from('roles').select('key,label');
+                const roleLabel = (rolesRef || []).find((r: any) => r.key === roleKey)?.label || roleKey;
+                const lowerKey = (roleKey || '').toString().toLowerCase();
+                const lowerLabel = (roleLabel || '').toString().toLowerCase();
+
+                const isLiderVAF = lowerKey.includes('coordinador general de la vaf') || lowerLabel.includes('líder vaf') || lowerLabel.includes('lider vaf');
+                const isRectoria = lowerKey.includes('rectoria') || lowerLabel.includes('rectoria');
+                const isVicerrectoria = lowerKey.includes('vicerrectoria') || lowerLabel.includes('vicerrectoria');
+
+                return cands.filter((cand) => {
+                  const candCampus = (cand.campus || '').toString();
+                  const candOffices = officesByUser[cand.id] || new Set<string>();
+                  const shareOffice = Array.from(candOffices).some((o) => evalOffices.has(o));
+                  const campusMatches = !evaluatorCampus || evaluatorCampus === 'Todas' || evaluatorCampus === '' ? true : candCampus === evaluatorCampus;
+
+                  if (isLiderVAF) {
+                    // Lider VAF: ignore campus, require shared office per base rule
+                    return shareOffice;
+                  }
+                  if (isRectoria || isVicerrectoria) {
+                    // Rectoría/Vicerrectoría: constrain by campus, ignore office overlap
+                    return campusMatches;
+                  }
+                  // Others: require both same office and same campus
+                  return shareOffice && campusMatches;
+                });
+              };
+
+              // for each template in tplList, resolve candidates
+              const candidatesMap: Record<string, User[]> = {};
+              for (const tpl of tplList) {
+                const evaluatedRoles = relsByFormType[tpl.type] || [];
+                console.debug('[EvaluationsModule] Template:', tpl.name, 'type:', tpl.type, 'evaluatedRoles:', evaluatedRoles);
+                
+                if (evaluatedRoles.length === 0) {
+                  candidatesMap[tpl.id] = [];
+                  continue;
+                }
+                // load all users whose canonical role matches any of evaluatedRoles
+                const { data: rolesData } = await supabase.from('roles').select('*');
+                const roleKeyToLabel: Record<string, string> = {};
+                (rolesData || []).forEach((r: any) => { roleKeyToLabel[r.key] = r.label; });
+
+                const evaluatedLabels = evaluatedRoles.map((k) => roleKeyToLabel[k] || k);
+                const { data: candidateUsers } = await supabase.from('users').select('*').in('role', [...evaluatedRoles, ...evaluatedLabels]);
+                console.debug('[EvaluationsModule] Found', (candidateUsers || []).length, 'candidate users (pre-filter) for template', tpl.name);
+                const filtered = await filterByOfficeAndCampus((candidateUsers as any) || [], canonicalRole);
+                console.debug('[EvaluationsModule] Filtered candidates (by office/campus):', filtered.length);
+                candidatesMap[tpl.id] = filtered;
+              }
+              setEvaluationCandidatesByTemplate(candidatesMap);
+              console.debug('[EvaluationsModule] Final candidatesMap:', candidatesMap);
+            }
+
+            // Also load same-office candidates for manager flows
             const { data: candidates } = await supabase
               .from('users')
               .select('*')
@@ -207,6 +326,7 @@ export function EvaluationsModule() {
           } catch (err) {
             console.error('Error loading candidates', err);
             setManagerCandidates([]);
+            setEvaluationCandidatesByTemplate({});
           }
         }
 
@@ -244,7 +364,14 @@ export function EvaluationsModule() {
         // Load all form types and pick those that include the user's role
         const { data: allFormTypes, error: ftErr } = await supabase.from('form_types').select('*');
         if (ftErr) throw ftErr;
-        const allowedKeysForUser = (allFormTypes || []).filter((ft: any) => Array.isArray(ft.roles) ? ft.roles.includes(canonicalRole) : false).map((ft: any) => ft.key);
+        // include types that include user's role OR that target the user's role via relations
+        let relKeysAll: string[] = [];
+        if (user) {
+          const canonical = canonicalRole || (user.role as string);
+          const { data: relsAll } = await supabase.from('form_type_relations').select('form_type_key').eq('evaluated_role_key', canonical);
+          relKeysAll = (relsAll || []).map((r: any) => r.form_type_key);
+        }
+        const allowedKeysForUser = Array.from(new Set([...(allFormTypes || []).filter((ft: any) => Array.isArray(ft.roles) ? ft.roles.includes(canonicalRole) : false).map((ft: any) => ft.key), ...relKeysAll]));
 
         if (allowedKeysForUser.length === 0) {
           setAvailableSoftTemplates([]);
@@ -482,9 +609,14 @@ export function EvaluationsModule() {
                           <>
                             <select className="border rounded p-2 text-sm" value={selectedCandidate[template.id] || ''} onChange={(e) => setSelectedCandidate({ ...selectedCandidate, [template.id]: e.target.value })}>
                               <option value="">Selecciona colaborador</option>
-                              {managerCandidates.map((c) => (
-                                <option key={c.id} value={c.id}>{c.full_name} ({c.identification})</option>
-                              ))}
+                              {(() => {
+                                const relationCandidates = evaluationCandidatesByTemplate[template.id] || [];
+                                const candidateList = relationCandidates.length > 0 ? relationCandidates : managerCandidates;
+                                console.debug('[EvaluationsModule UI] Template:', template.name, 'relationCandidates:', relationCandidates.length, 'managerCandidates:', managerCandidates.length, 'using:', candidateList.length);
+                                return candidateList.map((c) => (
+                                  <option key={c.id} value={c.id}>{c.full_name} ({c.role || c.identification})</option>
+                                ));
+                              })()}
                             </select>
                             <button
                               onClick={() => handleTakeForEvaluated(template, selectedCandidate[template.id])}

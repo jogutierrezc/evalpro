@@ -9,7 +9,7 @@ export default function FormTypesManagement() {
   const [editing, setEditing] = useState<FormType | null>(null);
 
   const [availableRoles, setAvailableRoles] = useState<string[]>([]);
-  const [form, setForm] = useState<{ key: string; label: string; description: string; roles: string[] }>({ key: '', label: '', description: '', roles: [] });
+  const [form, setForm] = useState<{ key: string; label: string; description: string; roles: string[]; relations?: { evaluator: string; evaluated: string }[] }>({ key: '', label: '', description: '', roles: [], relations: [] });
 
   useEffect(() => { loadTypes(); }, []);
 
@@ -59,14 +59,26 @@ export default function FormTypesManagement() {
 
   function openCreate() {
     setEditing(null);
-    setForm({ key: '', label: '', description: '', roles: [] });
+    setForm({ key: '', label: '', description: '', roles: [], relations: [] });
     setShowForm(true);
   }
 
   function openEdit(t: FormType) {
     setEditing(t);
-    setForm({ key: t.key, label: t.label, description: t.description || '', roles: (t.roles || []) });
+    setForm({ key: t.key, label: t.label, description: t.description || '', roles: (t.roles || []), relations: [] });
     setShowForm(true);
+    // load relations for this form type
+    (async () => {
+      try {
+        const { data } = await supabase.from('form_type_relations').select('evaluator_role_key,evaluated_role_key').eq('form_type_key', t.key);
+        if (data) {
+          const relations = (data || []).map((r: any) => ({ evaluator: r.evaluator_role_key, evaluated: r.evaluated_role_key }));
+          setForm((f) => ({ ...f, relations }));
+        }
+      } catch (err) {
+        console.warn('Could not load form type relations', err);
+      }
+    })();
   }
 
   async function handleSave() {
@@ -76,9 +88,33 @@ export default function FormTypesManagement() {
       if (editing) {
         const { error } = await supabase.from('form_types').update({ label: form.label, description: form.description, roles: rolesArr }).eq('id', editing.id);
         if (error) throw error;
+        // update relations: delete existing and insert new
+        try {
+          await supabase.from('form_type_relations').delete().eq('form_type_key', form.key);
+          const inserts = (form.relations || []).map(r => ({ form_type_key: form.key, evaluator_role_key: r.evaluator, evaluated_role_key: r.evaluated }));
+          if (inserts.length > 0) {
+            const { error: insErr } = await supabase.from('form_type_relations').insert(inserts);
+            if (insErr) throw insErr;
+          }
+        } catch (rerr) {
+          console.error('Error saving relations', rerr);
+          // proceed, but alert to the admin
+          alert('Tipo guardado, pero no se pudieron actualizar las relaciones de evaluación.');
+        }
       } else {
         const { error } = await supabase.from('form_types').insert([{ key: form.key, label: form.label, description: form.description, roles: rolesArr }]);
         if (error) throw error;
+        // insert relations for newly created type
+        try {
+          const inserts = (form.relations || []).map(r => ({ form_type_key: form.key, evaluator_role_key: r.evaluator, evaluated_role_key: r.evaluated }));
+          if (inserts.length > 0) {
+            const { error: insErr } = await supabase.from('form_type_relations').insert(inserts);
+            if (insErr) throw insErr;
+          }
+        } catch (rerr) {
+          console.error('Error inserting relations', rerr);
+          alert('Tipo creado, pero no se pudieron crear las relaciones de evaluación.');
+        }
       }
       setShowForm(false);
       loadTypes();
@@ -131,8 +167,8 @@ export default function FormTypesManagement() {
       </div>
 
       {showForm && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center">
-          <div className="bg-white p-6 rounded w-full max-w-lg">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4">
+          <div className="bg-white p-6 rounded w-full max-w-4xl max-h-[85vh] overflow-y-auto shadow-xl">
             <h3 className="text-lg font-semibold mb-3">{editing ? 'Editar' : 'Crear'} Tipo</h3>
             <div className="grid gap-3">
               {!editing && (
@@ -160,16 +196,18 @@ export default function FormTypesManagement() {
                       }} />
                       <span className="text-sm">Usar todos los roles</span>
                     </label>
-                    <div className="grid grid-cols-2 gap-2 mt-2">
-                      {availableRoles.map((r) => (
-                        <label key={r} className="inline-flex items-center gap-2">
-                          <input type="checkbox" checked={form.roles.includes(r)} onChange={(e) => {
-                            if (e.target.checked) setForm({ ...form, roles: Array.from(new Set([...form.roles, r])) });
-                            else setForm({ ...form, roles: form.roles.filter(x => x !== r) });
-                          }} />
-                          <span className="text-sm">{roleLabelMap[r] ? `${roleLabelMap[r]} (${r})` : r}</span>
-                        </label>
-                      ))}
+                    <div className="mt-2 max-h-64 overflow-auto border rounded p-2">
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                        {availableRoles.map((r) => (
+                          <label key={r} className="inline-flex items-center gap-2">
+                            <input type="checkbox" checked={form.roles.includes(r)} onChange={(e) => {
+                              if (e.target.checked) setForm({ ...form, roles: Array.from(new Set([...form.roles, r])) });
+                              else setForm({ ...form, roles: form.roles.filter(x => x !== r) });
+                            }} />
+                            <span className="text-sm">{roleLabelMap[r] ? `${roleLabelMap[r]} (${r})` : r}</span>
+                          </label>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 ) : (
@@ -178,6 +216,31 @@ export default function FormTypesManagement() {
                     <input className="w-full border p-2 rounded" value={(form.roles || []).join(',')} onChange={(e) => setForm({ ...form, roles: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })} placeholder="colaborador_vaf,jefe_vaf,office_manager" />
                   </div>
                 )}
+              </div>
+              <div>
+                <label className="block text-sm mb-2">Relaciones (Quién evalúa a quién)</label>
+                <div className="space-y-2">
+                  {(form.relations || []).map((rel, idx) => (
+                    <div key={idx} className="flex gap-2 items-center">
+                      <select className="border p-2 rounded w-1/2" value={rel.evaluator} onChange={(e) => {
+                        const copy = (form.relations || []).slice(); copy[idx].evaluator = e.target.value; setForm({ ...form, relations: copy });
+                      }}>
+                        <option value="">Selecciona evaluador</option>
+                        {availableRoles.map(r => <option key={r} value={r}>{roleLabelMap[r] ? `${roleLabelMap[r]} (${r})` : r}</option>)}
+                      </select>
+                      <select className="border p-2 rounded w-1/2" value={rel.evaluated} onChange={(e) => {
+                        const copy = (form.relations || []).slice(); copy[idx].evaluated = e.target.value; setForm({ ...form, relations: copy });
+                      }}>
+                        <option value="">Selecciona evaluado</option>
+                        {availableRoles.map(r => <option key={r} value={r}>{roleLabelMap[r] ? `${roleLabelMap[r]} (${r})` : r}</option>)}
+                      </select>
+                    </div>
+                  ))}
+                  <div className="flex gap-2 mt-2">
+                    <button className="px-3 py-1 rounded border" onClick={() => setForm({ ...form, relations: [...(form.relations || []), { evaluator: '', evaluated: '' }] })}>Agregar relación</button>
+                    <button className="px-3 py-1 rounded border" onClick={() => setForm({ ...form, relations: (form.relations || []).slice(0, -1) })}>Eliminar última</button>
+                  </div>
+                </div>
               </div>
               <div className="flex justify-end gap-2 mt-4">
                 <button onClick={() => setShowForm(false)} className="px-3 py-2 rounded border">Cancelar</button>

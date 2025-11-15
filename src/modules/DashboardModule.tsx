@@ -19,59 +19,139 @@ export function DashboardModule() {
   const [managerCandidatesMap, setManagerCandidatesMap] = useState<Record<string, User[]>>({});
   const [selectedCandidate, setSelectedCandidate] = useState<Record<string, string>>({});
   const [selectedEvaluation, setSelectedEvaluation] = useState<Evaluation | null>(null);
+  const [userEvaluationsMap, setUserEvaluationsMap] = useState<Record<string, Evaluation>>({});
 
   useEffect(() => {
     loadRoles();
     loadStats();
-    // pre-load candidates for manager scenarios when templates are loaded
+    loadUserEvaluations();
   }, [user]);
 
+  const loadUserEvaluations = async () => {
+    if (!user?.id) return;
+    try {
+      // Load all evaluations where user is the evaluator
+      const { data: evaluations } = await supabase
+        .from('evaluations')
+        .select('*')
+        .eq('evaluator_id', user.id);
+
+      // Create map: template_id -> evaluation (for self-evaluations)
+      // AND track which users have been evaluated per template
+      const map: Record<string, Evaluation> = {};
+      const evaluatedUsersMap: Record<string, Set<string>> = {};
+      
+      (evaluations || []).forEach((e: any) => {
+        // Map for self-evaluations (where evaluator = evaluated)
+        if (e.evaluator_id === e.evaluated_id) {
+          map[e.template_id] = e as Evaluation;
+        }
+        
+        // Track all evaluated users per template
+        if (!evaluatedUsersMap[e.template_id]) {
+          evaluatedUsersMap[e.template_id] = new Set();
+        }
+        evaluatedUsersMap[e.template_id].add(e.evaluated_id);
+      });
+
+      setUserEvaluationsMap(map);
+      
+      // Store evaluated users for filtering candidates
+      (window as any).__evaluatedUsersMap = evaluatedUsersMap;
+      
+      console.debug('[Dashboard] User evaluations map:', map);
+      console.debug('[Dashboard] Evaluated users map:', evaluatedUsersMap);
+    } catch (err) {
+      console.warn('[Dashboard] Error loading user evaluations:', err);
+    }
+  };
+
   useEffect(() => {
-    // when availableTemplates change, for manager users fetch candidate users for templates that evaluate specific roles
+    // Load evaluation candidates based on form_type_relations
     (async () => {
       if (!availableTemplates || availableTemplates.length === 0) return;
-      const userRoleStr = (user?.role || '').toString().toLowerCase();
-      const managerKeywords = ['director', 'programa', 'lider', 'vaf', 'proceso', 'rectoria', 'vicerectoria'];
-      const isManagerRole = managerKeywords.some((k) => userRoleStr.includes(k));
-      if (!isManagerRole) return;
+      
+      // Resolve canonical roleKey for current user
+      let roleKey = (user?.role || '') as string;
+      try {
+        const { data: r1 } = await supabase.from('roles').select('key,label').eq('key', roleKey).limit(1);
+        if (!r1 || r1.length === 0) {
+          const { data: r2 } = await supabase.from('roles').select('key,label');
+          const found = (r2 || []).find((rr: any) => (rr.label || '').toString().toLowerCase() === (user?.role || '').toString().toLowerCase());
+          if (found) roleKey = found.key;
+        }
+      } catch (err) {
+        console.warn('[Dashboard] Could not resolve roleKey from roles table', err);
+      }
 
-      const targetLabels = ['colaborador vaf', 'colaboradores', 'coordinadores académicos'];
+      console.debug('[Dashboard] Loading candidates for user role:', roleKey);
+
       const map: Record<string, User[]> = {};
 
       for (const tpl of availableTemplates) {
         try {
-          // resolve form_type to know which roles the template evaluates
-          const { data: ft } = await supabase.from('form_types').select('key,roles,label').eq('key', tpl.type).limit(1);
-          let rolesForTpl: string[] = [];
-          if (ft && ft.length > 0) {
-            rolesForTpl = (ft[0] as any).roles || [];
-          } else {
-            // tolerant: try by label
-            const { data: ft2 } = await supabase.from('form_types').select('key,roles,label');
-            const matched = (ft2 || []).find((f: any) => (f.label || '').toString().toLowerCase() === (tpl.type || '').toString().toLowerCase());
-            rolesForTpl = matched ? (matched.roles || []) : [];
+          // Resolve template.type to canonical form_type key
+          let tplTypeKey = tpl.type as string;
+          try {
+            const { data: ft1 } = await supabase.from('form_types').select('key').eq('key', tplTypeKey).limit(1);
+            if (!ft1 || ft1.length === 0) {
+              const { data: ft2 } = await supabase.from('form_types').select('key,label');
+              const matched = (ft2 || []).find((f: any) => (f.label || '').toString().toLowerCase() === (tpl.type || '').toString().toLowerCase());
+              if (matched) tplTypeKey = matched.key;
+            }
+          } catch (e) {
+            console.debug('[Dashboard] Error resolving tpl.type to form_type key', e);
           }
 
-          const targetMatch = rolesForTpl.some((r: string) => targetLabels.includes((r || '').toString().toLowerCase()) || ['colaborador_vaf','colaboradores','coordinadores_academicos'].includes(r));
-          if (!targetMatch) continue;
+          console.debug('[Dashboard] Template:', tpl.name, 'type:', tplTypeKey);
 
-          // fetch users that match the target roles
-          const { data: candidates } = await supabase.from('users').select('*').in('role', ['colaborador_vaf','colaboradores','coordinadores_academicos']);
+          // Load relations where user is evaluator
+          const { data: rels } = await supabase
+            .from('form_type_relations')
+            .select('evaluated_role_key')
+            .eq('form_type_key', tplTypeKey)
+            .eq('evaluator_role_key', roleKey);
+
+          console.debug('[Dashboard] Relations found for template:', tpl.name, 'relations:', rels);
+
+          if (!rels || rels.length === 0) {
+            map[tpl.id] = [];
+            continue;
+          }
+
+          const evaluatedRoles = rels.map((r: any) => r.evaluated_role_key);
+
+          // Load all roles to map keys to labels
+          const { data: rolesData } = await supabase.from('roles').select('*');
+          const roleKeyToLabel: Record<string, string> = {};
+          (rolesData || []).forEach((r: any) => { roleKeyToLabel[r.key] = r.label; });
+
+          // Load users with matching roles (try both keys and labels)
+          const evaluatedLabels = evaluatedRoles.map((k) => roleKeyToLabel[k] || k);
+          const { data: candidates } = await supabase
+            .from('users')
+            .select('*')
+            .in('role', [...evaluatedRoles, ...evaluatedLabels]);
+
+          console.debug('[Dashboard] Candidates for template:', tpl.name, 'count:', (candidates || []).length);
+          
           map[tpl.id] = (candidates as User[]) || [];
         } catch (err) {
-          console.warn('Error loading candidates for template', tpl.id, err);
+          console.warn('[Dashboard] Error loading candidates for template', tpl.id, err);
           map[tpl.id] = [];
         }
       }
 
+      console.debug('[Dashboard] Final candidatesMap:', map);
       setManagerCandidatesMap(map);
     })();
   }, [availableTemplates, user]);
 
   const handleCloseForm = () => {
     setSelectedEvaluation(null);
-    // refresh stats to reflect any new evaluation
+    // refresh stats and evaluations to reflect any new evaluation
     loadStats();
+    loadUserEvaluations();
   };
 
   const loadRoles = async () => {
@@ -155,21 +235,34 @@ export function DashboardModule() {
 
           if (allowedFormTypeKeys.length > 0) {
             const { data: fts } = await supabase.from('form_types').select('key,roles').in('key', allowedFormTypeKeys);
+            console.debug('[Dashboard] roleKey=', roleKey, 'allowedFormTypeKeys=', allowedFormTypeKeys, 'fts_count=', (fts||[]).length);
             const allowedForRole = (fts || []).filter((ft: any) => Array.isArray(ft.roles) ? ft.roles.includes(roleKey) : false).map((ft: any) => ft.key);
 
-              if (allowedForRole.length > 0) {
-                const { data: templates, error: tplErr } = await supabase
-                  .from('evaluation_templates')
-                  .select('*')
-                  .eq('is_active', true)
-                  .in('type', allowedForRole)
-                  .order('created_at', { ascending: false });
-                if (tplErr) throw tplErr;
-                setAvailableTemplates((templates as EvaluationTemplate[]) || []);
-                availableCount = (templates || []).length || 0;
-              } else {
-                setAvailableTemplates([]);
-              }
+            // Try explicit relations too
+            let relAllowed: string[] = [];
+            try {
+              const { data: rels } = await supabase.from('form_type_relations').select('form_type_key').in('form_type_key', allowedFormTypeKeys).eq('evaluator_role_key', roleKey);
+              relAllowed = (rels || []).map((r: any) => r.form_type_key);
+            } catch (e) {
+              console.debug('[Dashboard] no relations table or query failed', e);
+            }
+
+            const finalAllowed = Array.from(new Set([...allowedForRole, ...relAllowed]));
+            console.debug('[Dashboard] allowedForRole=', allowedForRole, 'relAllowed=', relAllowed, 'finalAllowed=', finalAllowed);
+
+            if (finalAllowed.length > 0) {
+              const { data: templates, error: tplErr } = await supabase
+                .from('evaluation_templates')
+                .select('*')
+                .eq('is_active', true)
+                .in('type', finalAllowed)
+                .order('created_at', { ascending: false });
+              if (tplErr) throw tplErr;
+              setAvailableTemplates((templates as EvaluationTemplate[]) || []);
+              availableCount = (templates || []).length || 0;
+            } else {
+              setAvailableTemplates([]);
+            }
           }
         } catch (err) {
           console.warn('Error computing available templates for dashboard', err);
@@ -296,73 +389,145 @@ export function DashboardModule() {
         ) : (
           <div className="space-y-3">
             {availableTemplates.map((tpl) => {
-              // determine if current user is a manager-type for special behavior
-              const userRoleStr = (user?.role || '').toString().toLowerCase();
-              const managerKeywords = ['director', 'programa', 'lider', 'vaf', 'proceso', 'rectoria', 'vicerectoria'];
-              const isManagerRole = managerKeywords.some((k) => userRoleStr.includes(k));
-
-              const targetEvaluatedLabels = ['colaborador vaf', 'colaboradores', 'coordinadores académicos'];
-
               const candidates = managerCandidatesMap[tpl.id] || [];
-
-              const showCandidateSelect = isManagerRole && candidates.length > 0;
+              const showCandidateSelect = candidates.length > 0;
+              
+              // Get evaluated users for this template
+              const evaluatedUsersMap = (window as any).__evaluatedUsersMap || {};
+              const evaluatedUsers = evaluatedUsersMap[tpl.id] || new Set();
+              
+              // Filter out already evaluated candidates
+              const availableCandidates = candidates.filter(c => !evaluatedUsers.has(c.id));
+              
+              const existingEvaluation = userEvaluationsMap[tpl.id];
+              const isCompleted = existingEvaluation && existingEvaluation.status === 'completed';
+              const isInProgress = existingEvaluation && existingEvaluation.status !== 'completed';
 
               return (
-                <div key={tpl.id} className="flex items-center justify-between border rounded p-4">
-                  <div>
-                    <div className="text-sm text-gray-600">{tpl.name}</div>
-                    <div className="text-xs text-gray-500">{tpl.description}</div>
+                <div key={tpl.id} className="border rounded p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <div className="text-sm font-semibold text-gray-800">{tpl.name}</div>
+                      <div className="text-xs text-gray-500">{tpl.description}</div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {/* Self-evaluation button */}
+                      {isCompleted ? (
+                        <button
+                          disabled
+                          className="px-4 py-2 bg-gray-400 text-white rounded cursor-not-allowed text-sm"
+                        >
+                          Ya realizado
+                        </button>
+                      ) : isInProgress ? (
+                        <button
+                          onClick={() => setSelectedEvaluation(existingEvaluation)}
+                          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+                        >
+                          Continuar
+                        </button>
+                      ) : (
+                        <button
+                          onClick={async () => {
+                            try {
+                              const evaluatorId = user?.id;
+                              if (!evaluatorId) throw new Error('No user');
+
+                              const { data, error } = await supabase
+                                .from('evaluations')
+                                .insert([
+                                  {
+                                    template_id: tpl.id,
+                                    evaluator_id: evaluatorId,
+                                    evaluated_id: evaluatorId, // Self-evaluation
+                                    status: 'pending',
+                                  },
+                                ])
+                                .select('*')
+                                .single();
+
+                              if (error) throw error;
+
+                              setSelectedEvaluation(data as Evaluation);
+                              loadUserEvaluations();
+                            } catch (err) {
+                              console.error('Error creating evaluation from dashboard', err);
+                              alert('No se pudo iniciar la evaluación');
+                            }
+                          }}
+                          className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 text-sm"
+                        >
+                          Iniciar Examen
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    {showCandidateSelect && (
-                      <select
-                        className="border rounded p-2 text-sm"
-                        value={selectedCandidate[tpl.id] || ''}
-                        onChange={(e) => setSelectedCandidate({ ...selectedCandidate, [tpl.id]: e.target.value })}
-                      >
-                        <option value="">Selecciona colaborador</option>
-                        {candidates.map((c) => (
-                          <option key={c.id} value={c.id}>{c.full_name} ({c.identification})</option>
-                        ))}
-                      </select>
-                    )}
-                    <button
-                      onClick={async () => {
-                        try {
-                          const evaluatorId = user?.id;
-                          if (!evaluatorId) throw new Error('No user');
 
-                          // if manager selecting another evaluated
-                          const evaluatedId = showCandidateSelect ? (selectedCandidate[tpl.id] || '') : evaluatorId;
-                          if (showCandidateSelect && !evaluatedId) { alert('Selecciona un colaborador'); return; }
+                  {/* Evaluate others section - only show if there are candidates */}
+                  {showCandidateSelect && availableCandidates.length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-gray-200">
+                      <div className="flex items-center gap-3">
+                        <label className="text-xs text-gray-600 font-medium">Evaluar a otro colaborador:</label>
+                        <select
+                          className="border rounded p-2 text-sm flex-1"
+                          value={selectedCandidate[tpl.id] || ''}
+                          onChange={(e) => setSelectedCandidate({ ...selectedCandidate, [tpl.id]: e.target.value })}
+                        >
+                          <option value="">Selecciona colaborador</option>
+                          {availableCandidates.map((c) => (
+                            <option key={c.id} value={c.id}>{c.full_name} ({c.role || c.identification})</option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={async () => {
+                            try {
+                              const evaluatorId = user?.id;
+                              if (!evaluatorId) throw new Error('No user');
 
-                          const { data, error } = await supabase
-                            .from('evaluations')
-                            .insert([
-                              {
-                                template_id: tpl.id,
-                                evaluator_id: evaluatorId,
-                                evaluated_id: evaluatedId,
-                                status: 'pending',
-                              },
-                            ])
-                            .select('*')
-                            .single();
+                              const evaluatedId = selectedCandidate[tpl.id];
+                              if (!evaluatedId) { 
+                                alert('Selecciona un colaborador'); 
+                                return; 
+                              }
 
-                          if (error) throw error;
+                              const { data, error } = await supabase
+                                .from('evaluations')
+                                .insert([
+                                  {
+                                    template_id: tpl.id,
+                                    evaluator_id: evaluatorId,
+                                    evaluated_id: evaluatedId,
+                                    status: 'pending',
+                                  },
+                                ])
+                                .select('*')
+                                .single();
 
-                          // open form immediately
-                          setSelectedEvaluation(data as Evaluation);
-                        } catch (err) {
-                          console.error('Error creating evaluation from dashboard', err);
-                          alert('No se pudo iniciar la evaluación');
-                        }
-                      }}
-                      className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700"
-                    >
-                      Iniciar Examen
-                    </button>
-                  </div>
+                              if (error) throw error;
+
+                              setSelectedEvaluation(data as Evaluation);
+                              loadUserEvaluations();
+                            } catch (err) {
+                              console.error('Error creating evaluation from dashboard', err);
+                              alert('No se pudo iniciar la evaluación');
+                            }
+                          }}
+                          className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm whitespace-nowrap"
+                        >
+                          Crear Evaluación
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Show message if all candidates have been evaluated */}
+                  {showCandidateSelect && candidates.length > 0 && availableCandidates.length === 0 && (
+                    <div className="mt-3 pt-3 border-t border-gray-200">
+                      <div className="text-xs text-gray-500 italic">
+                        Todos los colaboradores disponibles ya han sido evaluados
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}

@@ -22,6 +22,10 @@ export function UsersManagement() {
     manager_id: '',
     campus: '',
   });
+  const [officeQuery, setOfficeQuery] = useState('');
+  const [selectedOfficeId, setSelectedOfficeId] = useState<string>('');
+  const [managerQuery, setManagerQuery] = useState('');
+  const [selectedManagerId, setSelectedManagerId] = useState<string>('');
 
   useEffect(() => {
     loadData();
@@ -720,21 +724,74 @@ export function UsersManagement() {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Oficinas</label>
-              <select
-                multiple
-                value={formData.office_ids}
-                onChange={(e) => {
-                  const vals = Array.from((e.target as HTMLSelectElement).selectedOptions).map((o) => o.value);
-                  setFormData({ ...formData, office_ids: vals });
-                }}
-                className="w-full h-36 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                {offices.map((office) => (
-                  <option key={office.id} value={office.id}>
-                    {office.name}
-                  </option>
-                ))}
-              </select>
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type="text"
+                      value={officeQuery}
+                      onChange={(e) => setOfficeQuery(e.target.value)}
+                      placeholder="Buscar oficina..."
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                    {officeQuery && (
+                      <div className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow max-h-48 overflow-auto">
+                        {offices
+                          .filter((o) => o.name.toLowerCase().includes(officeQuery.toLowerCase()))
+                          .slice(0, 20)
+                          .map((o) => (
+                            <button
+                              type="button"
+                              key={o.id}
+                              onClick={() => { setSelectedOfficeId(o.id); setOfficeQuery(o.name); }}
+                              className={`w-full text-left px-3 py-2 hover:bg-gray-50 ${selectedOfficeId === o.id ? 'bg-blue-50' : ''}`}
+                            >
+                              {o.name}
+                            </button>
+                          ))}
+                        {offices.filter((o) => o.name.toLowerCase().includes(officeQuery.toLowerCase())).length === 0 && (
+                          <div className="px-3 py-2 text-sm text-gray-500">Sin resultados</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!selectedOfficeId) return;
+                      if (!formData.office_ids.includes(selectedOfficeId)) {
+                        setFormData({ ...formData, office_ids: [...formData.office_ids, selectedOfficeId] });
+                      }
+                      setOfficeQuery('');
+                      setSelectedOfficeId('');
+                    }}
+                    className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  >
+                    Agregar
+                  </button>
+                </div>
+                {formData.office_ids.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {formData.office_ids.map((id) => {
+                      const o = offices.find((x) => x.id === id);
+                      if (!o) return null;
+                      return (
+                        <span key={id} className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 text-blue-800 text-xs">
+                          {o.name}
+                          <button
+                            type="button"
+                            onClick={() => setFormData({ ...formData, office_ids: formData.office_ids.filter((x) => x !== id) })}
+                            className="hover:text-red-600"
+                            aria-label="Quitar"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Campus</label>
@@ -755,29 +812,61 @@ export function UsersManagement() {
             {roleRequiresManager(formData.role as string) && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Jefe Inmediato</label>
-                <select
-                  value={formData.manager_id}
-                  onChange={(e) => setFormData({ ...formData, manager_id: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="">Sin asignar</option>
-                  {managerCandidates && managerCandidates.length > 0 ? (
-                    managerCandidates.map((manager) => (
-                      <option key={manager.id} value={manager.id}>
-                        {manager.full_name}
-                      </option>
-                    ))
-                  ) : (
-                    <>
-                      <option disabled value="">No hay jefes disponibles</option>
-                      <optgroup label="Otros jefes">
-                        {getFallbackManagerCandidates().map((m) => (
-                          <option key={`fb-${m.id}`} value={m.id}>{m.full_name} ({m.role})</option>
-                        ))}
-                      </optgroup>
-                    </>
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <input
+                        type="text"
+                        value={managerQuery}
+                        onChange={(e) => setManagerQuery(e.target.value)}
+                        placeholder="Buscar jefe..."
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                      {managerQuery && (
+                        <div className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow max-h-48 overflow-auto">
+                          {(managerCandidates.length > 0 ? managerCandidates : getFallbackManagerCandidates())
+                            .filter((m) => m.full_name.toLowerCase().includes(managerQuery.toLowerCase()))
+                            .slice(0, 20)
+                            .map((m) => (
+                              <button
+                                type="button"
+                                key={m.id}
+                                onClick={() => { setSelectedManagerId(m.id); setManagerQuery(m.full_name); }}
+                                className={`w-full text-left px-3 py-2 hover:bg-gray-50 ${selectedManagerId === m.id ? 'bg-blue-50' : ''}`}
+                              >
+                                {m.full_name}
+                              </button>
+                            ))}
+                          {(managerCandidates.length > 0 ? managerCandidates : getFallbackManagerCandidates()).filter((m) => m.full_name.toLowerCase().includes(managerQuery.toLowerCase())).length === 0 && (
+                            <div className="px-3 py-2 text-sm text-gray-500">Sin resultados</div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormData({ ...formData, manager_id: selectedManagerId });
+                        if (selectedManagerId) setManagerQuery((managerCandidates.find((m) => m.id === selectedManagerId) || getFallbackManagerCandidates().find((m) => m.id === selectedManagerId) || { full_name: '' } as any).full_name);
+                      }}
+                      className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    >
+                      Seleccionar
+                    </button>
+                  </div>
+                  {formData.manager_id && (
+                    <div className="text-sm text-gray-700">
+                      Seleccionado: <span className="font-medium">{(managerCandidates.find((m) => m.id === formData.manager_id) || getFallbackManagerCandidates().find((m) => m.id === formData.manager_id) || { full_name: '-' } as any).full_name}</span>
+                      <button
+                        type="button"
+                        onClick={() => { setFormData({ ...formData, manager_id: '' }); setSelectedManagerId(''); setManagerQuery(''); }}
+                        className="ml-2 text-red-600 hover:underline"
+                      >
+                        Quitar
+                      </button>
+                    </div>
                   )}
-                </select>
+                </div>
               </div>
             )}
           </div>

@@ -6,8 +6,9 @@ import { TemplatesManagement } from './admin/TemplatesManagement';
 import FormTypesManagement from './admin/FormTypesManagement';
 import RolesManagement from './admin/RolesManagement';
 import EvaluationPeriodsManagement from './admin/EvaluationPeriodsManagement';
+import EvaluationsManagement from './admin/EvaluationsManagement';
 
-type AdminTab = 'offices' | 'users' | 'templates' | 'form_types' | 'roles' | 'periods';
+type AdminTab = 'offices' | 'users' | 'evaluations' | 'templates' | 'form_types' | 'roles' | 'periods';
 
 export function AdminModule() {
   const [activeTab, setActiveTab] = useState<AdminTab>('offices');
@@ -15,6 +16,7 @@ export function AdminModule() {
   const tabs = [
     { id: 'offices' as AdminTab, label: 'Oficinas', icon: Building2 },
     { id: 'users' as AdminTab, label: 'Personal', icon: Users },
+    { id: 'evaluations' as AdminTab, label: 'Evaluaciones', icon: FileEdit },
     { id: 'templates' as AdminTab, label: 'Formularios', icon: FileEdit },
     { id: 'form_types' as AdminTab, label: 'Tipos de Formulario', icon: Layers },
     { id: 'roles' as AdminTab, label: 'Roles', icon: Slash },
@@ -54,6 +56,7 @@ export function AdminModule() {
         <div className="p-6">
           {activeTab === 'offices' && <OfficesManagement />}
           {activeTab === 'users' && <UsersManagement />}
+          {activeTab === 'evaluations' && <EvaluationsManagement />}
           {/* 'collaborators' tab removed — personnel is managed via UsersManagement */}
           {activeTab === 'templates' && <TemplatesManagement />}
           {activeTab === 'form_types' && <FormTypesManagement />}
