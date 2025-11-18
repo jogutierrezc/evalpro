@@ -88,6 +88,36 @@ export function DashboardModule() {
 
       const map: Record<string, User[]> = {};
 
+      // Helper: filter candidates by shared office (and campus rules if needed)
+      const filterByOfficeAndCampus = async (cands: any[]): Promise<any[]> => {
+        if (!user?.id) return [];
+        const evaluatorId = user.id;
+        const evaluatorCampus = (user as any).campus || '';
+
+        // Load office links for evaluator and candidates
+        const candidateIds = (cands || []).map((c) => c.id);
+        const { data: officeLinks } = await supabase
+          .from('collaborator_offices')
+          .select('collaborator_id,office_id')
+          .in('collaborator_id', [evaluatorId, ...candidateIds]);
+
+        const officesByUser: Record<string, Set<string>> = {};
+        (officeLinks || []).forEach((l: any) => {
+          if (!officesByUser[l.collaborator_id]) officesByUser[l.collaborator_id] = new Set();
+          officesByUser[l.collaborator_id].add(l.office_id);
+        });
+
+        const evalOffices = officesByUser[evaluatorId] || new Set<string>();
+
+        // For now, enforce shared office; if campus is set (and not 'Todas'), also match campus
+        return (cands || []).filter((cand) => {
+          const candOffices = officesByUser[cand.id] || new Set<string>();
+          const shareOffice = Array.from(candOffices).some((o) => evalOffices.has(o));
+          const campusMatches = !evaluatorCampus || evaluatorCampus === 'Todas' ? true : (cand.campus || '') === evaluatorCampus;
+          return shareOffice && campusMatches;
+        });
+      };
+
       for (const tpl of availableTemplates) {
         try {
           // Resolve template.type to canonical form_type key
@@ -134,8 +164,10 @@ export function DashboardModule() {
             .in('role', [...evaluatedRoles, ...evaluatedLabels]);
 
           console.debug('[Dashboard] Candidates for template:', tpl.name, 'count:', (candidates || []).length);
-          
-          map[tpl.id] = (candidates as User[]) || [];
+
+          // Enforce office-based eligibility
+          const filtered = await filterByOfficeAndCampus((candidates as any) || []);
+          map[tpl.id] = (filtered as User[]) || [];
         } catch (err) {
           console.warn('[Dashboard] Error loading candidates for template', tpl.id, err);
           map[tpl.id] = [];

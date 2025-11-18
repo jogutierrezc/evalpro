@@ -4,7 +4,7 @@ import { Plus, Edit2, Trash2, Search, Upload } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 export function UsersManagement() {
-  const [users, setUsers] = useState<(User & { office?: Office; offices?: Office[]; manager?: User })[]>([]);
+  const [users, setUsers] = useState<(User & { office?: Office; offices?: Office[]; manager?: User; managers?: User[] })[]>([]);
   const [offices, setOffices] = useState<Office[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
@@ -19,7 +19,7 @@ export function UsersManagement() {
     email: '',
     role: 'colaborador_vaf' as UserRole,
     office_ids: [] as string[],
-    manager_id: '',
+    manager_ids: [] as string[],
     campus: '',
   });
   const [officeQuery, setOfficeQuery] = useState('');
@@ -131,23 +131,36 @@ export function UsersManagement() {
 
   const loadData = async () => {
     try {
-      const [usersRes, officesRes, collabOfficesRes] = await Promise.all([
+      const [usersRes, officesRes, collabOfficesRes, userManagersRes] = await Promise.all([
         supabase.from('users').select('*').order('full_name'),
         supabase.from('offices').select('*').order('name'),
         supabase.from('collaborator_offices').select('*'),
+        supabase.from('user_managers').select('*'),
       ]);
 
       if (usersRes.error) throw usersRes.error;
       if (officesRes.error) throw officesRes.error;
+      if (userManagersRes.error) throw userManagersRes.error;
 
-      const usersWithRelations = (usersRes.data || []).map((user) => {
+      const allUsers = usersRes.data || [];
+      const userManagers = (userManagersRes.data as any[]) || [];
+
+      const managersByUser: Record<string, string[]> = {};
+      userManagers.forEach((um) => {
+        if (!managersByUser[um.user_id]) managersByUser[um.user_id] = [];
+        if (um.manager_id) managersByUser[um.user_id].push(um.manager_id);
+      });
+
+      const usersWithRelations = allUsers.map((user) => {
         const officeIds = (collabOfficesRes.data || [])
           .filter((co: any) => co.collaborator_id === user.id)
           .map((co: any) => co.office_id);
         const userOffices = (officesRes.data || []).filter((o: any) => officeIds.includes(o.id));
         const office = userOffices[0] || officesRes.data?.find((o: any) => o.id === user.office_id) || null;
-        const manager = usersRes.data?.find((u) => u.id === user.manager_id);
-        return { ...user, office, offices: userOffices, manager };
+        const manager = allUsers.find((u) => u.id === user.manager_id);
+        const managerIds = managersByUser[user.id] || (user.manager_id ? [user.manager_id] : []);
+        const managers = managerIds.map((mid) => allUsers.find((u) => u.id === mid)).filter(Boolean) as User[];
+        return { ...user, office, offices: userOffices, manager, managers };
       });
 
       setUsers(usersWithRelations);
@@ -156,6 +169,39 @@ export function UsersManagement() {
       console.error('Error loading data:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Sync helpers for user_managers table based on selected IDs
+  const upsertUserManagers = async (userId: string | null | undefined, managerIds: string[] | undefined, officeIds?: string[] | undefined) => {
+    if (!userId) return;
+    const targetIds = (managerIds || []).filter(Boolean);
+    try {
+      const { data: existing, error } = await supabase
+        .from('user_managers')
+        .select('id, manager_id, office_id')
+        .eq('user_id', userId);
+      if (error) throw error;
+      const existingRows = (existing as any[]) || [];
+      const existingIds = new Set(existingRows.map((r) => r.manager_id));
+      const toAdd = targetIds.filter((id) => !existingIds.has(id));
+      const toRemove = existingRows.filter((r) => !targetIds.includes(r.manager_id));
+
+      // Insert new relations (pick first selected office if provided for uniqueness triple)
+      if (toAdd.length > 0) {
+        const officeId = officeIds && officeIds.length > 0 ? officeIds[0] : null;
+        const rows = toAdd.map((manager_id) => ({ user_id: userId, manager_id, office_id: officeId }));
+        const { error: insErr } = await supabase.from('user_managers').insert(rows);
+        if (insErr) console.error('Error inserting user_managers:', insErr);
+      }
+
+      // Remove stale relations
+      for (const row of toRemove) {
+        const { error: delErr } = await supabase.from('user_managers').delete().eq('id', row.id);
+        if (delErr) console.error('Error deleting user_managers row:', delErr);
+      }
+    } catch (e) {
+      console.error('Error syncing user_managers:', e);
     }
   };
 
@@ -294,7 +340,7 @@ export function UsersManagement() {
         email: formData.email || null,
         role: roleToSave,
         office_id: formData.office_ids && formData.office_ids.length > 0 ? formData.office_ids[0] : null,
-        manager_id: formData.manager_id || null,
+        manager_id: formData.manager_ids && formData.manager_ids.length > 0 ? formData.manager_ids[0] : null,
         campus: formData.campus || null,
         updated_at: new Date().toISOString(),
       };
@@ -302,6 +348,8 @@ export function UsersManagement() {
       if (editingUser) {
         const { error } = await supabase.from('users').update(userData).eq('id', editingUser.id);
         if (error) throw error;
+        await upsertUserManagers(editingUser.id, formData.manager_ids, formData.office_ids);
+        await ensureCollaboratorOffices(editingUser.id, formData.office_ids);
       } else {
         if (formData.role === 'admin') {
           // Create auth user for admin
@@ -350,9 +398,10 @@ export function UsersManagement() {
             email: emailToUse,
             role: roleToSave,
             campus: formData.campus || null,
-            manager_id: formData.manager_id || null,
+            manager_id: formData.manager_ids && formData.manager_ids.length > 0 ? formData.manager_ids[0] : null,
           });
           await ensureCollaboratorOffices(createdUserId, formData.office_ids);
+          await upsertUserManagers(createdUserId, formData.manager_ids, formData.office_ids);
         } else {
           // For non-admin users, create an auth user first so users.id FK is valid
           const identification = formData.identification.trim();
@@ -401,9 +450,10 @@ export function UsersManagement() {
               email: emailToUse,
               role: roleToSave,
               campus: formData.campus || null,
-              manager_id: formData.manager_id || null,
+              manager_id: formData.manager_ids && formData.manager_ids.length > 0 ? formData.manager_ids[0] : null,
             });
             await ensureCollaboratorOffices(createdUserId, formData.office_ids);
+            await upsertUserManagers(createdUserId, formData.manager_ids, formData.office_ids);
           } catch (e) {
             throw e;
           }
@@ -419,7 +469,7 @@ export function UsersManagement() {
     }
   };
 
-  const handleEdit = (user: User) => {
+  const handleEdit = (user: User & { managers?: User[]; offices?: Office[]; office?: Office }) => {
     setEditingUser(user);
     setFormData({
       identification: user.identification,
@@ -427,7 +477,7 @@ export function UsersManagement() {
       email: user.email || '',
       role: user.role,
       office_ids: (user as any).offices ? (user as any).offices.map((o: Office) => o.id) : (user as any).office ? [(user as any).office.id] : [],
-      manager_id: user.manager_id || '',
+      manager_ids: user.managers ? user.managers.map((m) => m.id) : (user.manager_id ? [user.manager_id] : []),
       campus: user.campus || '',
     });
     setShowForm(true);
@@ -453,7 +503,7 @@ export function UsersManagement() {
       email: '',
       role: 'colaborador_vaf',
       office_ids: [],
-      manager_id: '',
+      manager_ids: [],
       campus: '',
     });
     setEditingUser(null);
@@ -495,7 +545,7 @@ export function UsersManagement() {
       }, {} as Record<string, string>);
 
       const managerMap = users.reduce((acc, user) => {
-        acc[user.full_name] = user.id;
+        acc[user.full_name.trim().toLowerCase()] = user.id;
         return acc;
       }, {} as Record<string, string>);
 
@@ -517,7 +567,12 @@ export function UsersManagement() {
         const officeNames = officeName ? officeName.split(/[;,|]/).map((s: string) => s.trim()).filter(Boolean) : [];
         const office_ids = officeNames.map((n: string) => officeMap[n]).filter(Boolean);
         const office_id = office_ids.length > 0 ? office_ids[0] : null;
-        const manager_id = managerName ? managerMap[managerName] : null;
+        // Support multiple managers separated by commas/semicolons
+        const managerNames = managerName ? managerName.split(/[;,|]/).map((s: string) => s.trim()).filter(Boolean) : [];
+        const manager_ids = managerNames
+          .map((n: string) => managerMap[n.toLowerCase()])
+          .filter(Boolean);
+        const manager_id = manager_ids.length > 0 ? manager_ids[0] : null;
 
         if (role === 'admin') {
           // Create auth user for admin
@@ -572,6 +627,7 @@ export function UsersManagement() {
               manager_id,
             });
             await ensureCollaboratorOffices(finalUserId, office_ids);
+            await upsertUserManagers(finalUserId, manager_ids, office_ids);
           } catch (e) {
             console.warn('Could not upsert collaborator for imported admin user', full_name, e);
           }
@@ -618,6 +674,8 @@ export function UsersManagement() {
                 manager_id,
                 office_id,
               });
+              await upsertUserManagers(createdUserId, manager_ids, office_ids);
+              await ensureCollaboratorOffices(createdUserId, office_ids);
             } catch (e) {
               console.warn('Could not upsert collaborator for imported user', full_name, e);
             }
@@ -811,7 +869,7 @@ export function UsersManagement() {
             </div>
             {roleRequiresManager(formData.role as string) && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Jefe Inmediato</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Jefes Inmediatos</label>
                 <div className="space-y-2">
                   <div className="flex gap-2">
                     <div className="relative flex-1">
@@ -846,24 +904,37 @@ export function UsersManagement() {
                     <button
                       type="button"
                       onClick={() => {
-                        setFormData({ ...formData, manager_id: selectedManagerId });
-                        if (selectedManagerId) setManagerQuery((managerCandidates.find((m) => m.id === selectedManagerId) || getFallbackManagerCandidates().find((m) => m.id === selectedManagerId) || { full_name: '' } as any).full_name);
+                        if (!selectedManagerId) return;
+                        if (!formData.manager_ids.includes(selectedManagerId)) {
+                          setFormData({ ...formData, manager_ids: [...formData.manager_ids, selectedManagerId] });
+                        }
+                        setSelectedManagerId('');
+                        setManagerQuery('');
                       }}
                       className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                     >
-                      Seleccionar
+                      Agregar
                     </button>
                   </div>
-                  {formData.manager_id && (
-                    <div className="text-sm text-gray-700">
-                      Seleccionado: <span className="font-medium">{(managerCandidates.find((m) => m.id === formData.manager_id) || getFallbackManagerCandidates().find((m) => m.id === formData.manager_id) || { full_name: '-' } as any).full_name}</span>
-                      <button
-                        type="button"
-                        onClick={() => { setFormData({ ...formData, manager_id: '' }); setSelectedManagerId(''); setManagerQuery(''); }}
-                        className="ml-2 text-red-600 hover:underline"
-                      >
-                        Quitar
-                      </button>
+                  {formData.manager_ids.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {formData.manager_ids.map((mid) => {
+                        const m = (managerCandidates.length > 0 ? managerCandidates : getFallbackManagerCandidates()).find((x) => x.id === mid) || (users.find((u) => u.id === mid) as any);
+                        if (!m) return null;
+                        return (
+                          <span key={mid} className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-green-50 text-green-800 text-xs">
+                            {m.full_name}
+                            <button
+                              type="button"
+                              onClick={() => setFormData({ ...formData, manager_ids: formData.manager_ids.filter((x) => x !== mid) })}
+                              className="hover:text-red-600"
+                              aria-label="Quitar"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -944,9 +1015,9 @@ export function UsersManagement() {
                 <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Nombre</th>
                 <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Cédula</th>
                 <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Rol</th>
-                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Oficina</th>
+                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Oficinas</th>
                 <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Campus</th>
-                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Jefe</th>
+                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Jefes</th>
                 <th className="px-4 py-3 text-right text-sm font-semibold text-gray-900">Acciones</th>
               </tr>
             </thead>
@@ -960,9 +1031,13 @@ export function UsersManagement() {
                       {user.role.replace('_', ' ')}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{user.office?.name || '-'}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">
+                    {(user.offices && user.offices.length > 0)
+                      ? user.offices.map((o) => o.name).join(', ')
+                      : (user.office?.name || '-')}
+                  </td>
                   <td className="px-4 py-3 text-sm text-gray-600">{user.campus || '-'}</td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{user.manager?.full_name || '-'}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{(user.managers && user.managers.length > 0) ? user.managers.map((m) => m.full_name).join(', ') : (user.manager?.full_name || '-')}</td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex justify-end gap-2">
                       <button
