@@ -37,7 +37,7 @@ export function LoginPage() {
           />
           <h2 className="text-2xl font-semibold mb-4">Bienvenido al Sistema E-Valora</h2>
           <p className="text-teal-100/90">
-            n la Universidad de Santander, valoramos tu aporte y compromiso. e-Valora es nuestro sistema de Gestión Estratégica del Talento diseñado para la Autoevaluación y Evaluación de Desempeño de todo nuestro personal administrativo y docente.
+            En la Universidad de Santander, valoramos tu aporte y compromiso. e-Valora es nuestro sistema de Gestión Estratégica del Talento diseñado para la Autoevaluación y Evaluación de Desempeño de todo nuestro personal administrativo y docente.
           </p>
 
           <div className="mt-8 text-sm text-teal-200">
