@@ -35,9 +35,9 @@ export function LoginPage() {
               e.currentTarget.style.display = 'none';
             }}
           />
-          <h2 className="text-2xl font-semibold mb-4">Welcome to ROTESSA</h2>
+          <h2 className="text-2xl font-semibold mb-4">Bienvenido al Sistema E-Valora</h2>
           <p className="text-teal-100/90">
-            Securely access your account to manage your settings, and collaborate with your team. This portal is for authorized users only.
+            n la Universidad de Santander, valoramos tu aporte y compromiso. e-Valora es nuestro sistema de Gestión Estratégica del Talento diseñado para la Autoevaluación y Evaluación de Desempeño de todo nuestro personal administrativo y docente.
           </p>
 
           <div className="mt-8 text-sm text-teal-200">
@@ -46,7 +46,7 @@ export function LoginPage() {
               <a href="#" aria-label="LinkedIn" className="hover:underline">LinkedIn</a>
               <a href="#" aria-label="Facebook" className="hover:underline">Facebook</a>
             </div>
-            <div className="mt-6 text-xs">© 2024 All Rights Reserved.</div>
+            <div className="mt-6 text-xs">© 2025 -  Derechos Resevados Universidad de Santander, Oficina de Talento Humano.</div>
           </div>
         </div>
       </div>
