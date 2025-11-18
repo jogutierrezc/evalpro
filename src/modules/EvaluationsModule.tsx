@@ -241,8 +241,8 @@ export function EvaluationsModule() {
                 relsByFormType[rel.form_type_key].push(rel.evaluated_role_key);
               });
 
-              // Helper to filter candidates by office and campus with exceptions
-              const filterByOfficeAndCampus = async (cands: any[], roleKey: string): Promise<any[]> => {
+              // Helper to filter candidates by shared office and campus
+              const filterByOfficeAndCampus = async (cands: any[], _roleKey: string): Promise<any[]> => {
                 if (!user) return [];
                 const evaluatorId = (user as any).id;
                 const evaluatorCampus = (user as any).campus || '';
@@ -259,34 +259,18 @@ export function EvaluationsModule() {
                   if (!officesByUser[l.collaborator_id]) officesByUser[l.collaborator_id] = new Set();
                   officesByUser[l.collaborator_id].add(l.office_id);
                 });
-
                 const evalOffices = officesByUser[evaluatorId] || new Set<string>();
-
-                // Map role key -> label for exceptions
-                const { data: rolesRef } = await supabase.from('roles').select('key,label');
-                const roleLabel = (rolesRef || []).find((r: any) => r.key === roleKey)?.label || roleKey;
-                const lowerKey = (roleKey || '').toString().toLowerCase();
-                const lowerLabel = (roleLabel || '').toString().toLowerCase();
-
-                const isLiderVAF = lowerKey.includes('coordinador general de la vaf') || lowerLabel.includes('líder vaf') || lowerLabel.includes('lider vaf');
-                const isRectoria = lowerKey.includes('rectoria') || lowerLabel.includes('rectoria');
-                const isVicerrectoria = lowerKey.includes('vicerrectoria') || lowerLabel.includes('vicerrectoria');
+                const evaluatorOfficeId = ((user as any).office_id || null) as string | null;
 
                 return cands.filter((cand) => {
                   const candCampus = (cand.campus || '').toString();
                   const candOffices = officesByUser[cand.id] || new Set<string>();
-                  const shareOffice = Array.from(candOffices).some((o) => evalOffices.has(o));
+                  const hasLinks = (evalOffices.size > 0) || (candOffices.size > 0);
+                  const shareViaLinks = Array.from(candOffices).some((o) => evalOffices.has(o));
+                  const shareViaFallback = evaluatorOfficeId && cand.office_id ? evaluatorOfficeId === cand.office_id : false;
+                  const shareOffice = hasLinks ? shareViaLinks : shareViaFallback;
                   const campusMatches = !evaluatorCampus || evaluatorCampus === 'Todas' || evaluatorCampus === '' ? true : candCampus === evaluatorCampus;
-
-                  if (isLiderVAF) {
-                    // Lider VAF: ignore campus, require shared office per base rule
-                    return shareOffice;
-                  }
-                  if (isRectoria || isVicerrectoria) {
-                    // Rectoría/Vicerrectoría: constrain by campus, ignore office overlap
-                    return campusMatches;
-                  }
-                  // Others: require both same office and same campus
+                  // Strict rule: must share office and match campus (unless evaluatorCampus is empty/"Todas")
                   return shareOffice && campusMatches;
                 });
               };

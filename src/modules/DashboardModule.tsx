@@ -108,11 +108,15 @@ export function DashboardModule() {
         });
 
         const evalOffices = officesByUser[evaluatorId] || new Set<string>();
+        const evaluatorOfficeId = ((user as any).office_id || null) as string | null;
 
         // For now, enforce shared office; if campus is set (and not 'Todas'), also match campus
         return (cands || []).filter((cand) => {
           const candOffices = officesByUser[cand.id] || new Set<string>();
-          const shareOffice = Array.from(candOffices).some((o) => evalOffices.has(o));
+          const hasLinks = (evalOffices.size > 0) || (candOffices.size > 0);
+          const shareViaLinks = Array.from(candOffices).some((o) => evalOffices.has(o));
+          const shareViaFallback = evaluatorOfficeId && cand.office_id ? evaluatorOfficeId === cand.office_id : false;
+          const shareOffice = hasLinks ? shareViaLinks : shareViaFallback;
           const campusMatches = !evaluatorCampus || evaluatorCampus === 'Todas' ? true : (cand.campus || '') === evaluatorCampus;
           return shareOffice && campusMatches;
         });

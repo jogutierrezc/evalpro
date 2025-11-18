@@ -1032,9 +1032,17 @@ export function UsersManagement() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600">
-                    {(user.offices && user.offices.length > 0)
-                      ? user.offices.map((o) => o.name).join(', ')
-                      : (user.office?.name || '-')}
+                    {(user.offices && user.offices.length > 0) ? (
+                      <div className="flex flex-wrap gap-1">
+                        {user.offices.map((o) => (
+                          <span key={o.id} className="inline-flex items-center px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-xs">
+                            {o.name}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      user.office?.name || '-'
+                    )}
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600">{user.campus || '-'}</td>
                   <td className="px-4 py-3 text-sm text-gray-600">{(user.managers && user.managers.length > 0) ? user.managers.map((m) => m.full_name).join(', ') : (user.manager?.full_name || '-')}</td>
