@@ -221,6 +221,26 @@ export function UsersManagement() {
     const leadershipLabels = ['Lider VAF', 'Rectoria', 'Vicerrectoria Académica'];
     const directorProgramLabel = ['Director de Programa'];
     const liderProcesoLabels = ['Lider de Proceso', 'Subproceso VAF', 'Lider de Proceso VAF'];
+    const bienestarLabel = ['Dirección de bienestar institucional', 'Direccion de bienestar institucional'];
+    
+    // Manager candidates for coordination roles: Bienestar, Directors, Leaders, Rectoría, Vicerrectoría
+    const coordinationManagerLabels = [
+      'Dirección de bienestar institucional',
+      'Direccion de bienestar institucional',
+      'Director de Programa',
+      'Directores de Programa',
+      'Lider VAF',
+      'Líder VAF',
+      'Lider de Proceso',
+      'Líderes de Proceso',
+      'Subproceso VAF',
+      'Subprocesos VAF',
+      'Lider de Proceso VAF',
+      'Rectoria',
+      'Rectoría',
+      'Vicerrectoria Académica',
+      'Vicerrectoría Académica',
+    ];
 
     const rolesWithLeadershipAsManager = [
       'Colaborador',
@@ -233,13 +253,36 @@ export function UsersManagement() {
       'Subprocesos VAF',
       'Personal Operativo',
     ];
+    
+    // New coordination roles requiring manager
+    const coordinationRoles = [
+      'Coordinación de Extensión',
+      'Coordinacion de Extension',
+      'Coordinación Desarrollo Profesoral',
+      'Coordinacion Desarrollo Profesoral',
+      'Coordinación de Gestión Curricular',
+      'Coordinacion de Gestion Curricular',
+      'Coordinador Académico',
+      'Coordinadores Académicos',
+      'Coordinador Academico',
+      'Coordinadores Academicos',
+    ];
 
     let managerRoleKeys: string[] = [];
 
     const selRoleLabel = (roles || []).find((r) => r.key === selectedRoleKey)?.label || '';
     const selLabelLower = selRoleLabel.toLowerCase();
+    
+    // Check if role is one of the new coordination roles
+    const isCoordinationRole = coordinationRoles.some((rlabel) => 
+      selLabelLower.includes(rlabel.toLowerCase()) || 
+      selectedRoleKey.toLowerCase().includes(rlabel.toLowerCase().replace(/\s+/g, '_'))
+    );
 
-    if (selLabelLower.includes('coordinador acad') || selectedRoleKey.toLowerCase().includes('coordinador')) {
+    if (isCoordinationRole) {
+      // Coordination roles can have: Bienestar, Directors, Leaders, Rectoría, Vicerrectoría
+      managerRoleKeys = roleKeysByLabels(coordinationManagerLabels);
+    } else if (selLabelLower.includes('coordinador acad') || selectedRoleKey.toLowerCase().includes('coordinador')) {
       managerRoleKeys = roleKeysByLabels(directorProgramLabel);
     } else if (selLabelLower.includes('colaborador vaf') || selectedRoleKey.toLowerCase().includes('colaborador_vaf')) {
       managerRoleKeys = roleKeysByLabels(liderProcesoLabels);
@@ -286,11 +329,39 @@ export function UsersManagement() {
     if (!selectedRoleKey) return false;
     const selLabel = (roles || []).find((r) => r.key === selectedRoleKey)?.label || '';
     const lower = selLabel.toLowerCase();
-    const needManagerLabels = ['colaborador', 'colaborador vaf', 'coordinador acad', 'director de programa', 'jefe campus vaf', 'lider de proceso', 'subproceso', 'personal operativo', 'directores de programa'];
+    const needManagerLabels = [
+      'colaborador', 
+      'colaborador vaf', 
+      'coordinador acad', 
+      'coordinación de extensión',
+      'coordinacion de extension',
+      'coordinación desarrollo profesoral',
+      'coordinacion desarrollo profesoral',
+      'coordinación de gestión curricular',
+      'coordinacion de gestion curricular',
+      'director de programa', 
+      'jefe campus vaf', 
+      'lider de proceso', 
+      'subproceso', 
+      'personal operativo', 
+      'directores de programa'
+    ];
     if (needManagerLabels.some((lbl) => lower.includes(lbl))) return true;
     // also consider legacy key names
     const keyLower = selectedRoleKey.toLowerCase();
-    if (['colaborador_vaf', 'colaborador', 'coordinador_academico', 'director_programa', 'jefe_campus_vaf', 'lider_proceso', 'subproceso_vaf', 'personal_operativo'].some((k) => keyLower.includes(k))) return true;
+    if ([
+      'colaborador_vaf', 
+      'colaborador', 
+      'coordinador_academico',
+      'coordinacion_extension',
+      'coordinacion_desarrollo_profesoral',
+      'coordinacion_gestion_curricular',
+      'director_programa', 
+      'jefe_campus_vaf', 
+      'lider_proceso', 
+      'subproceso_vaf', 
+      'personal_operativo'
+    ].some((k) => keyLower.includes(k))) return true;
     return false;
   };
 
