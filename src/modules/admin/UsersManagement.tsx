@@ -26,6 +26,7 @@ export function UsersManagement() {
   const [selectedOfficeId, setSelectedOfficeId] = useState<string>('');
   const [managerQuery, setManagerQuery] = useState('');
   const [selectedManagerId, setSelectedManagerId] = useState<string>('');
+  const [campusFilter, setCampusFilter] = useState<string>('');
 
   useEffect(() => {
     loadData();
@@ -582,9 +583,12 @@ export function UsersManagement() {
   };
 
   const filteredUsers = users.filter(
-    (user) =>
-      user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.identification.includes(searchTerm)
+    (user) => {
+      const matchesSearch = user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        user.identification.includes(searchTerm);
+      const matchesCampus = !campusFilter || campusFilter === '' || (user.campus || '').toLowerCase() === campusFilter.toLowerCase();
+      return matchesSearch && matchesCampus;
+    }
   );
 
   const handleImport = async () => {
@@ -1065,7 +1069,25 @@ export function UsersManagement() {
         </div>
       )}
 
-      <div className="mb-4">
+      <div className="mb-4 space-y-3">
+        <div className="flex gap-3">
+          <div className="w-64">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Filtrar por Campus</label>
+            <select
+              value={campusFilter}
+              onChange={(e) => setCampusFilter(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="">Todos los campus</option>
+              <option value="Valledupar">Valledupar</option>
+              <option value="Bogota">Bogota</option>
+              <option value="Cúcuta">Cúcuta</option>
+              <option value="Bucaramanga">Bucaramanga</option>
+              <option value="Arauca">Arauca</option>
+              <option value="Todas">Todas</option>
+            </select>
+          </div>
+        </div>
         <div className="relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
           <input
