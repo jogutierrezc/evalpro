@@ -19,6 +19,8 @@ export function EvaluationsModule() {
   const [evaluateOther, setEvaluateOther] = useState<Record<string, boolean>>({});
   const [personId, setPersonId] = useState<string | null>(null);
   const [evaluationCandidatesByTemplate, setEvaluationCandidatesByTemplate] = useState<Record<string, User[]>>({});
+  const [diagnostic, setDiagnostic] = useState<any>(null);
+  const [showDiag, setShowDiag] = useState(false);
 
   // After migrating colaboradores into users, prefer the users.id as the person identifier
   const getPersonIdForUser = async (u: any) => {
@@ -186,6 +188,16 @@ export function EvaluationsModule() {
         const allowedForUser = Array.from(new Set([...(fts || []).filter((ft: any) => Array.isArray(ft.roles) ? ft.roles.includes(canonicalRole as any) : false).map((ft: any) => ft.key), ...relationKeys]));
         console.debug('[Evaluations] relationKeys=', relationKeys, 'allowedForUser=', allowedForUser);
 
+        // Save diagnostic info for UI inspection
+        setDiagnostic({
+          canonicalRole,
+          allowedKeys,
+          normalizedAllowed,
+          relationKeys,
+          allowedForUser,
+          ftsCount: (fts || []).length,
+        });
+
         if (allowedForUser.length === 0) {
           setAvailableSoftTemplates([]);
           setTakenTemplatesMap({});
@@ -334,6 +346,8 @@ export function EvaluationsModule() {
               }
               setEvaluationCandidatesByTemplate(candidatesMap);
               console.debug('[EvaluationsModule] Final candidatesMap:', candidatesMap);
+              // expose candidate counts to diagnostics
+              setDiagnostic((d: any) => ({ ...(d || {}), candidatesCountByTemplate: Object.fromEntries(Object.entries(candidatesMap).map(([k, v]) => [k, (v || []).length])) }));
             }
 
             // Also load same-office candidates for manager flows.
@@ -611,6 +625,23 @@ export function EvaluationsModule() {
   if (selectedEvaluation) {
     return <EvaluationForm evaluation={selectedEvaluation} onClose={handleCloseForm} />;
   }
+
+  const renderDiagnostic = () => {
+    if (!diagnostic) return null;
+    return (
+      <div className="my-4 p-3 bg-gray-50 border rounded text-xs text-gray-700">
+        <div className="flex justify-between items-center mb-2">
+          <strong>Diagnóstico (dev)</strong>
+          <button className="text-blue-600 text-xs" onClick={() => setShowDiag(!showDiag)}>{showDiag ? 'Ocultar' : 'Mostrar'}</button>
+        </div>
+        {showDiag && (
+          <pre className="whitespace-pre-wrap break-words text-xs">
+            {JSON.stringify(diagnostic, null, 2)}
+          </pre>
+        )}
+      </div>
+    );
+  };
 
   const currentPersonId = personId || (user ? (user as any).id : null);
   const myEvaluations = evaluations.filter((e) => e.evaluator_id === currentPersonId);
