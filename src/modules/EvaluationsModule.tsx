@@ -327,26 +327,15 @@ export function EvaluationsModule() {
                 const evaluatorId = (user as any).id;
 
                 // 1) Collect managed users via `user_managers` table and `users.manager_id`
-                const { data: managedRows } = await supabase.from('user_managers').select('user_id,office_id').eq('manager_id', evaluatorId);
+                // Strict adherence to "relation de jefe": only users explicitly linked as subordinates.
+                const { data: managedRows } = await supabase.from('user_managers').select('user_id').eq('manager_id', evaluatorId);
                 const managedIdsFromTable = (managedRows || []).map((r: any) => r.user_id).filter(Boolean);
 
                 const { data: directManaged } = await supabase.from('users').select('id').eq('manager_id', evaluatorId);
                 const directManagedIds = (directManaged || []).map((r: any) => r.id).filter(Boolean);
 
-                // 2) Collect office-based candidates when evaluator is office manager or manages an office
-                const officeIdsManaged = Array.from(new Set(((managedRows || []).map((r: any) => r.office_id).filter(Boolean)).concat(((user as any).role === 'office_manager' && (user as any).office_id) ? [(user as any).office_id] : [])));
-                let officeCandidateIds: string[] = [];
-                if (officeIdsManaged.length > 0) {
-                  // get collaborator_offices mappings for those offices
-                  const { data: colLinks } = await supabase.from('collaborator_offices').select('collaborator_id').in('office_id', officeIdsManaged);
-                  officeCandidateIds = Array.from(new Set(((colLinks || []).map((c: any) => c.collaborator_id).filter(Boolean))));
-                  // also include users with office_id equal to these offices as fallback
-                  const { data: officeUsers } = await supabase.from('users').select('id').in('office_id', officeIdsManaged);
-                  officeCandidateIds = Array.from(new Set([...officeCandidateIds, ...((officeUsers || []).map((u: any) => u.id).filter(Boolean))]));
-                }
-
-                // Merge all candidate ids (managed relations + office candidates)
-                const allCandidateIds = Array.from(new Set([...(managedIdsFromTable || []), ...(directManagedIds || []), ...(officeCandidateIds || [])]));
+                // Merge all candidate ids (managed relations only)
+                const allCandidateIds = Array.from(new Set([...(managedIdsFromTable || []), ...(directManagedIds || [])]));
 
                 if (allCandidateIds.length === 0) {
                   candidatesMap[tpl.id] = [];
@@ -357,17 +346,22 @@ export function EvaluationsModule() {
                 const { data: rolesData } = await supabase.from('roles').select('*');
                 const roleKeyToLabel: Record<string, string> = {};
                 (rolesData || []).forEach((r: any) => { roleKeyToLabel[r.key] = r.label; });
-                const evaluatedLabels = evaluatedRoles.map((k) => roleKeyToLabel[k] || k);
+                
+                // Prepare normalized target roles/labels
+                const targetRolesNormalized = new Set<string>();
+                evaluatedRoles.forEach(r => targetRolesNormalized.add(normalizeStr(r)));
+                evaluatedRoles.forEach(k => {
+                   const label = roleKeyToLabel[k];
+                   if (label) targetRolesNormalized.add(normalizeStr(label));
+                });
 
                 const { data: candidateUsers } = await supabase.from('users').select('*').in('id', allCandidateIds);
                 const filtered = (candidateUsers || []).filter((u: any) => {
-                  const r = (u.role || '').toString();
-                  if (evaluatedRoles.includes(r)) return true;
-                  if (evaluatedLabels.map((l: any) => l.toString().toLowerCase()).includes(r.toLowerCase())) return true;
-                  return false;
+                  const r = normalizeStr(u.role);
+                  return targetRolesNormalized.has(r);
                 });
 
-                console.debug('[EvaluationsModule] Candidate users (after merge & role filter):', filtered.length);
+                console.debug('[EvaluationsModule] Candidate users (after manager-link & role filter):', filtered.length);
                 candidatesMap[tpl.id] = filtered;
               }
               setEvaluationCandidatesByTemplate(candidatesMap);
