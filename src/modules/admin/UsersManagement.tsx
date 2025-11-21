@@ -324,7 +324,13 @@ export function UsersManagement() {
     return candidates;
   };
 
-  const managerCandidates = getManagerCandidatesForRole(formData.role as string);
+  // Allow any user to have managers (bosses). If role-specific filtering yields no results,
+  // fall back to all users except the current editing user and exclude self.
+  const managerCandidates = (() => {
+    const roleBased = getManagerCandidatesForRole(formData.role as string) || [];
+    let base = roleBased.length > 0 ? roleBased : users;
+    return base.filter((u) => u.id !== editingUser?.id && u.id !== (editingUser ? editingUser.id : undefined));
+  })();
 
   const roleRequiresManager = (selectedRoleKey: string | undefined) => {
     if (!selectedRoleKey) return false;
@@ -942,79 +948,77 @@ export function UsersManagement() {
                 <option value="Todas">Todas</option>
               </select>
             </div>
-            {roleRequiresManager(formData.role as string) && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Jefes Inmediatos</label>
-                <div className="space-y-2">
-                  <div className="flex gap-2">
-                    <div className="relative flex-1">
-                      <input
-                        type="text"
-                        value={managerQuery}
-                        onChange={(e) => setManagerQuery(e.target.value)}
-                        placeholder="Buscar jefe..."
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
-                      {managerQuery && (
-                        <div className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow max-h-48 overflow-auto">
-                          {(managerCandidates.length > 0 ? managerCandidates : getFallbackManagerCandidates())
-                            .filter((m) => m.full_name.toLowerCase().includes(managerQuery.toLowerCase()))
-                            .slice(0, 20)
-                            .map((m) => (
-                              <button
-                                type="button"
-                                key={m.id}
-                                onClick={() => { setSelectedManagerId(m.id); setManagerQuery(m.full_name); }}
-                                className={`w-full text-left px-3 py-2 hover:bg-gray-50 ${selectedManagerId === m.id ? 'bg-blue-50' : ''}`}
-                              >
-                                {m.full_name}
-                              </button>
-                            ))}
-                          {(managerCandidates.length > 0 ? managerCandidates : getFallbackManagerCandidates()).filter((m) => m.full_name.toLowerCase().includes(managerQuery.toLowerCase())).length === 0 && (
-                            <div className="px-3 py-2 text-sm text-gray-500">Sin resultados</div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!selectedManagerId) return;
-                        if (!formData.manager_ids.includes(selectedManagerId)) {
-                          setFormData({ ...formData, manager_ids: [...formData.manager_ids, selectedManagerId] });
-                        }
-                        setSelectedManagerId('');
-                        setManagerQuery('');
-                      }}
-                      className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                    >
-                      Agregar
-                    </button>
-                  </div>
-                  {formData.manager_ids.length > 0 && (
-                    <div className="flex flex-wrap gap-2">
-                      {formData.manager_ids.map((mid) => {
-                        const m = (managerCandidates.length > 0 ? managerCandidates : getFallbackManagerCandidates()).find((x) => x.id === mid) || (users.find((u) => u.id === mid) as any);
-                        if (!m) return null;
-                        return (
-                          <span key={mid} className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-green-50 text-green-800 text-xs">
-                            {m.full_name}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Jefes Inmediatos</label>
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type="text"
+                      value={managerQuery}
+                      onChange={(e) => setManagerQuery(e.target.value)}
+                      placeholder="Buscar jefe..."
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                    {managerQuery && (
+                      <div className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow max-h-48 overflow-auto">
+                        {(managerCandidates.length > 0 ? managerCandidates : getFallbackManagerCandidates())
+                          .filter((m) => m.full_name.toLowerCase().includes(managerQuery.toLowerCase()))
+                          .slice(0, 20)
+                          .map((m) => (
                             <button
                               type="button"
-                              onClick={() => setFormData({ ...formData, manager_ids: formData.manager_ids.filter((x) => x !== mid) })}
-                              className="hover:text-red-600"
-                              aria-label="Quitar"
+                              key={m.id}
+                              onClick={() => { setSelectedManagerId(m.id); setManagerQuery(m.full_name); }}
+                              className={`w-full text-left px-3 py-2 hover:bg-gray-50 ${selectedManagerId === m.id ? 'bg-blue-50' : ''}`}
                             >
-                              ×
+                              {m.full_name}
                             </button>
-                          </span>
-                        );
-                      })}
-                    </div>
-                  )}
+                          ))}
+                        {(managerCandidates.length > 0 ? managerCandidates : getFallbackManagerCandidates()).filter((m) => m.full_name.toLowerCase().includes(managerQuery.toLowerCase())).length === 0 && (
+                          <div className="px-3 py-2 text-sm text-gray-500">Sin resultados</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!selectedManagerId) return;
+                      if (!formData.manager_ids.includes(selectedManagerId)) {
+                        setFormData({ ...formData, manager_ids: [...formData.manager_ids, selectedManagerId] });
+                      }
+                      setSelectedManagerId('');
+                      setManagerQuery('');
+                    }}
+                    className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  >
+                    Agregar
+                  </button>
                 </div>
+                {formData.manager_ids.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {formData.manager_ids.map((mid) => {
+                      const m = (managerCandidates.length > 0 ? managerCandidates : getFallbackManagerCandidates()).find((x) => x.id === mid) || (users.find((u) => u.id === mid) as any);
+                      if (!m) return null;
+                      return (
+                        <span key={mid} className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-green-50 text-green-800 text-xs">
+                          {m.full_name}
+                          <button
+                            type="button"
+                            onClick={() => setFormData({ ...formData, manager_ids: formData.manager_ids.filter((x) => x !== mid) })}
+                            className="hover:text-red-600"
+                            aria-label="Quitar"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-            )}
+            </div>
           </div>
           <div className="flex gap-2 mt-4">
             <button
