@@ -1,7 +1,21 @@
 import { useAuth } from '../contexts/AuthContext';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { supabase, EvaluationTemplate, User, Evaluation } from '../lib/supabase';
-import { Users, Building2, FileCheck, AlertCircle } from 'lucide-react';
+import {
+  Users,
+  Building2,
+  FileCheck,
+  AlertCircle,
+  Clock,
+  CheckCircle2,
+  FileText,
+  User as UserIcon,
+  ChevronDown,
+  ChevronUp,
+  Search,
+  Check,
+  LogOut
+} from 'lucide-react';
 import { EvaluationForm } from './evaluations/EvaluationForm';
 
 export function DashboardModule() {
@@ -18,7 +32,13 @@ export function DashboardModule() {
   const [availableTemplates, setAvailableTemplates] = useState<EvaluationTemplate[]>([]);
   const [managerCandidatesMap, setManagerCandidatesMap] = useState<Record<string, User[]>>({});
   const [selfEvalAllowedMap, setSelfEvalAllowedMap] = useState<Record<string, boolean>>({});
+
+  // Dynamic Dropdown State
   const [selectedCandidate, setSelectedCandidate] = useState<Record<string, string>>({});
+  const [dropdownOpenMap, setDropdownOpenMap] = useState<Record<string, boolean>>({});
+  const [searchTermMap, setSearchTermMap] = useState<Record<string, string>>({});
+  const dropdownRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
   const [selectedEvaluation, setSelectedEvaluation] = useState<Evaluation | null>(null);
   const [userEvaluationsMap, setUserEvaluationsMap] = useState<Record<string, Evaluation>>({});
 
@@ -27,6 +47,20 @@ export function DashboardModule() {
     loadStats();
     loadUserEvaluations();
   }, [user]);
+
+  // Close dropdowns when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      Object.keys(dropdownRefs.current).forEach(tplId => {
+        const ref = dropdownRefs.current[tplId];
+        if (ref && !ref.contains(event.target as Node)) {
+          setDropdownOpenMap(prev => ({ ...prev, [tplId]: false }));
+        }
+      });
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const loadUserEvaluations = async () => {
     if (!user?.id) return;
@@ -342,43 +376,26 @@ export function DashboardModule() {
   };
 
   const statCards = [
-    ...(user?.role === 'admin' || user?.role === 'office_manager'
-      ? [
-        {
-          title: 'Total Empleados',
-          value: stats.totalEmployees,
-          icon: Users,
-          color: 'bg-blue-500',
-        },
-        {
-          title: user?.role === 'admin' ? 'Total Oficinas' : 'Mi Oficina',
-          value: stats.totalOffices,
-          icon: Building2,
-          color: 'bg-green-500',
-        },
-      ]
-      : []),
     {
-      title: 'Evaluaciones Pendientes',
+      label: "Evaluaciones Pendientes",
       value: stats.pendingEvaluations,
-      icon: AlertCircle,
-      color: 'bg-orange-500',
+      icon: <Clock className="w-6 h-6 text-orange-500" />,
+      color: "bg-orange-50",
+      borderColor: "border-orange-100"
     },
-    ...(user && (user?.role !== 'admin')
-      ? [
-        {
-          title: 'Pruebas Disponibles',
-          value: availableTemplatesCount,
-          icon: FileCheck,
-          color: 'bg-indigo-500',
-        },
-      ]
-      : []),
     {
-      title: 'Evaluaciones Completadas',
+      label: "Pruebas Disponibles",
+      value: availableTemplatesCount,
+      icon: <FileText className="w-6 h-6 text-blue-600" />,
+      color: "bg-blue-50",
+      borderColor: "border-blue-100"
+    },
+    {
+      label: "Evaluaciones Completadas",
       value: stats.completedEvaluations,
-      icon: FileCheck,
-      color: 'bg-teal-500',
+      icon: <CheckCircle2 className="w-6 h-6 text-emerald-500" />,
+      color: "bg-emerald-50",
+      borderColor: "border-emerald-100"
     },
   ];
 
@@ -395,208 +412,335 @@ export function DashboardModule() {
   }
 
   return (
-    <div>
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Dashboard</h1>
-        <p className="text-gray-600">Bienvenido, {user?.full_name}</p>
-      </div>
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-800">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        {statCards.map((stat, index) => {
-          const Icon = stat.icon;
-          return (
-            <div key={index} className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
-              <div className="flex items-center justify-between mb-4">
-                <div className={`${stat.color} p-3 rounded-lg`}>
-                  <Icon className="w-6 h-6 text-white" />
+        {/* Welcome Section */}
+        <div className="mb-8">
+          <h2 className="text-2xl font-bold text-slate-800">Panel de Control</h2>
+          <p className="text-slate-500 mt-1">Bienvenido de nuevo, gestiona tus evaluaciones y rendimiento.</p>
+        </div>
+
+        {/* Stats Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+          {statCards.map((stat, index) => (
+            <div
+              key={index}
+              className={`bg-white p-6 rounded-2xl shadow-sm border ${stat.borderColor} hover:shadow-md transition-shadow duration-300 flex items-center gap-4`}
+            >
+              <div className={`p-4 rounded-xl ${stat.color}`}>
+                {stat.icon}
+              </div>
+              <div>
+                <p className="text-3xl font-bold text-slate-800">{stat.value}</p>
+                <p className="text-sm font-medium text-slate-500">{stat.label}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+
+          {/* Left Column: Exams (Takes up 2/3 on desktop) */}
+          <div className="lg:col-span-2 space-y-6">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <FileText className="w-5 h-5 text-blue-600" />
+                Exámenes Disponibles
+              </h3>
+            </div>
+
+            {availableTemplates.length === 0 ? (
+              <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 text-slate-500">
+                No hay exámenes disponibles para tu rol en este momento.
+              </div>
+            ) : (
+              availableTemplates.map((tpl) => {
+                const candidates = managerCandidatesMap[tpl.id] || [];
+                const showCandidateSelect = candidates.length > 0;
+                const canSelfEval = selfEvalAllowedMap[tpl.id];
+
+                // If neither self-eval nor candidates are available, hide the card
+                if (!canSelfEval && !showCandidateSelect) return null;
+
+                // Get evaluated users for this template
+                const evaluatedUsersMap = (window as any).__evaluatedUsersMap || {};
+                const evaluatedUsers = evaluatedUsersMap[tpl.id] || new Set();
+
+                // Filter out already evaluated candidates
+                const availableCandidates = candidates.filter(c => !evaluatedUsers.has(c.id));
+
+                const existingEvaluation = userEvaluationsMap[tpl.id];
+                const isCompleted = existingEvaluation && existingEvaluation.status === 'completed';
+                const isInProgress = existingEvaluation && existingEvaluation.status !== 'completed';
+
+                // Filter candidates for dropdown
+                const searchTerm = searchTermMap[tpl.id] || "";
+                const filteredCandidates = availableCandidates.filter(c =>
+                  c.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                  (c.role || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                  c.identification.includes(searchTerm)
+                );
+
+                const selectedCandId = selectedCandidate[tpl.id];
+                const selectedCandObj = candidates.find(c => c.id === selectedCandId);
+
+                return (
+                  <div key={tpl.id}>
+                    {/* Manager Evaluation Card */}
+                    {showCandidateSelect && (
+                      <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 overflow-visible relative mb-6">
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4">
+                          <div className="bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider mb-2 sm:mb-0">
+                            Institucional
+                          </div>
+                          {/* <span className="text-slate-400 text-xs">Vence en 5 días</span> */}
+                        </div>
+
+                        <h4 className="text-lg font-bold text-slate-800 mb-2">{tpl.name}</h4>
+                        <p className="text-slate-500 text-sm leading-relaxed mb-6">
+                          {tpl.description || 'Apreciado líder, a continuación se presentan una serie de preguntas orientadas a la valoración del desempeño de su equipo.'}
+                        </p>
+
+                        {availableCandidates.length > 0 ? (
+                          <div className="bg-slate-50 p-5 rounded-xl border border-slate-200">
+                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">
+                              Selecciona Colaborador a Evaluar
+                            </label>
+
+                            <div className="flex flex-col sm:flex-row gap-3 items-start">
+
+                              {/* --- CUSTOM DYNAMIC DROPDOWN --- */}
+                              <div className="relative flex-grow w-full" ref={el => dropdownRefs.current[tpl.id] = el}>
+                                <div
+                                  onClick={() => setDropdownOpenMap(prev => ({ ...prev, [tpl.id]: !prev[tpl.id] }))}
+                                  className={`w-full bg-white border text-left py-3 px-4 rounded-lg cursor-pointer flex items-center justify-between transition-all duration-200 ${dropdownOpenMap[tpl.id] ? 'border-blue-500 ring-2 ring-blue-100' : 'border-slate-300 hover:border-slate-400'}`}
+                                >
+                                  {selectedCandObj ? (
+                                    <div className="flex items-center gap-3">
+                                      <div className="w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-bold">
+                                        {selectedCandObj.full_name.charAt(0)}
+                                      </div>
+                                      <div className="flex flex-col">
+                                        <span className="text-slate-700 font-medium truncate text-sm sm:text-base">{selectedCandObj.full_name}</span>
+                                        {selectedCandObj.campus && <span className="text-xs text-slate-400">Campus: {selectedCandObj.campus}</span>}
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <span className="text-slate-400">Buscar colaborador...</span>
+                                  )}
+                                  {dropdownOpenMap[tpl.id] ? <ChevronUp className="w-4 h-4 text-blue-500" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+                                </div>
+
+                                {/* Dropdown Menu */}
+                                {dropdownOpenMap[tpl.id] && (
+                                  <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-xl border border-slate-100 z-50 overflow-hidden">
+                                    {/* Search Input inside Dropdown */}
+                                    <div className="p-2 border-b border-slate-100 bg-slate-50 sticky top-0">
+                                      <div className="relative">
+                                        <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+                                        <input
+                                          type="text"
+                                          className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 placeholder-slate-400"
+                                          placeholder="Filtrar por nombre..."
+                                          value={searchTermMap[tpl.id] || ""}
+                                          onChange={(e) => setSearchTermMap(prev => ({ ...prev, [tpl.id]: e.target.value }))}
+                                          autoFocus
+                                          onClick={(e) => e.stopPropagation()}
+                                        />
+                                      </div>
+                                    </div>
+
+                                    {/* List Options */}
+                                    <div className="max-h-60 overflow-y-auto">
+                                      {filteredCandidates.length > 0 ? (
+                                        filteredCandidates.map((col) => (
+                                          <div
+                                            key={col.id}
+                                            onClick={() => {
+                                              setSelectedCandidate(prev => ({ ...prev, [tpl.id]: col.id }));
+                                              setDropdownOpenMap(prev => ({ ...prev, [tpl.id]: false }));
+                                              setSearchTermMap(prev => ({ ...prev, [tpl.id]: "" }));
+                                            }}
+                                            className={`px-4 py-3 cursor-pointer flex items-center gap-3 hover:bg-blue-50 transition-colors ${selectedCandId === col.id ? 'bg-blue-50' : ''}`}
+                                          >
+                                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${selectedCandId === col.id ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                                              {col.full_name.charAt(0)}
+                                            </div>
+                                            <div className="flex flex-col overflow-hidden">
+                                              <span className={`text-sm truncate ${selectedCandId === col.id ? 'font-bold text-blue-700' : 'font-medium text-slate-700'}`}>
+                                                {col.full_name}
+                                              </span>
+                                              <span className="text-xs text-slate-400 truncate">
+                                                {col.role} {col.campus ? `• ${col.campus}` : ''}
+                                              </span>
+                                            </div>
+                                            {selectedCandId === col.id && (
+                                              <Check className="w-4 h-4 text-blue-600 ml-auto" />
+                                            )}
+                                          </div>
+                                        ))
+                                      ) : (
+                                        <div className="p-4 text-center text-slate-400 text-sm">
+                                          No se encontraron resultados
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+
+                              <button
+                                disabled={!selectedCandId}
+                                onClick={async () => {
+                                  try {
+                                    const evaluatorId = user?.id;
+                                    if (!evaluatorId) throw new Error('No user');
+
+                                    const evaluatedId = selectedCandId;
+                                    if (!evaluatedId) return;
+
+                                    const { data, error } = await supabase
+                                      .from('evaluations')
+                                      .insert([
+                                        {
+                                          template_id: tpl.id,
+                                          evaluator_id: evaluatorId,
+                                          evaluated_id: evaluatedId,
+                                          status: 'pending',
+                                        },
+                                      ])
+                                      .select('*')
+                                      .single();
+
+                                    if (error) throw error;
+
+                                    setSelectedEvaluation(data as Evaluation);
+                                    loadUserEvaluations();
+                                    // Clear selection
+                                    setSelectedCandidate(prev => ({ ...prev, [tpl.id]: '' }));
+                                  } catch (err) {
+                                    console.error('Error creating evaluation from dashboard', err);
+                                    alert('No se pudo iniciar la evaluación');
+                                  }
+                                }}
+                                className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-6 py-3 rounded-lg font-semibold transition-all shadow-lg shadow-emerald-600/20 whitespace-nowrap active:scale-95"
+                              >
+                                Crear Evaluación
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 text-center text-slate-500 text-sm italic">
+                            Todos los colaboradores disponibles ya han sido evaluados.
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Self Evaluation Card */}
+                    {canSelfEval && (
+                      <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 flex flex-col sm:flex-row gap-6 mb-6">
+                        <div className="flex-grow">
+                          <div className="bg-purple-50 text-purple-700 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider inline-block mb-3">
+                            Personal
+                          </div>
+                          <h4 className="text-lg font-bold text-slate-800 mb-2">Autoevaluación: {tpl.name}</h4>
+                          <p className="text-slate-500 text-sm leading-relaxed mb-4">
+                            Apreciado colaborador, le invitamos a responder de acuerdo con su percepción personal sobre su desempeño.
+                          </p>
+                        </div>
+                        <div className="flex items-end">
+                          {isCompleted ? (
+                            <button disabled className="w-full sm:w-auto bg-slate-300 text-white px-6 py-3 rounded-lg font-semibold cursor-not-allowed">
+                              Ya realizado
+                            </button>
+                          ) : isInProgress ? (
+                            <button
+                              onClick={() => setSelectedEvaluation(existingEvaluation)}
+                              className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors shadow-lg shadow-blue-600/20"
+                            >
+                              Continuar
+                            </button>
+                          ) : (
+                            <button
+                              onClick={async () => {
+                                try {
+                                  const evaluatorId = user?.id;
+                                  if (!evaluatorId) throw new Error('No user');
+
+                                  const { data, error } = await supabase
+                                    .from('evaluations')
+                                    .insert([
+                                      {
+                                        template_id: tpl.id,
+                                        evaluator_id: evaluatorId,
+                                        evaluated_id: evaluatorId, // Self-evaluation
+                                        status: 'pending',
+                                      },
+                                    ])
+                                    .select('*')
+                                    .single();
+
+                                  if (error) throw error;
+
+                                  setSelectedEvaluation(data as Evaluation);
+                                  loadUserEvaluations();
+                                } catch (err) {
+                                  console.error('Error creating evaluation from dashboard', err);
+                                  alert('No se pudo iniciar la evaluación');
+                                }
+                              }}
+                              className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors shadow-lg shadow-blue-600/20"
+                            >
+                              Iniciar Examen
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* Right Column: User Profile Summary (Takes up 1/3 on desktop) */}
+          <div className="lg:col-span-1">
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 sticky top-24">
+              <div className="flex flex-col items-center text-center pb-6 border-b border-slate-100 mb-6">
+                <div className="w-24 h-24 bg-gradient-to-br from-blue-100 to-blue-200 rounded-full flex items-center justify-center text-blue-700 text-3xl font-bold mb-4 shadow-inner">
+                  {user?.full_name?.charAt(0)}
+                </div>
+                <h3 className="text-lg font-bold text-slate-800 px-4">{user?.full_name}</h3>
+                <p className="text-blue-600 font-medium text-sm mt-1">{user?.role?.replace(/_/g, ' ')}</p>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <p className="text-xs text-slate-400 uppercase font-semibold tracking-wider mb-1">Cédula</p>
+                  <div className="flex items-center gap-2 text-slate-700 font-medium">
+                    <UserIcon className="w-4 h-4 text-slate-400" />
+                    {user?.identification}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-400 uppercase font-semibold tracking-wider mb-1">Estado</p>
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
+                    <span className="text-emerald-600 font-medium text-sm">Activo</span>
+                  </div>
                 </div>
               </div>
-              <h3 className="text-gray-600 text-sm font-medium mb-1">{stat.title}</h3>
-              <p className="text-3xl font-bold text-gray-900">{stat.value}</p>
+
+              <div className="mt-8 pt-6 border-t border-slate-100">
+                {/* Optional: Add profile actions here */}
+              </div>
             </div>
-          );
-        })}
-      </div>
+          </div>
 
-      <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">Información del Usuario</h2>
-        <div className="space-y-3">
-          <div>
-            <span className="text-gray-600">Nombre:</span>
-            <span className="ml-2 font-medium text-gray-900">{user?.full_name}</span>
-          </div>
-          <div>
-            <span className="text-gray-600">Cédula:</span>
-            <span className="ml-2 font-medium text-gray-900">{user?.identification}</span>
-          </div>
-          <div>
-            <span className="text-gray-600">Rol:</span>
-            <span className="ml-2 font-medium text-gray-900 capitalize">
-              {user?.role?.replace('_', ' ')}
-            </span>
-          </div>
         </div>
-      </div>
-
-      {/* Sección: Exámenes Disponibles para el rol */}
-      <div className="mt-8 bg-white rounded-xl shadow-sm p-6 border border-gray-100">
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">Exámenes Disponibles</h2>
-        {availableTemplates.length === 0 ? (
-          <div className="text-gray-500">No hay exámenes disponibles para tu rol en este momento.</div>
-        ) : (
-          <div className="space-y-3">
-            {availableTemplates.map((tpl) => {
-              const candidates = managerCandidatesMap[tpl.id] || [];
-              const showCandidateSelect = candidates.length > 0;
-              const canSelfEval = selfEvalAllowedMap[tpl.id];
-
-              // If neither self-eval nor candidates are available, hide the card
-              if (!canSelfEval && !showCandidateSelect) return null;
-
-              // Get evaluated users for this template
-              const evaluatedUsersMap = (window as any).__evaluatedUsersMap || {};
-              const evaluatedUsers = evaluatedUsersMap[tpl.id] || new Set();
-
-              // Filter out already evaluated candidates
-              const availableCandidates = candidates.filter(c => !evaluatedUsers.has(c.id));
-
-              const existingEvaluation = userEvaluationsMap[tpl.id];
-              const isCompleted = existingEvaluation && existingEvaluation.status === 'completed';
-              const isInProgress = existingEvaluation && existingEvaluation.status !== 'completed';
-
-              return (
-                <div key={tpl.id} className="border rounded p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <div>
-                      <div className="text-sm font-semibold text-gray-800">{tpl.name}</div>
-                      <div className="text-xs text-gray-500">{tpl.description}</div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      {/* Self-evaluation button - ONLY if allowed */}
-                      {canSelfEval && (
-                        isCompleted ? (
-                          <button
-                            disabled
-                            className="px-4 py-2 bg-gray-400 text-white rounded cursor-not-allowed text-sm"
-                          >
-                            Ya realizado
-                          </button>
-                        ) : isInProgress ? (
-                          <button
-                            onClick={() => setSelectedEvaluation(existingEvaluation)}
-                            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
-                          >
-                            Continuar
-                          </button>
-                        ) : (
-                          <button
-                            onClick={async () => {
-                              try {
-                                const evaluatorId = user?.id;
-                                if (!evaluatorId) throw new Error('No user');
-
-                                const { data, error } = await supabase
-                                  .from('evaluations')
-                                  .insert([
-                                    {
-                                      template_id: tpl.id,
-                                      evaluator_id: evaluatorId,
-                                      evaluated_id: evaluatorId, // Self-evaluation
-                                      status: 'pending',
-                                    },
-                                  ])
-                                  .select('*')
-                                  .single();
-
-                                if (error) throw error;
-
-                                setSelectedEvaluation(data as Evaluation);
-                                loadUserEvaluations();
-                              } catch (err) {
-                                console.error('Error creating evaluation from dashboard', err);
-                                alert('No se pudo iniciar la evaluación');
-                              }
-                            }}
-                            className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 text-sm"
-                          >
-                            Iniciar Examen
-                          </button>
-                        )
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Evaluate others section - only show if there are candidates */}
-                  {showCandidateSelect && availableCandidates.length > 0 && (
-                    <div className="mt-3 pt-3 border-t border-gray-200">
-                      <div className="flex items-center gap-3">
-                        <label className="text-xs text-gray-600 font-medium">Evaluar a otro colaborador:</label>
-                        <select
-                          className="border rounded p-2 text-sm flex-1"
-                          value={selectedCandidate[tpl.id] || ''}
-                          onChange={(e) => setSelectedCandidate({ ...selectedCandidate, [tpl.id]: e.target.value })}
-                        >
-                          <option value="">Selecciona colaborador</option>
-                          {availableCandidates.map((c) => (
-                            <option key={c.id} value={c.id}>{c.full_name} ({c.role || c.identification})</option>
-                          ))}
-                        </select>
-                        <button
-                          onClick={async () => {
-                            try {
-                              const evaluatorId = user?.id;
-                              if (!evaluatorId) throw new Error('No user');
-
-                              const evaluatedId = selectedCandidate[tpl.id];
-                              if (!evaluatedId) {
-                                alert('Selecciona un colaborador');
-                                return;
-                              }
-
-                              const { data, error } = await supabase
-                                .from('evaluations')
-                                .insert([
-                                  {
-                                    template_id: tpl.id,
-                                    evaluator_id: evaluatorId,
-                                    evaluated_id: evaluatedId,
-                                    status: 'pending',
-                                  },
-                                ])
-                                .select('*')
-                                .single();
-
-                              if (error) throw error;
-
-                              setSelectedEvaluation(data as Evaluation);
-                              loadUserEvaluations();
-                            } catch (err) {
-                              console.error('Error creating evaluation from dashboard', err);
-                              alert('No se pudo iniciar la evaluación');
-                            }
-                          }}
-                          className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm whitespace-nowrap"
-                        >
-                          Crear Evaluación
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Show message if all candidates have been evaluated */}
-                  {showCandidateSelect && candidates.length > 0 && availableCandidates.length === 0 && (
-                    <div className="mt-3 pt-3 border-t border-gray-200">
-                      <div className="text-xs text-gray-500 italic">
-                        Todos los colaboradores disponibles ya han sido evaluados
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+      </main>
     </div>
   );
 }
