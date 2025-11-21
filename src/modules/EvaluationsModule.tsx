@@ -163,9 +163,9 @@ export function EvaluationsModule() {
         console.debug('[Evaluations] canonicalRole=', canonicalRole, 'allowedKeys=', allowedKeys, 'fts_count=', (fts||[]).length);
         // Also include form types that explicitly target this user's role via form_type_relations (evaluated_role_key)
         let relationKeys: string[] = [];
+        // ensure allowedKeys are canonical form_type keys; if not, try to resolve labels
+        let normalizedAllowed: string[] = [];
         if (canonicalRole) {
-          // ensure allowedKeys are canonical form_type keys; if not, try to resolve labels
-          const normalizedAllowed: string[] = [];
           for (const k of allowedKeys) {
             let kKey = k;
             try {
