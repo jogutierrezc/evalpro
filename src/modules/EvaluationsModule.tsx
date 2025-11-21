@@ -243,49 +243,40 @@ export function EvaluationsModule() {
           try {
             console.debug('[EvaluationsModule] Loading relation-based candidates. User role:', user.role, 'Canonical role:', canonicalRole);
             
-            // find all form_type_keys where user's role is evaluator
-            let evaluatorRels: any[] | null = null;
+            // Load all form_type_relations and filter client-side using normalized comparisons.
+            // This supports relations stored using role keys or role labels and handles multiple relations per form type.
+            let evaluatorRels: any[] = [];
             try {
-              const { data } = await supabase
-                .from('form_type_relations')
-                .select('form_type_key,evaluated_role_key')
-                .eq('evaluator_role_key', canonicalRole);
-              evaluatorRels = (data as any) || [];
+              const { data: allRels } = await supabase.from('form_type_relations').select('form_type_key,evaluated_role_key,evaluator_role_key');
+              const rels = (allRels || []) as any[];
+
+              // build a set of normalized evaluator identifiers to match against (key, label, raw role)
+              const normalizedTargets = new Set<string>();
+              if (canonicalRole) normalizedTargets.add(normalizeStr(canonicalRole));
+              if (user && (user as any).role) normalizedTargets.add(normalizeStr((user as any).role));
+              // include any roles from rolesData that match the user's role normalized
+              const matchedRoleEntry = rolesData && rolesData.length > 0 ? rolesData.find((r: any) => normalizeStr(r.key) === normalizeStr((user as any).role) || normalizeStr(r.label) === normalizeStr((user as any).role)) : null;
+              if (matchedRoleEntry) {
+                normalizedTargets.add(normalizeStr(matchedRoleEntry.key));
+                normalizedTargets.add(normalizeStr(matchedRoleEntry.label));
+              }
+
+              evaluatorRels = rels.filter((rel) => {
+                const relEvalNorm = normalizeStr(rel.evaluator_role_key || '');
+                return normalizedTargets.has(relEvalNorm);
+              });
             } catch (e) {
-              evaluatorRels = null;
+              evaluatorRels = [];
             }
 
-            // Fallbacks: if none found, try matching by raw user.role or by role label variants
-            if ((!evaluatorRels || evaluatorRels.length === 0) && rolesData && rolesData.length > 0) {
-              try {
-                // try raw stored value
-                const { data: rawData } = await supabase.from('form_type_relations').select('form_type_key,evaluated_role_key').eq('evaluator_role_key', user.role);
-                if (rawData && rawData.length > 0) evaluatorRels = rawData;
-              } catch (e) {
-                // ignore
-              }
-            }
-            if ((!evaluatorRels || evaluatorRels.length === 0) && rolesData && rolesData.length > 0) {
-              try {
-                // try matching by normalized label -> key
-                const roleEntry = rolesData.find((r: any) => normalizeStr(r.key) === normalizeStr(user.role) || normalizeStr(r.label) === normalizeStr(user.role));
-                if (roleEntry) {
-                  const { data: byLabel } = await supabase.from('form_type_relations').select('form_type_key,evaluated_role_key').eq('evaluator_role_key', roleEntry.key);
-                  if (byLabel && byLabel.length > 0) evaluatorRels = byLabel;
-                }
-              } catch (e) {
-                // ignore
-              }
-            }
-
-            console.debug('[EvaluationsModule] Evaluator relations found:', evaluatorRels);
+            console.debug('[EvaluationsModule] Evaluator relations found (normalized filter):', evaluatorRels);
 
             if (evaluatorRels && evaluatorRels.length > 0) {
-              // group by form_type_key -> evaluated_role_keys
+              // group by form_type_key -> evaluated_role_keys (deduplicated)
               const relsByFormType: Record<string, string[]> = {};
               evaluatorRels.forEach((rel: any) => {
                 if (!relsByFormType[rel.form_type_key]) relsByFormType[rel.form_type_key] = [];
-                relsByFormType[rel.form_type_key].push(rel.evaluated_role_key);
+                if (!relsByFormType[rel.form_type_key].includes(rel.evaluated_role_key)) relsByFormType[rel.form_type_key].push(rel.evaluated_role_key);
               });
 
               // Helper to filter candidates by shared office and campus
@@ -327,48 +318,56 @@ export function EvaluationsModule() {
               for (const tpl of tplList) {
                 const evaluatedRoles = relsByFormType[tpl.type] || [];
                 console.debug('[EvaluationsModule] Template:', tpl.name, 'type:', tpl.type, 'evaluatedRoles:', evaluatedRoles);
-                
+
                 if (evaluatedRoles.length === 0) {
                   candidatesMap[tpl.id] = [];
                   continue;
                 }
 
-                // Use manager relationships to determine which users this evaluator can evaluate.
-                // - Only users who list the evaluator as a manager (user_managers.manager_id = evaluatorId)
-                //   OR whose users.manager_id == evaluatorId are valid candidates.
-                // - If no manager relation exists for a user, they must NOT be evaluable by the manager.
                 const evaluatorId = (user as any).id;
-                // load manager links where evaluator is the manager
-                const { data: managedRows } = await supabase.from('user_managers').select('user_id').eq('manager_id', evaluatorId);
+
+                // 1) Collect managed users via `user_managers` table and `users.manager_id`
+                const { data: managedRows } = await supabase.from('user_managers').select('user_id,office_id').eq('manager_id', evaluatorId);
                 const managedIdsFromTable = (managedRows || []).map((r: any) => r.user_id).filter(Boolean);
 
-                // also include users.manager_id column references
                 const { data: directManaged } = await supabase.from('users').select('id').eq('manager_id', evaluatorId);
                 const directManagedIds = (directManaged || []).map((r: any) => r.id).filter(Boolean);
 
-                const managedIds = Array.from(new Set([...(managedIdsFromTable || []), ...(directManagedIds || [])]));
+                // 2) Collect office-based candidates when evaluator is office manager or manages an office
+                const officeIdsManaged = Array.from(new Set(((managedRows || []).map((r: any) => r.office_id).filter(Boolean)).concat(((user as any).role === 'office_manager' && (user as any).office_id) ? [(user as any).office_id] : [])));
+                let officeCandidateIds: string[] = [];
+                if (officeIdsManaged.length > 0) {
+                  // get collaborator_offices mappings for those offices
+                  const { data: colLinks } = await supabase.from('collaborator_offices').select('collaborator_id').in('office_id', officeIdsManaged);
+                  officeCandidateIds = Array.from(new Set(((colLinks || []).map((c: any) => c.collaborator_id).filter(Boolean))));
+                  // also include users with office_id equal to these offices as fallback
+                  const { data: officeUsers } = await supabase.from('users').select('id').in('office_id', officeIdsManaged);
+                  officeCandidateIds = Array.from(new Set([...officeCandidateIds, ...((officeUsers || []).map((u: any) => u.id).filter(Boolean))]));
+                }
 
-                if (managedIds.length === 0) {
-                  // no direct managed users — none can be evaluated by this evaluator
+                // Merge all candidate ids (managed relations + office candidates)
+                const allCandidateIds = Array.from(new Set([...(managedIdsFromTable || []), ...(directManagedIds || []), ...(officeCandidateIds || [])]));
+
+                if (allCandidateIds.length === 0) {
                   candidatesMap[tpl.id] = [];
                   continue;
                 }
 
-                // fetch those managed users and filter by evaluatedRoles (allow label fallback)
+                // fetch those users and filter by evaluatedRoles (support label fallback)
                 const { data: rolesData } = await supabase.from('roles').select('*');
                 const roleKeyToLabel: Record<string, string> = {};
                 (rolesData || []).forEach((r: any) => { roleKeyToLabel[r.key] = r.label; });
                 const evaluatedLabels = evaluatedRoles.map((k) => roleKeyToLabel[k] || k);
 
-                const { data: managedUsers } = await supabase.from('users').select('*').in('id', managedIds);
-                const filtered = (managedUsers || []).filter((u: any) => {
+                const { data: candidateUsers } = await supabase.from('users').select('*').in('id', allCandidateIds);
+                const filtered = (candidateUsers || []).filter((u: any) => {
                   const r = (u.role || '').toString();
                   if (evaluatedRoles.includes(r)) return true;
                   if (evaluatedLabels.map((l: any) => l.toString().toLowerCase()).includes(r.toLowerCase())) return true;
                   return false;
                 });
 
-                console.debug('[EvaluationsModule] Managed candidates (after role filter):', filtered.length);
+                console.debug('[EvaluationsModule] Candidate users (after merge & role filter):', filtered.length);
                 candidatesMap[tpl.id] = filtered;
               }
               setEvaluationCandidatesByTemplate(candidatesMap);
