@@ -66,7 +66,7 @@ export function LoginPage() {
             <div className="w-10 h-10 bg-white/10 backdrop-blur-md border border-white/20 rounded-lg flex items-center justify-center shadow-lg">
               <Award className="text-yellow-400 w-6 h-6" />
             </div>
-            <span className="text-xl font-bold tracking-tight drop-shadow-md">EvalPro UDES</span>
+            <span className="text-xl font-bold tracking-tight drop-shadow-md">E-Valora UDES</span>
           </div>
         </div>
 
@@ -89,7 +89,7 @@ export function LoginPage() {
         </div>
 
         <div className="relative z-10 text-xs text-blue-200/80 font-medium drop-shadow">
-          © 2025 Universidad de Santander. Todos los derechos reservados.
+          © 2025 Universidad de Santander. Todos los derechos reservados - E-Valora es un sistema Elaborado por la Oficina de Talento Humano.
         </div>
       </div>
 
