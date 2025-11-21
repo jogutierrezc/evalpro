@@ -14,7 +14,7 @@ export function EvaluationsModule() {
   const [selectedEvaluation, setSelectedEvaluation] = useState<Evaluation | null>(null);
   const [availableSoftTemplates, setAvailableSoftTemplates] = useState<EvaluationTemplate[]>([]);
   const [takenTemplatesMap, setTakenTemplatesMap] = useState<Record<string, boolean>>({});
-  const [managerCandidates, setManagerCandidates] = useState<User[]>([]);
+
   const [selectedCandidate, setSelectedCandidate] = useState<Record<string, string>>({});
   const [evaluateOther, setEvaluateOther] = useState<Record<string, boolean>>({});
   const [personId, setPersonId] = useState<string | null>(null);
@@ -105,7 +105,7 @@ export function EvaluationsModule() {
 
   const loadAvailableSoftTemplates = async () => {
     try {
-      
+
 
       // Find active period covering today
       const today = new Date().toISOString().slice(0, 10);
@@ -160,7 +160,7 @@ export function EvaluationsModule() {
         // load form_types to check role membership
         const { data: fts } = await supabase.from('form_types').select('*').in('key', allowedKeys);
         // DEBUG: show role and allowed keys
-        console.debug('[Evaluations] canonicalRole=', canonicalRole, 'allowedKeys=', allowedKeys, 'fts_count=', (fts||[]).length);
+        console.debug('[Evaluations] canonicalRole=', canonicalRole, 'allowedKeys=', allowedKeys, 'fts_count=', (fts || []).length);
         // Also include form types that explicitly target this user's role via form_type_relations (evaluated_role_key)
         let relationKeys: string[] = [];
         // ensure allowedKeys are canonical form_type keys; if not, try to resolve labels
@@ -185,10 +185,10 @@ export function EvaluationsModule() {
           const { data: allRels } = await supabase.from('form_type_relations')
             .select('form_type_key, evaluated_role_key, evaluator_role_key')
             .in('form_type_key', normalizedAllowed);
-          
+
           const userRoleNorm = normalizeStr(canonicalRole);
           const relevantRels = (allRels || []).filter((r: any) => {
-             return normalizeStr(r.evaluated_role_key) === userRoleNorm || normalizeStr(r.evaluator_role_key) === userRoleNorm;
+            return normalizeStr(r.evaluated_role_key) === userRoleNorm || normalizeStr(r.evaluator_role_key) === userRoleNorm;
           });
           relationKeys = relevantRels.map((r: any) => r.form_type_key);
         }
@@ -250,9 +250,8 @@ export function EvaluationsModule() {
         if (user && canonicalRole) {
           try {
             console.debug('[EvaluationsModule] Loading relation-based candidates. User role:', user.role, 'Canonical role:', canonicalRole);
-            
+
             // Load all form_type_relations and filter client-side using normalized comparisons.
-            // This supports relations stored using role keys or role labels and handles multiple relations per form type.
             let evaluatorRels: any[] = [];
             try {
               const { data: allRels } = await supabase.from('form_type_relations').select('form_type_key,evaluated_role_key,evaluator_role_key');
@@ -279,148 +278,115 @@ export function EvaluationsModule() {
 
             console.debug('[EvaluationsModule] Evaluator relations found (normalized filter):', evaluatorRels);
 
-            if (evaluatorRels && evaluatorRels.length > 0) {
-              // group by form_type_key -> evaluated_role_keys (deduplicated)
-              const relsByFormType: Record<string, string[]> = {};
-              evaluatorRels.forEach((rel: any) => {
-                if (!relsByFormType[rel.form_type_key]) relsByFormType[rel.form_type_key] = [];
-                if (!relsByFormType[rel.form_type_key].includes(rel.evaluated_role_key)) relsByFormType[rel.form_type_key].push(rel.evaluated_role_key);
+            // group by form_type_key -> evaluated_role_keys (deduplicated)
+            const relsByFormType: Record<string, string[]> = {};
+            (evaluatorRels || []).forEach((rel: any) => {
+              if (!relsByFormType[rel.form_type_key]) relsByFormType[rel.form_type_key] = [];
+              if (!relsByFormType[rel.form_type_key].includes(rel.evaluated_role_key)) relsByFormType[rel.form_type_key].push(rel.evaluated_role_key);
+            });
+
+            // Pre-fetch potential candidates (Strict & Office)
+            const evaluatorId = (user as any).id;
+
+            // 1. Strict Candidates (Direct Subordinates)
+            const { data: managedRows } = await supabase.from('user_managers').select('user_id').eq('manager_id', evaluatorId);
+            const managedIdsFromTable = (managedRows || []).map((r: any) => r.user_id).filter(Boolean);
+            const { data: directManaged } = await supabase.from('users').select('id').eq('manager_id', evaluatorId);
+            const directManagedIds = (directManaged || []).map((r: any) => r.id).filter(Boolean);
+            const strictCandidateIds = Array.from(new Set([...(managedIdsFromTable || []), ...(directManagedIds || [])]));
+
+            // 2. Office Candidates (Same Office/Campus)
+            // load evaluator's office links
+            const { data: evalLinks } = await supabase.from('collaborator_offices').select('office_id').eq('collaborator_id', user.id);
+            const officeIds = (evalLinks || []).map((l: any) => l.office_id).filter(Boolean);
+            let officeCandidateIds: string[] = [];
+            if (officeIds.length > 0) {
+              const { data: colLinks } = await supabase.from('collaborator_offices').select('collaborator_id').in('office_id', officeIds);
+              officeCandidateIds = Array.from(new Set((colLinks || []).map((l: any) => l.collaborator_id).filter(Boolean)));
+            }
+            // fallback to user.office_id
+            if (user.office_id) {
+              const { data: officeUsers } = await supabase.from('users').select('id').eq('office_id', user.office_id);
+              const officeUserIds = (officeUsers || []).map((u: any) => u.id).filter(Boolean);
+              officeCandidateIds = Array.from(new Set([...officeCandidateIds, ...officeUserIds]));
+            }
+            // Remove self from office candidates
+            officeCandidateIds = officeCandidateIds.filter(id => id !== evaluatorId);
+
+            // Fetch user details for all potential candidates to filter by role
+            const allPotentialIds = Array.from(new Set([...strictCandidateIds, ...officeCandidateIds]));
+            let allPotentialUsers: any[] = [];
+            if (allPotentialIds.length > 0) {
+              const { data: usersData } = await supabase.from('users').select('*').in('id', allPotentialIds);
+              allPotentialUsers = usersData || [];
+            }
+
+            // Helper to filter users by role list
+            const filterUsersByRoles = (users: any[], targetRoles: string[]) => {
+              const targetRolesNormalized = new Set<string>();
+              // resolve labels
+              const roleKeyToLabel: Record<string, string> = {};
+              (rolesData || []).forEach((r: any) => { roleKeyToLabel[r.key] = r.label; });
+
+              targetRoles.forEach(r => targetRolesNormalized.add(normalizeStr(r)));
+              targetRoles.forEach(k => {
+                const label = roleKeyToLabel[k];
+                if (label) targetRolesNormalized.add(normalizeStr(label));
               });
 
-              // Helper to filter candidates by shared office and campus
-              const filterByOfficeAndCampus = async (cands: any[], _roleKey: string): Promise<any[]> => {
-                if (!user) return [];
-                const evaluatorId = (user as any).id;
+              return users.filter(u => {
+                const r = normalizeStr(u.role);
+                return targetRolesNormalized.has(r);
+              });
+            };
+
+            // for each template in tplList, resolve candidates
+            const candidatesMap: Record<string, User[]> = {};
+            for (const tpl of tplList) {
+              const evaluatedRoles = relsByFormType[tpl.type] || [];
+              console.debug('[EvaluationsModule] Template:', tpl.name, 'type:', tpl.type, 'evaluatedRoles:', evaluatedRoles);
+
+              if (evaluatedRoles.length === 0) {
+                candidatesMap[tpl.id] = [];
+                continue;
+              }
+
+              // Filter strict candidates by role
+              const strictUsers = allPotentialUsers.filter(u => strictCandidateIds.includes(u.id));
+              const strictFiltered = filterUsersByRoles(strictUsers, evaluatedRoles);
+
+              if (strictFiltered.length > 0) {
+                candidatesMap[tpl.id] = strictFiltered;
+                console.debug(`[EvaluationsModule] Template ${tpl.name}: Found ${strictFiltered.length} strict candidates.`);
+              } else {
+                // Fallback to office candidates, BUT filtered by role
+                const officeUsers = allPotentialUsers.filter(u => officeCandidateIds.includes(u.id));
+                const officeFiltered = filterUsersByRoles(officeUsers, evaluatedRoles);
+
+                // Apply strict campus filter for office fallback
                 const evaluatorCampus = (user as any).campus || '';
-
-                // Load office mappings for evaluator and candidates in one query
-                const candidateIds = cands.map((c) => c.id);
-                const { data: officeLinks } = await supabase
-                  .from('collaborator_offices')
-                  .select('collaborator_id,office_id')
-                  .in('collaborator_id', [evaluatorId, ...candidateIds]);
-
-                const officesByUser: Record<string, Set<string>> = {};
-                (officeLinks || []).forEach((l: any) => {
-                  if (!officesByUser[l.collaborator_id]) officesByUser[l.collaborator_id] = new Set();
-                  officesByUser[l.collaborator_id].add(l.office_id);
-                });
-                const evalOffices = officesByUser[evaluatorId] || new Set<string>();
-                const evaluatorOfficeId = ((user as any).office_id || null) as string | null;
-
-                return cands.filter((cand) => {
+                const finalOfficeCandidates = officeFiltered.filter(cand => {
                   const candCampus = (cand.campus || '').toString();
-                  const candOffices = officesByUser[cand.id] || new Set<string>();
-                  const hasLinks = (evalOffices.size > 0) || (candOffices.size > 0);
-                  const shareViaLinks = Array.from(candOffices).some((o) => evalOffices.has(o));
-                  const shareViaFallback = evaluatorOfficeId && cand.office_id ? evaluatorOfficeId === cand.office_id : false;
-                  const shareOffice = hasLinks ? shareViaLinks : shareViaFallback;
                   const campusMatches = !evaluatorCampus || evaluatorCampus === 'Todas' || evaluatorCampus === '' ? true : candCampus === evaluatorCampus;
-                  // Strict rule: must share office and match campus (unless evaluatorCampus is empty/"Todas")
-                  return shareOffice && campusMatches;
-                });
-              };
-
-              // for each template in tplList, resolve candidates
-              const candidatesMap: Record<string, User[]> = {};
-              for (const tpl of tplList) {
-                const evaluatedRoles = relsByFormType[tpl.type] || [];
-                console.debug('[EvaluationsModule] Template:', tpl.name, 'type:', tpl.type, 'evaluatedRoles:', evaluatedRoles);
-
-                if (evaluatedRoles.length === 0) {
-                  candidatesMap[tpl.id] = [];
-                  continue;
-                }
-
-                const evaluatorId = (user as any).id;
-
-                // 1) Collect managed users via `user_managers` table and `users.manager_id`
-                // Strict adherence to "relation de jefe": only users explicitly linked as subordinates.
-                const { data: managedRows } = await supabase.from('user_managers').select('user_id').eq('manager_id', evaluatorId);
-                const managedIdsFromTable = (managedRows || []).map((r: any) => r.user_id).filter(Boolean);
-
-                const { data: directManaged } = await supabase.from('users').select('id').eq('manager_id', evaluatorId);
-                const directManagedIds = (directManaged || []).map((r: any) => r.id).filter(Boolean);
-
-                // Merge all candidate ids (managed relations only)
-                const allCandidateIds = Array.from(new Set([...(managedIdsFromTable || []), ...(directManagedIds || [])]));
-
-                if (allCandidateIds.length === 0) {
-                  candidatesMap[tpl.id] = [];
-                  continue;
-                }
-
-                // fetch those users and filter by evaluatedRoles (support label fallback)
-                const { data: rolesData } = await supabase.from('roles').select('*');
-                const roleKeyToLabel: Record<string, string> = {};
-                (rolesData || []).forEach((r: any) => { roleKeyToLabel[r.key] = r.label; });
-                
-                // Prepare normalized target roles/labels
-                const targetRolesNormalized = new Set<string>();
-                evaluatedRoles.forEach(r => targetRolesNormalized.add(normalizeStr(r)));
-                evaluatedRoles.forEach(k => {
-                   const label = roleKeyToLabel[k];
-                   if (label) targetRolesNormalized.add(normalizeStr(label));
+                  return campusMatches;
                 });
 
-                const { data: candidateUsers } = await supabase.from('users').select('*').in('id', allCandidateIds);
-                const filtered = (candidateUsers || []).filter((u: any) => {
-                  const r = normalizeStr(u.role);
-                  return targetRolesNormalized.has(r);
-                });
-
-                console.debug('[EvaluationsModule] Candidate users (after manager-link & role filter):', filtered.length);
-                candidatesMap[tpl.id] = filtered;
+                candidatesMap[tpl.id] = finalOfficeCandidates;
+                console.debug(`[EvaluationsModule] Template ${tpl.name}: Found ${finalOfficeCandidates.length} office fallback candidates (filtered by role).`);
               }
-              setEvaluationCandidatesByTemplate(candidatesMap);
-              console.debug('[EvaluationsModule] Final candidatesMap:', candidatesMap);
-              // expose candidate counts to diagnostics
-              setDiagnostic((d: any) => ({ ...(d || {}), candidatesCountByTemplate: Object.fromEntries(Object.entries(candidatesMap).map(([k, v]) => [k, (v || []).length])) }));
             }
+            setEvaluationCandidatesByTemplate(candidatesMap);
 
-            // Also load same-office candidates for manager flows.
-            // Include users linked to the evaluator via `collaborator_offices` (shared offices)
-            try {
-              // load evaluator's office links
-              const { data: evalLinks } = await supabase
-                .from('collaborator_offices')
-                .select('office_id')
-                .eq('collaborator_id', user.id);
-              const officeIds = (evalLinks || []).map((l: any) => l.office_id).filter(Boolean);
+            // Update diagnostics
+            setDiagnostic((d: any) => ({
+              ...(d || {}),
+              candidatesCountByTemplate: Object.fromEntries(Object.entries(candidatesMap).map(([k, v]) => [k, (v || []).length])),
+              strictCandidatesCount: strictCandidateIds.length,
+              officeCandidatesCount: officeCandidateIds.length
+            }));
 
-              let candidateIds: string[] = [];
-              if (officeIds.length > 0) {
-                const { data: colLinks } = await supabase
-                  .from('collaborator_offices')
-                  .select('collaborator_id')
-                  .in('office_id', officeIds);
-                candidateIds = Array.from(new Set((colLinks || []).map((l: any) => l.collaborator_id).filter(Boolean)));
-              }
-
-              // also include users whose `office_id` equals evaluator.office_id as fallback
-              const { data: officeUsers } = await supabase
-                .from('users')
-                .select('id')
-                .eq('office_id', user.office_id);
-              const officeUserIds = (officeUsers || []).map((u: any) => u.id).filter(Boolean);
-
-              candidateIds = Array.from(new Set([...candidateIds, ...officeUserIds]));
-
-              let managerList: any[] = [];
-              if (candidateIds.length > 0) {
-                const { data: byIds } = await supabase.from('users').select('*').in('id', candidateIds);
-                managerList = (byIds as any) || [];
-              }
-
-              setManagerCandidates(managerList);
-            } catch (e) {
-              // fallback to simple office_id lookup
-              const { data: candidates } = await supabase.from('users').select('*').eq('office_id', user.office_id);
-              setManagerCandidates((candidates as any) || []);
-            }
           } catch (err) {
             console.error('Error loading candidates', err);
-            setManagerCandidates([]);
             setEvaluationCandidatesByTemplate({});
           }
         }
@@ -466,7 +432,7 @@ export function EvaluationsModule() {
           const { data: relsAllData } = await supabase.from('form_type_relations').select('form_type_key, evaluated_role_key, evaluator_role_key');
           const userRoleNorm = normalizeStr(canonical);
           const relevantRelsAll = (relsAllData || []).filter((r: any) => {
-             return normalizeStr(r.evaluated_role_key) === userRoleNorm || normalizeStr(r.evaluator_role_key) === userRoleNorm;
+            return normalizeStr(r.evaluated_role_key) === userRoleNorm || normalizeStr(r.evaluator_role_key) === userRoleNorm;
           });
           relKeysAll = relevantRelsAll.map((r: any) => r.form_type_key);
         }
@@ -507,10 +473,10 @@ export function EvaluationsModule() {
       const personIdLookup = await getPersonIdForUser(user);
       const evaluatedLookupId = personIdLookup || user.id;
       const { data: existingEvals, error: evalErr } = await supabase
-      .from('evaluations')
-      .select('template_id')
-      .eq('evaluated_id', evaluatedLookupId)
-      .in('template_id', templateIds);
+        .from('evaluations')
+        .select('template_id')
+        .eq('evaluated_id', evaluatedLookupId)
+        .in('template_id', templateIds);
 
       if (evalErr) throw evalErr;
 
@@ -525,31 +491,31 @@ export function EvaluationsModule() {
     }
   };
 
-    const handleAdminTakeTemplate = async (template: EvaluationTemplate) => {
-        if (!user) return;
-      // allow admin to create a test evaluation for themselves
-      try {
-        const { data, error } = await supabase
-          .from('evaluations')
-          .insert([
-            {
-              template_id: template.id,
-                evaluator_id: user.id,
-                evaluated_id: user.id,
-              status: 'pending',
-            },
-          ])
-          .select('*')
-          .single();
+  const handleAdminTakeTemplate = async (template: EvaluationTemplate) => {
+    if (!user) return;
+    // allow admin to create a test evaluation for themselves
+    try {
+      const { data, error } = await supabase
+        .from('evaluations')
+        .insert([
+          {
+            template_id: template.id,
+            evaluator_id: user.id,
+            evaluated_id: user.id,
+            status: 'pending',
+          },
+        ])
+        .select('*')
+        .single();
 
-        if (error) throw error;
+      if (error) throw error;
 
-        if (data) setSelectedEvaluation(data as Evaluation);
-      } catch (err) {
-        console.error('Error creating admin test evaluation', err);
-        alert('No se pudo crear la evaluación de prueba');
-      }
-    };
+      if (data) setSelectedEvaluation(data as Evaluation);
+    } catch (err) {
+      console.error('Error creating admin test evaluation', err);
+      alert('No se pudo crear la evaluación de prueba');
+    }
+  };
 
   const handleStartEvaluation = (evaluation: Evaluation) => {
     setSelectedEvaluation(evaluation);
@@ -727,8 +693,8 @@ export function EvaluationsModule() {
                               <option value="">Selecciona colaborador</option>
                               {(() => {
                                 const relationCandidates = evaluationCandidatesByTemplate[template.id] || [];
-                                const candidateList = relationCandidates.length > 0 ? relationCandidates : managerCandidates;
-                                console.debug('[EvaluationsModule UI] Template:', template.name, 'relationCandidates:', relationCandidates.length, 'managerCandidates:', managerCandidates.length, 'using:', candidateList.length);
+                                const candidateList = relationCandidates;
+                                console.debug('[EvaluationsModule UI] Template:', template.name, 'relationCandidates:', relationCandidates.length);
                                 return candidateList.map((c) => (
                                   <option key={c.id} value={c.id}>{c.full_name} ({c.role || c.identification})</option>
                                 ));
@@ -745,9 +711,8 @@ export function EvaluationsModule() {
                           <button
                             onClick={() => handleTakeSoftSkill(template)}
                             disabled={!!takenTemplatesMap[template.id]}
-                            className={`px-4 py-2 rounded-lg text-white transition-colors ${
-                              takenTemplatesMap[template.id] ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
-                            }`}
+                            className={`px-4 py-2 rounded-lg text-white transition-colors ${takenTemplatesMap[template.id] ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
+                              }`}
                           >
                             {takenTemplatesMap[template.id] ? 'Ya tomado' : 'Tomar prueba'}
                           </button>
@@ -823,13 +788,12 @@ export function EvaluationsModule() {
                       <td className="px-4 py-3 text-sm text-gray-600">{evaluation.evaluated?.full_name}</td>
                       <td className="px-4 py-3 text-sm">
                         <span
-                          className={`px-2 py-1 rounded text-xs font-medium ${
-                            evaluation.status === 'completed'
-                              ? 'bg-green-100 text-green-700'
-                              : evaluation.status === 'in_progress'
+                          className={`px-2 py-1 rounded text-xs font-medium ${evaluation.status === 'completed'
+                            ? 'bg-green-100 text-green-700'
+                            : evaluation.status === 'in_progress'
                               ? 'bg-orange-100 text-orange-700'
                               : 'bg-gray-100 text-gray-700'
-                          }`}
+                            }`}
                         >
                           {getStatusLabel(evaluation.status)}
                         </span>
