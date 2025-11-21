@@ -71,14 +71,26 @@ export function DashboardModule() {
     (async () => {
       if (!availableTemplates || availableTemplates.length === 0) return;
       
-      // Resolve canonical roleKey for current user
+      // Resolve canonical roleKey for current user with robust normalization
       let roleKey = (user?.role || '') as string;
+      const normalizeStr = (s: any) => (s || '').toString().toLowerCase().normalize('NFD').replace(/[^\w\s-]/g, '').replace(/[\u0300-\u036f]/g, '').trim();
       try {
-        const { data: r1 } = await supabase.from('roles').select('key,label').eq('key', roleKey).limit(1);
-        if (!r1 || r1.length === 0) {
-          const { data: r2 } = await supabase.from('roles').select('key,label');
-          const found = (r2 || []).find((rr: any) => (rr.label || '').toString().toLowerCase() === (user?.role || '').toString().toLowerCase());
+        const { data: allRoles } = await supabase.from('roles').select('key,label');
+        const rolesList = (allRoles || []) as any[];
+        // try direct key match
+        const direct = rolesList.find((r) => r.key === roleKey);
+        if (!direct) {
+          // try matching by normalized label or normalized key
+          const target = normalizeStr(roleKey);
+          const found = rolesList.find((rr) => normalizeStr(rr.label) === target || normalizeStr(rr.key) === target);
           if (found) roleKey = found.key;
+          else {
+            // some stored roles might be labels; attempt loose matching by keywords
+            const lower = (roleKey || '').toString().toLowerCase();
+            if (lower.includes('colaborador') || lower.includes('empleado')) roleKey = 'colaborador_vaf';
+            if (lower.includes('admin') || lower.includes('administrador')) roleKey = 'admin';
+            if (lower.includes('jefe') || lower.includes('manager') || lower.includes('oficina')) roleKey = 'office_manager';
+          }
         }
       } catch (err) {
         console.warn('[Dashboard] Could not resolve roleKey from roles table', err);
