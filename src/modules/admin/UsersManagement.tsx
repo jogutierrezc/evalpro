@@ -223,7 +223,7 @@ export function UsersManagement() {
     const directorProgramLabel = ['Director de Programa'];
     const liderProcesoLabels = ['Lider de Proceso', 'Subproceso VAF', 'Lider de Proceso VAF'];
     const bienestarLabel = ['Dirección de bienestar institucional', 'Direccion de bienestar institucional'];
-    
+
     // Manager candidates for coordination roles: Bienestar, Directors, Leaders, Rectoría, Vicerrectoría
     const coordinationManagerLabels = [
       'Dirección de bienestar institucional',
@@ -254,7 +254,7 @@ export function UsersManagement() {
       'Subprocesos VAF',
       'Personal Operativo',
     ];
-    
+
     // New coordination roles requiring manager
     const coordinationRoles = [
       'Coordinación de Extensión',
@@ -279,10 +279,10 @@ export function UsersManagement() {
     if (selLabelLower.includes('director de programa') || selectedRoleKey.toLowerCase().includes('director_programa') || selectedRoleKey.toLowerCase().includes('director')) {
       managerRoleKeys = roleKeysByLabels(vicerrectoriaLabels);
     }
-    
+
     // Check if role is one of the new coordination roles
-    const isCoordinationRole = coordinationRoles.some((rlabel) => 
-      selLabelLower.includes(rlabel.toLowerCase()) || 
+    const isCoordinationRole = coordinationRoles.some((rlabel) =>
+      selLabelLower.includes(rlabel.toLowerCase()) ||
       selectedRoleKey.toLowerCase().includes(rlabel.toLowerCase().replace(/\s+/g, '_'))
     );
 
@@ -353,36 +353,36 @@ export function UsersManagement() {
     const selLabel = (roles || []).find((r) => r.key === selectedRoleKey)?.label || '';
     const lower = selLabel.toLowerCase();
     const needManagerLabels = [
-      'colaborador', 
-      'colaborador vaf', 
-      'coordinador acad', 
+      'colaborador',
+      'colaborador vaf',
+      'coordinador acad',
       'coordinación de extensión',
       'coordinacion de extension',
       'coordinación desarrollo profesoral',
       'coordinacion desarrollo profesoral',
       'coordinación de gestión curricular',
       'coordinacion de gestion curricular',
-      'director de programa', 
-      'jefe campus vaf', 
-      'lider de proceso', 
-      'subproceso', 
-      'personal operativo', 
+      'director de programa',
+      'jefe campus vaf',
+      'lider de proceso',
+      'subproceso',
+      'personal operativo',
       'directores de programa'
     ];
     if (needManagerLabels.some((lbl) => lower.includes(lbl))) return true;
     // also consider legacy key names
     const keyLower = selectedRoleKey.toLowerCase();
     if ([
-      'colaborador_vaf', 
-      'colaborador', 
+      'colaborador_vaf',
+      'colaborador',
       'coordinador_academico',
       'coordinacion_extension',
       'coordinacion_desarrollo_profesoral',
       'coordinacion_gestion_curricular',
-      'director_programa', 
-      'jefe_campus_vaf', 
-      'lider_proceso', 
-      'subproceso_vaf', 
+      'director_programa',
+      'jefe_campus_vaf',
+      'lider_proceso',
+      'subproceso_vaf',
       'personal_operativo'
     ].some((k) => keyLower.includes(k))) return true;
     return false;
@@ -427,12 +427,14 @@ export function UsersManagement() {
       };
 
       const roleToSave = resolveRoleKey(formData.role as string);
+      const roleIdToSave = (roles || []).find(r => r.key === roleToSave)?.id;
 
       const userData = {
         identification: formData.identification,
         full_name: formData.full_name,
         email: formData.email || null,
         role: roleToSave,
+        role_id: roleIdToSave, // Save role_id
         office_id: formData.office_ids && formData.office_ids.length > 0 ? formData.office_ids[0] : null,
         manager_id: formData.manager_ids && formData.manager_ids.length > 0 ? formData.manager_ids[0] : null,
         campus: formData.campus || null,
@@ -700,15 +702,15 @@ export function UsersManagement() {
           }
 
           const { error: userError } = await supabase.from('users').insert([{
-              id: finalUserId,
-              identification,
-              full_name,
-              email: emailToUse,
-              role,
-              office_id,
-              manager_id,
-              campus,
-            }]);
+            id: finalUserId,
+            identification,
+            full_name,
+            email: emailToUse,
+            role,
+            office_id,
+            manager_id,
+            campus,
+          }]);
 
           if (userError) {
             console.error('Error inserting user', full_name, userError);

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase, FormType } from '../../lib/supabase';
+import { supabase, FormType, Role } from '../../lib/supabase';
 import { Plus, Edit2, Trash2 } from 'lucide-react';
 
 export default function FormTypesManagement() {
@@ -8,7 +8,7 @@ export default function FormTypesManagement() {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<FormType | null>(null);
 
-  const [availableRoles, setAvailableRoles] = useState<string[]>([]);
+  const [availableRoles, setAvailableRoles] = useState<Role[]>([]);
   const [form, setForm] = useState<{ key: string; label: string; description: string; roles: string[]; relations?: { evaluator: string; evaluated: string }[] }>({ key: '', label: '', description: '', roles: [], relations: [] });
 
   useEffect(() => { loadTypes(); }, []);
@@ -17,28 +17,15 @@ export default function FormTypesManagement() {
     // load available roles from the new `roles` table (authoritative)
     const loadRoles = async () => {
       try {
-        const { data, error } = await supabase.from('roles').select('key, label').order('label');
+        const { data, error } = await supabase.from('roles').select('*').order('label');
         if (error) throw error;
-        const list = (data || []).map((r: any) => r.key);
-        setAvailableRoles(list);
+        setAvailableRoles((data as Role[]) || []);
       } catch (err) {
         console.error('Error loading available roles from roles table:', err);
       }
     };
     loadRoles();
   }, []);
-
-  // Friendly labels for known role keys. If a role key isn't listed here, we'll
-  // display the raw key as fallback. This map is used to render readable names
-  // in the UI; later we could load these labels from the `roles` table too.
-  const roleLabelMap: Record<string, string> = {
-    colaborador_vaf: 'Colaborador VAF',
-    jefe_vaf: 'Jefe VAF',
-    jefe_campus_vaf: 'Jefe Campus VAF',
-    office_manager: 'Jefe de Oficina',
-    admin: 'Administrador',
-    employee: 'Colaborador',
-  };
 
   async function loadTypes() {
     setLoading(true);
@@ -82,16 +69,30 @@ export default function FormTypesManagement() {
   }
 
   async function handleSave() {
-    // roles is an array
+    // roles is an array of keys
     const rolesArr = (form.roles || []).map(s => s.trim()).filter(Boolean);
+    // Map keys to IDs
+    const roleIdsArr = rolesArr.map(k => availableRoles.find(r => r.key === k)?.id).filter(Boolean) as string[];
+
     try {
       if (editing) {
-        const { error } = await supabase.from('form_types').update({ label: form.label, description: form.description, roles: rolesArr }).eq('id', editing.id);
+        const { error } = await supabase.from('form_types').update({
+          label: form.label,
+          description: form.description,
+          roles: rolesArr,
+          role_ids: roleIdsArr
+        }).eq('id', editing.id);
         if (error) throw error;
         // update relations: delete existing and insert new
         try {
           await supabase.from('form_type_relations').delete().eq('form_type_key', form.key);
-          const inserts = (form.relations || []).map(r => ({ form_type_key: form.key, evaluator_role_key: r.evaluator, evaluated_role_key: r.evaluated }));
+          const inserts = (form.relations || []).map(r => ({
+            form_type_key: form.key,
+            evaluator_role_key: r.evaluator,
+            evaluated_role_key: r.evaluated,
+            evaluator_role_id: availableRoles.find(ar => ar.key === r.evaluator)?.id,
+            evaluated_role_id: availableRoles.find(ar => ar.key === r.evaluated)?.id
+          }));
           if (inserts.length > 0) {
             const { error: insErr } = await supabase.from('form_type_relations').insert(inserts);
             if (insErr) throw insErr;
@@ -102,11 +103,23 @@ export default function FormTypesManagement() {
           alert('Tipo guardado, pero no se pudieron actualizar las relaciones de evaluación.');
         }
       } else {
-        const { error } = await supabase.from('form_types').insert([{ key: form.key, label: form.label, description: form.description, roles: rolesArr }]);
+        const { error } = await supabase.from('form_types').insert([{
+          key: form.key,
+          label: form.label,
+          description: form.description,
+          roles: rolesArr,
+          role_ids: roleIdsArr
+        }]);
         if (error) throw error;
         // insert relations for newly created type
         try {
-          const inserts = (form.relations || []).map(r => ({ form_type_key: form.key, evaluator_role_key: r.evaluator, evaluated_role_key: r.evaluated }));
+          const inserts = (form.relations || []).map(r => ({
+            form_type_key: form.key,
+            evaluator_role_key: r.evaluator,
+            evaluated_role_key: r.evaluated,
+            evaluator_role_id: availableRoles.find(ar => ar.key === r.evaluator)?.id,
+            evaluated_role_id: availableRoles.find(ar => ar.key === r.evaluated)?.id
+          }));
           if (inserts.length > 0) {
             const { error: insErr } = await supabase.from('form_type_relations').insert(inserts);
             if (insErr) throw insErr;
@@ -155,7 +168,7 @@ export default function FormTypesManagement() {
                 <div className="font-medium">{t.label}</div>
                 <div className="text-xs text-slate-500">{t.key}</div>
                 {t.description && <div className="text-sm mt-1">{t.description}</div>}
-                <div className="text-xs mt-2 text-slate-600">Roles: {(t.roles || []).map((r:string) => (roleLabelMap[r] || r)).join(', ')}</div>
+                <div className="text-xs mt-2 text-slate-600">Roles: {(t.roles || []).join(', ')}</div>
               </div>
               <div className="flex gap-2">
                 <button onClick={() => openEdit(t)} className="text-blue-600 px-2 py-1 rounded text-sm"><Edit2 className="w-4 h-4 inline" /> Editar</button>
@@ -174,16 +187,16 @@ export default function FormTypesManagement() {
               {!editing && (
                 <div>
                   <label className="block text-sm">Key (único)</label>
-                  <input className="w-full border p-2 rounded" value={form.key} onChange={(e) => setForm({...form, key: e.target.value})} />
+                  <input className="w-full border p-2 rounded" value={form.key} onChange={(e) => setForm({ ...form, key: e.target.value })} />
                 </div>
               )}
               <div>
                 <label className="block text-sm">Etiqueta</label>
-                <input className="w-full border p-2 rounded" value={form.label} onChange={(e) => setForm({...form, label: e.target.value})} />
+                <input className="w-full border p-2 rounded" value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} />
               </div>
               <div>
                 <label className="block text-sm">Descripción</label>
-                <textarea className="w-full border p-2 rounded" value={form.description} onChange={(e) => setForm({...form, description: e.target.value})} />
+                <textarea className="w-full border p-2 rounded" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
               </div>
               <div>
                 <label className="block text-sm mb-2">Roles aplicables</label>
@@ -191,7 +204,7 @@ export default function FormTypesManagement() {
                   <div className="space-y-2">
                     <label className="inline-flex items-center gap-2">
                       <input type="checkbox" checked={form.roles.length === availableRoles.length} onChange={(e) => {
-                        if (e.target.checked) setForm({ ...form, roles: [...availableRoles] });
+                        if (e.target.checked) setForm({ ...form, roles: availableRoles.map(r => r.key) });
                         else setForm({ ...form, roles: [] });
                       }} />
                       <span className="text-sm">Usar todos los roles</span>
@@ -199,12 +212,12 @@ export default function FormTypesManagement() {
                     <div className="mt-2 max-h-64 overflow-auto border rounded p-2">
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                         {availableRoles.map((r) => (
-                          <label key={r} className="inline-flex items-center gap-2">
-                            <input type="checkbox" checked={form.roles.includes(r)} onChange={(e) => {
-                              if (e.target.checked) setForm({ ...form, roles: Array.from(new Set([...form.roles, r])) });
-                              else setForm({ ...form, roles: form.roles.filter(x => x !== r) });
+                          <label key={r.id} className="inline-flex items-center gap-2">
+                            <input type="checkbox" checked={form.roles.includes(r.key)} onChange={(e) => {
+                              if (e.target.checked) setForm({ ...form, roles: Array.from(new Set([...form.roles, r.key])) });
+                              else setForm({ ...form, roles: form.roles.filter(x => x !== r.key) });
                             }} />
-                            <span className="text-sm">{roleLabelMap[r] ? `${roleLabelMap[r]} (${r})` : r}</span>
+                            <span className="text-sm">{r.label} ({r.key})</span>
                           </label>
                         ))}
                       </div>
@@ -212,8 +225,7 @@ export default function FormTypesManagement() {
                   </div>
                 ) : (
                   <div>
-                    <label className="block text-xs text-slate-500 mb-1">No se encontraron roles en la base. Ingresa roles separados por coma.</label>
-                    <input className="w-full border p-2 rounded" value={(form.roles || []).join(',')} onChange={(e) => setForm({ ...form, roles: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })} placeholder="colaborador_vaf,jefe_vaf,office_manager" />
+                    <label className="block text-xs text-slate-500 mb-1">No se encontraron roles en la base.</label>
                   </div>
                 )}
               </div>
@@ -226,13 +238,13 @@ export default function FormTypesManagement() {
                         const copy = (form.relations || []).slice(); copy[idx].evaluator = e.target.value; setForm({ ...form, relations: copy });
                       }}>
                         <option value="">Selecciona evaluador</option>
-                        {availableRoles.map(r => <option key={r} value={r}>{roleLabelMap[r] ? `${roleLabelMap[r]} (${r})` : r}</option>)}
+                        {availableRoles.map(r => <option key={r.id} value={r.key}>{r.label} ({r.key})</option>)}
                       </select>
                       <select className="border p-2 rounded w-1/2" value={rel.evaluated} onChange={(e) => {
                         const copy = (form.relations || []).slice(); copy[idx].evaluated = e.target.value; setForm({ ...form, relations: copy });
                       }}>
                         <option value="">Selecciona evaluado</option>
-                        {availableRoles.map(r => <option key={r} value={r}>{roleLabelMap[r] ? `${roleLabelMap[r]} (${r})` : r}</option>)}
+                        {availableRoles.map(r => <option key={r.id} value={r.key}>{r.label} ({r.key})</option>)}
                       </select>
                     </div>
                   ))}

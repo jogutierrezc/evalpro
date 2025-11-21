@@ -19,6 +19,7 @@ export interface User {
   full_name: string;
   email: string | null;
   role: UserRole;
+  role_id?: string; // Added for Role ID migration
   office_id: string | null;
   manager_id: string | null;
   campus: string | null;
@@ -39,6 +40,7 @@ export interface EvaluationTemplate {
   name: string;
   description: string | null;
   type: 'soft_skills' | 'self_evaluation' | 'manager_to_employee' | 'employee_to_manager';
+  key?: string; // Added for fallback logic
   job_position: string | null;
   is_active: boolean;
   created_by: string | null;
@@ -95,10 +97,12 @@ export interface FormType {
   label: string;
   description: string | null;
   roles: string[];
+  role_ids?: string[]; // Added for Role ID migration
   created_by: string | null;
   created_at: string;
   updated_at: string;
 }
+
 
 export interface Role {
   id: string;
