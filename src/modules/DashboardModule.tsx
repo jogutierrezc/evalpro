@@ -40,13 +40,13 @@ export function DashboardModule() {
       // AND track which users have been evaluated per template
       const map: Record<string, Evaluation> = {};
       const evaluatedUsersMap: Record<string, Set<string>> = {};
-      
+
       (evaluations || []).forEach((e: any) => {
         // Map for self-evaluations (where evaluator = evaluated)
         if (e.evaluator_id === e.evaluated_id) {
           map[e.template_id] = e as Evaluation;
         }
-        
+
         // Track all evaluated users per template
         if (!evaluatedUsersMap[e.template_id]) {
           evaluatedUsersMap[e.template_id] = new Set();
@@ -55,10 +55,10 @@ export function DashboardModule() {
       });
 
       setUserEvaluationsMap(map);
-      
+
       // Store evaluated users for filtering candidates
       (window as any).__evaluatedUsersMap = evaluatedUsersMap;
-      
+
       console.debug('[Dashboard] User evaluations map:', map);
       console.debug('[Dashboard] Evaluated users map:', evaluatedUsersMap);
     } catch (err) {
@@ -70,7 +70,7 @@ export function DashboardModule() {
     // Load evaluation candidates based on form_type_relations
     (async () => {
       if (!availableTemplates || availableTemplates.length === 0) return;
-      
+
       // Resolve canonical roleKey for current user with robust normalization
       let roleKey = (user?.role || '') as string;
       const normalizeStr = (s: any) => (s || '').toString().toLowerCase().normalize('NFD').replace(/[^\w\s-]/g, '').replace(/[\u0300-\u036f]/g, '').trim();
@@ -139,7 +139,7 @@ export function DashboardModule() {
             .from('form_type_relations')
             .select('evaluated_role_key, evaluator_role_key')
             .eq('form_type_key', tplTypeKey);
-          
+
           const userRoleNorm = normalizeStr(roleKey);
           const rels = (allRels || []).filter((r: any) => normalizeStr(r.evaluator_role_key) === userRoleNorm);
 
@@ -159,17 +159,17 @@ export function DashboardModule() {
 
           // Load users with matching roles (try both keys and labels)
           const evaluatedLabels = evaluatedRoles.map((k: any) => roleKeyToLabel[k] || k);
-          
+
           // Prepare normalized target roles/labels
           const targetRolesNormalized = new Set<string>();
           evaluatedRoles.forEach((r: any) => targetRolesNormalized.add(normalizeStr(r)));
           evaluatedLabels.forEach((l: any) => targetRolesNormalized.add(normalizeStr(l)));
 
           const { data: candidates } = await supabase.from('users').select('*');
-          
+
           const roleMatchedCandidates = (candidates || []).filter((u: any) => {
-             const r = normalizeStr(u.role);
-             return targetRolesNormalized.has(r);
+            const r = normalizeStr(u.role);
+            return targetRolesNormalized.has(r);
           });
 
           console.debug('[Dashboard] Candidates for template (role match):', tpl.name, 'count:', roleMatchedCandidates.length);
@@ -276,7 +276,7 @@ export function DashboardModule() {
 
           if (allowedFormTypeKeys.length > 0) {
             const { data: fts } = await supabase.from('form_types').select('key,roles').in('key', allowedFormTypeKeys);
-            console.debug('[Dashboard] roleKey=', roleKey, 'allowedFormTypeKeys=', allowedFormTypeKeys, 'fts_count=', (fts||[]).length);
+            console.debug('[Dashboard] roleKey=', roleKey, 'allowedFormTypeKeys=', allowedFormTypeKeys, 'fts_count=', (fts || []).length);
             const allowedForRole = (fts || []).filter((ft: any) => Array.isArray(ft.roles) ? ft.roles.includes(roleKey) : false).map((ft: any) => ft.key);
 
             // Try explicit relations too
@@ -328,19 +328,19 @@ export function DashboardModule() {
   const statCards = [
     ...(user?.role === 'admin' || user?.role === 'office_manager'
       ? [
-          {
-            title: 'Total Empleados',
-            value: stats.totalEmployees,
-            icon: Users,
-            color: 'bg-blue-500',
-          },
-          {
-            title: user?.role === 'admin' ? 'Total Oficinas' : 'Mi Oficina',
-            value: stats.totalOffices,
-            icon: Building2,
-            color: 'bg-green-500',
-          },
-        ]
+        {
+          title: 'Total Empleados',
+          value: stats.totalEmployees,
+          icon: Users,
+          color: 'bg-blue-500',
+        },
+        {
+          title: user?.role === 'admin' ? 'Total Oficinas' : 'Mi Oficina',
+          value: stats.totalOffices,
+          icon: Building2,
+          color: 'bg-green-500',
+        },
+      ]
       : []),
     {
       title: 'Evaluaciones Pendientes',
@@ -348,15 +348,15 @@ export function DashboardModule() {
       icon: AlertCircle,
       color: 'bg-orange-500',
     },
-    ...(user && (user?.role !== 'admin')
+    ...(user && (user?.role !== 'admin' && normalizeRoleKey(user?.role) !== 'colaborador_vaf')
       ? [
-          {
-            title: 'Pruebas Disponibles',
-            value: availableTemplatesCount,
-            icon: FileCheck,
-            color: 'bg-indigo-500',
-          },
-        ]
+        {
+          title: 'Pruebas Disponibles',
+          value: availableTemplatesCount,
+          icon: FileCheck,
+          color: 'bg-indigo-500',
+        },
+      ]
       : []),
     {
       title: 'Evaluaciones Completadas',
@@ -422,159 +422,161 @@ export function DashboardModule() {
         </div>
       </div>
 
-      {/* Sección: Exámenes Disponibles para el rol */}
-      <div className="mt-8 bg-white rounded-xl shadow-sm p-6 border border-gray-100">
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">Exámenes Disponibles</h2>
-        {availableTemplates.length === 0 ? (
-          <div className="text-gray-500">No hay exámenes disponibles para tu rol en este momento.</div>
-        ) : (
-          <div className="space-y-3">
-            {availableTemplates.map((tpl) => {
-              const candidates = managerCandidatesMap[tpl.id] || [];
-              const showCandidateSelect = candidates.length > 0;
-              
-              // Get evaluated users for this template
-              const evaluatedUsersMap = (window as any).__evaluatedUsersMap || {};
-              const evaluatedUsers = evaluatedUsersMap[tpl.id] || new Set();
-              
-              // Filter out already evaluated candidates
-              const availableCandidates = candidates.filter(c => !evaluatedUsers.has(c.id));
-              
-              const existingEvaluation = userEvaluationsMap[tpl.id];
-              const isCompleted = existingEvaluation && existingEvaluation.status === 'completed';
-              const isInProgress = existingEvaluation && existingEvaluation.status !== 'completed';
+      {/* Sección: Exámenes Disponibles para el rol - OCULTO para colaborador_vaf */}
+      {normalizeRoleKey(user?.role) !== 'colaborador_vaf' && (
+        <div className="mt-8 bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+          <h2 className="text-xl font-semibold text-gray-900 mb-4">Exámenes Disponibles</h2>
+          {availableTemplates.length === 0 ? (
+            <div className="text-gray-500">No hay exámenes disponibles para tu rol en este momento.</div>
+          ) : (
+            <div className="space-y-3">
+              {availableTemplates.map((tpl) => {
+                const candidates = managerCandidatesMap[tpl.id] || [];
+                const showCandidateSelect = candidates.length > 0;
 
-              return (
-                <div key={tpl.id} className="border rounded p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <div>
-                      <div className="text-sm font-semibold text-gray-800">{tpl.name}</div>
-                      <div className="text-xs text-gray-500">{tpl.description}</div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      {/* Self-evaluation button */}
-                      {isCompleted ? (
-                        <button
-                          disabled
-                          className="px-4 py-2 bg-gray-400 text-white rounded cursor-not-allowed text-sm"
-                        >
-                          Ya realizado
-                        </button>
-                      ) : isInProgress ? (
-                        <button
-                          onClick={() => setSelectedEvaluation(existingEvaluation)}
-                          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
-                        >
-                          Continuar
-                        </button>
-                      ) : (
-                        <button
-                          onClick={async () => {
-                            try {
-                              const evaluatorId = user?.id;
-                              if (!evaluatorId) throw new Error('No user');
+                // Get evaluated users for this template
+                const evaluatedUsersMap = (window as any).__evaluatedUsersMap || {};
+                const evaluatedUsers = evaluatedUsersMap[tpl.id] || new Set();
 
-                              const { data, error } = await supabase
-                                .from('evaluations')
-                                .insert([
-                                  {
-                                    template_id: tpl.id,
-                                    evaluator_id: evaluatorId,
-                                    evaluated_id: evaluatorId, // Self-evaluation
-                                    status: 'pending',
-                                  },
-                                ])
-                                .select('*')
-                                .single();
+                // Filter out already evaluated candidates
+                const availableCandidates = candidates.filter(c => !evaluatedUsers.has(c.id));
 
-                              if (error) throw error;
+                const existingEvaluation = userEvaluationsMap[tpl.id];
+                const isCompleted = existingEvaluation && existingEvaluation.status === 'completed';
+                const isInProgress = existingEvaluation && existingEvaluation.status !== 'completed';
 
-                              setSelectedEvaluation(data as Evaluation);
-                              loadUserEvaluations();
-                            } catch (err) {
-                              console.error('Error creating evaluation from dashboard', err);
-                              alert('No se pudo iniciar la evaluación');
-                            }
-                          }}
-                          className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 text-sm"
-                        >
-                          Iniciar Examen
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Evaluate others section - only show if there are candidates */}
-                  {showCandidateSelect && availableCandidates.length > 0 && (
-                    <div className="mt-3 pt-3 border-t border-gray-200">
+                return (
+                  <div key={tpl.id} className="border rounded p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div>
+                        <div className="text-sm font-semibold text-gray-800">{tpl.name}</div>
+                        <div className="text-xs text-gray-500">{tpl.description}</div>
+                      </div>
                       <div className="flex items-center gap-3">
-                        <label className="text-xs text-gray-600 font-medium">Evaluar a otro colaborador:</label>
-                        <select
-                          className="border rounded p-2 text-sm flex-1"
-                          value={selectedCandidate[tpl.id] || ''}
-                          onChange={(e) => setSelectedCandidate({ ...selectedCandidate, [tpl.id]: e.target.value })}
-                        >
-                          <option value="">Selecciona colaborador</option>
-                          {availableCandidates.map((c) => (
-                            <option key={c.id} value={c.id}>{c.full_name} ({c.role || c.identification})</option>
-                          ))}
-                        </select>
-                        <button
-                          onClick={async () => {
-                            try {
-                              const evaluatorId = user?.id;
-                              if (!evaluatorId) throw new Error('No user');
+                        {/* Self-evaluation button */}
+                        {isCompleted ? (
+                          <button
+                            disabled
+                            className="px-4 py-2 bg-gray-400 text-white rounded cursor-not-allowed text-sm"
+                          >
+                            Ya realizado
+                          </button>
+                        ) : isInProgress ? (
+                          <button
+                            onClick={() => setSelectedEvaluation(existingEvaluation)}
+                            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+                          >
+                            Continuar
+                          </button>
+                        ) : (
+                          <button
+                            onClick={async () => {
+                              try {
+                                const evaluatorId = user?.id;
+                                if (!evaluatorId) throw new Error('No user');
 
-                              const evaluatedId = selectedCandidate[tpl.id];
-                              if (!evaluatedId) { 
-                                alert('Selecciona un colaborador'); 
-                                return; 
+                                const { data, error } = await supabase
+                                  .from('evaluations')
+                                  .insert([
+                                    {
+                                      template_id: tpl.id,
+                                      evaluator_id: evaluatorId,
+                                      evaluated_id: evaluatorId, // Self-evaluation
+                                      status: 'pending',
+                                    },
+                                  ])
+                                  .select('*')
+                                  .single();
+
+                                if (error) throw error;
+
+                                setSelectedEvaluation(data as Evaluation);
+                                loadUserEvaluations();
+                              } catch (err) {
+                                console.error('Error creating evaluation from dashboard', err);
+                                alert('No se pudo iniciar la evaluación');
                               }
-
-                              const { data, error } = await supabase
-                                .from('evaluations')
-                                .insert([
-                                  {
-                                    template_id: tpl.id,
-                                    evaluator_id: evaluatorId,
-                                    evaluated_id: evaluatedId,
-                                    status: 'pending',
-                                  },
-                                ])
-                                .select('*')
-                                .single();
-
-                              if (error) throw error;
-
-                              setSelectedEvaluation(data as Evaluation);
-                              loadUserEvaluations();
-                            } catch (err) {
-                              console.error('Error creating evaluation from dashboard', err);
-                              alert('No se pudo iniciar la evaluación');
-                            }
-                          }}
-                          className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm whitespace-nowrap"
-                        >
-                          Crear Evaluación
-                        </button>
+                            }}
+                            className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 text-sm"
+                          >
+                            Iniciar Examen
+                          </button>
+                        )}
                       </div>
                     </div>
-                  )}
 
-                  {/* Show message if all candidates have been evaluated */}
-                  {showCandidateSelect && candidates.length > 0 && availableCandidates.length === 0 && (
-                    <div className="mt-3 pt-3 border-t border-gray-200">
-                      <div className="text-xs text-gray-500 italic">
-                        Todos los colaboradores disponibles ya han sido evaluados
+                    {/* Evaluate others section - only show if there are candidates */}
+                    {showCandidateSelect && availableCandidates.length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-gray-200">
+                        <div className="flex items-center gap-3">
+                          <label className="text-xs text-gray-600 font-medium">Evaluar a otro colaborador:</label>
+                          <select
+                            className="border rounded p-2 text-sm flex-1"
+                            value={selectedCandidate[tpl.id] || ''}
+                            onChange={(e) => setSelectedCandidate({ ...selectedCandidate, [tpl.id]: e.target.value })}
+                          >
+                            <option value="">Selecciona colaborador</option>
+                            {availableCandidates.map((c) => (
+                              <option key={c.id} value={c.id}>{c.full_name} ({c.role || c.identification})</option>
+                            ))}
+                          </select>
+                          <button
+                            onClick={async () => {
+                              try {
+                                const evaluatorId = user?.id;
+                                if (!evaluatorId) throw new Error('No user');
+
+                                const evaluatedId = selectedCandidate[tpl.id];
+                                if (!evaluatedId) {
+                                  alert('Selecciona un colaborador');
+                                  return;
+                                }
+
+                                const { data, error } = await supabase
+                                  .from('evaluations')
+                                  .insert([
+                                    {
+                                      template_id: tpl.id,
+                                      evaluator_id: evaluatorId,
+                                      evaluated_id: evaluatedId,
+                                      status: 'pending',
+                                    },
+                                  ])
+                                  .select('*')
+                                  .single();
+
+                                if (error) throw error;
+
+                                setSelectedEvaluation(data as Evaluation);
+                                loadUserEvaluations();
+                              } catch (err) {
+                                console.error('Error creating evaluation from dashboard', err);
+                                alert('No se pudo iniciar la evaluación');
+                              }
+                            }}
+                            className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm whitespace-nowrap"
+                          >
+                            Crear Evaluación
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+                    )}
+
+                    {/* Show message if all candidates have been evaluated */}
+                    {showCandidateSelect && candidates.length > 0 && availableCandidates.length === 0 && (
+                      <div className="mt-3 pt-3 border-t border-gray-200">
+                        <div className="text-xs text-gray-500 italic">
+                          Todos los colaboradores disponibles ya han sido evaluados
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
