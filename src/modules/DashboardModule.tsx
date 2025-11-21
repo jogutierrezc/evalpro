@@ -100,38 +100,21 @@ export function DashboardModule() {
 
       const map: Record<string, User[]> = {};
 
-      // Helper: filter candidates by shared office (and campus rules if needed)
-      const filterByOfficeAndCampus = async (cands: any[]): Promise<any[]> => {
+      // Helper: filter candidates by manager relationship (strict)
+      const filterByManagerRelation = async (cands: any[]): Promise<any[]> => {
         if (!user?.id) return [];
         const evaluatorId = user.id;
-        const evaluatorCampus = (user as any).campus || '';
 
-        // Load office links for evaluator and candidates
-        const candidateIds = (cands || []).map((c) => c.id);
-        const { data: officeLinks } = await supabase
-          .from('collaborator_offices')
-          .select('collaborator_id,office_id')
-          .in('collaborator_id', [evaluatorId, ...candidateIds]);
+        // 1) Collect managed users via `user_managers` table and `users.manager_id`
+        const { data: managedRows } = await supabase.from('user_managers').select('user_id').eq('manager_id', evaluatorId);
+        const managedIdsFromTable = (managedRows || []).map((r: any) => r.user_id).filter(Boolean);
 
-        const officesByUser: Record<string, Set<string>> = {};
-        (officeLinks || []).forEach((l: any) => {
-          if (!officesByUser[l.collaborator_id]) officesByUser[l.collaborator_id] = new Set();
-          officesByUser[l.collaborator_id].add(l.office_id);
-        });
+        const { data: directManaged } = await supabase.from('users').select('id').eq('manager_id', evaluatorId);
+        const directManagedIds = (directManaged || []).map((r: any) => r.id).filter(Boolean);
 
-        const evalOffices = officesByUser[evaluatorId] || new Set<string>();
-        const evaluatorOfficeId = ((user as any).office_id || null) as string | null;
+        const managedIds = new Set([...(managedIdsFromTable || []), ...(directManagedIds || [])]);
 
-        // For now, enforce shared office; if campus is set (and not 'Todas'), also match campus
-        return (cands || []).filter((cand) => {
-          const candOffices = officesByUser[cand.id] || new Set<string>();
-          const hasLinks = (evalOffices.size > 0) || (candOffices.size > 0);
-          const shareViaLinks = Array.from(candOffices).some((o) => evalOffices.has(o));
-          const shareViaFallback = evaluatorOfficeId && cand.office_id ? evaluatorOfficeId === cand.office_id : false;
-          const shareOffice = hasLinks ? shareViaLinks : shareViaFallback;
-          const campusMatches = !evaluatorCampus || evaluatorCampus === 'Todas' ? true : (cand.campus || '') === evaluatorCampus;
-          return shareOffice && campusMatches;
-        });
+        return (cands || []).filter((cand) => managedIds.has(cand.id));
       };
 
       for (const tpl of availableTemplates) {
@@ -151,12 +134,14 @@ export function DashboardModule() {
 
           console.debug('[Dashboard] Template:', tpl.name, 'type:', tplTypeKey);
 
-          // Load relations where user is evaluator
-          const { data: rels } = await supabase
+          // Load relations where user is evaluator (using robust normalization)
+          const { data: allRels } = await supabase
             .from('form_type_relations')
-            .select('evaluated_role_key')
-            .eq('form_type_key', tplTypeKey)
-            .eq('evaluator_role_key', roleKey);
+            .select('evaluated_role_key, evaluator_role_key')
+            .eq('form_type_key', tplTypeKey);
+          
+          const userRoleNorm = normalizeStr(roleKey);
+          const rels = (allRels || []).filter((r: any) => normalizeStr(r.evaluator_role_key) === userRoleNorm);
 
           console.debug('[Dashboard] Relations found for template:', tpl.name, 'relations:', rels);
 
@@ -173,16 +158,24 @@ export function DashboardModule() {
           (rolesData || []).forEach((r: any) => { roleKeyToLabel[r.key] = r.label; });
 
           // Load users with matching roles (try both keys and labels)
-          const evaluatedLabels = evaluatedRoles.map((k) => roleKeyToLabel[k] || k);
-          const { data: candidates } = await supabase
-            .from('users')
-            .select('*')
-            .in('role', [...evaluatedRoles, ...evaluatedLabels]);
+          const evaluatedLabels = evaluatedRoles.map((k: any) => roleKeyToLabel[k] || k);
+          
+          // Prepare normalized target roles/labels
+          const targetRolesNormalized = new Set<string>();
+          evaluatedRoles.forEach((r: any) => targetRolesNormalized.add(normalizeStr(r)));
+          evaluatedLabels.forEach((l: any) => targetRolesNormalized.add(normalizeStr(l)));
 
-          console.debug('[Dashboard] Candidates for template:', tpl.name, 'count:', (candidates || []).length);
+          const { data: candidates } = await supabase.from('users').select('*');
+          
+          const roleMatchedCandidates = (candidates || []).filter((u: any) => {
+             const r = normalizeStr(u.role);
+             return targetRolesNormalized.has(r);
+          });
 
-          // Enforce office-based eligibility
-          const filtered = await filterByOfficeAndCampus((candidates as any) || []);
+          console.debug('[Dashboard] Candidates for template (role match):', tpl.name, 'count:', roleMatchedCandidates.length);
+
+          // Enforce manager-based eligibility
+          const filtered = await filterByManagerRelation(roleMatchedCandidates);
           map[tpl.id] = (filtered as User[]) || [];
         } catch (err) {
           console.warn('[Dashboard] Error loading candidates for template', tpl.id, err);
