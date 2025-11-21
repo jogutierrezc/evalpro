@@ -273,6 +273,12 @@ export function UsersManagement() {
 
     const selRoleLabel = (roles || []).find((r) => r.key === selectedRoleKey)?.label || '';
     const selLabelLower = selRoleLabel.toLowerCase();
+
+    // If the selected role is a Director de Programa, prefer Vicerrectoría roles as managers
+    const vicerrectoriaLabels = ['Vicerrectoria Académica', 'Vicerrectoría Académica', 'Vicerrectorias', 'Vicerrectoría'];
+    if (selLabelLower.includes('director de programa') || selectedRoleKey.toLowerCase().includes('director_programa') || selectedRoleKey.toLowerCase().includes('director')) {
+      managerRoleKeys = roleKeysByLabels(vicerrectoriaLabels);
+    }
     
     // Check if role is one of the new coordination roles
     const isCoordinationRole = coordinationRoles.some((rlabel) => 
