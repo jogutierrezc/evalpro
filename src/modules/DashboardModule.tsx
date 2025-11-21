@@ -143,7 +143,20 @@ export function DashboardModule() {
             .eq('form_type_key', tplTypeKey);
 
           const userRoleNorm = normalizeStr(roleKey);
-          const rels = (allRels || []).filter((r: any) => normalizeStr(r.evaluator_role_key) === userRoleNorm);
+          let rels = (allRels || []).filter((r: any) => normalizeStr(r.evaluator_role_key) === userRoleNorm);
+
+          // FALLBACK: If no direct relation found, check for generic manager roles
+          // This handles cases where a specific role (e.g. 'Rectoria') acts as a manager but the relation is defined for 'office_manager'
+          if (rels.length === 0) {
+            const genericManagerRels = (allRels || []).filter((r: any) => {
+              const k = normalizeStr(r.evaluator_role_key);
+              return k === 'officemanager' || k === 'lider' || k === 'jefe' || k === 'liderproceso';
+            });
+            if (genericManagerRels.length > 0) {
+              console.debug('[Dashboard] Using generic manager relations for role:', roleKey);
+              rels = genericManagerRels;
+            }
+          }
 
           console.debug('[Dashboard] Relations found for template:', tpl.name, 'relations:', rels);
 
