@@ -148,12 +148,17 @@ export function DashboardModule() {
           // FALLBACK: If no direct relation found, check for generic manager roles
           // This handles cases where a specific role (e.g. 'Rectoria') acts as a manager but the relation is defined for 'office_manager'
           if (rels.length === 0) {
+            console.debug('[Dashboard] No direct relations for', userRoleNorm, '. Checking generic manager roles against:', (allRels || []).map((r: any) => r.evaluator_role_key));
             const genericManagerRels = (allRels || []).filter((r: any) => {
               const k = normalizeStr(r.evaluator_role_key);
-              return k === 'officemanager' || k === 'lider' || k === 'jefe' || k === 'liderproceso';
+              return k === 'office_manager' || k === 'officemanager' ||
+                k === 'lider' || k === 'jefe' ||
+                k === 'lider_proceso' || k === 'liderproceso' ||
+                k === 'lider_vaf' || k === 'lidervaf' ||
+                k === 'director' || k === 'coordinador';
             });
             if (genericManagerRels.length > 0) {
-              console.debug('[Dashboard] Using generic manager relations for role:', roleKey);
+              console.debug('[Dashboard] Using generic manager relations for role:', roleKey, 'found:', genericManagerRels);
               rels = genericManagerRels;
             }
           }
