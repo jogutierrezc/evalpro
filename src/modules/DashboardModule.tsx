@@ -71,130 +71,137 @@ export function DashboardModule() {
     // Load evaluation candidates based on form_type_relations
     (async () => {
       if (!availableTemplates || availableTemplates.length === 0) return;
+      if (!user) return;
 
-      // Resolve canonical roleKey for current user with robust normalization
-      let roleKey = (user?.role || '') as string;
       const normalizeStr = (s: any) => (s || '').toString().toLowerCase().normalize('NFD').replace(/[^\w\s-]/g, '').replace(/[\u0300-\u036f]/g, '').trim();
+
+      let userRoleNorm = normalizeStr(user.role);
+      const userRoleId = user.role_id;
+
+      // Try to canonicalize role key if possible
       try {
         const { data: allRoles } = await supabase.from('roles').select('key,label');
         const rolesList = (allRoles || []) as any[];
-        // try direct key match
-        const direct = rolesList.find((r) => r.key === roleKey);
+        const direct = rolesList.find((r) => r.key === user.role);
         if (!direct) {
-          // try matching by normalized label or normalized key
-          const target = normalizeStr(roleKey);
+          const target = normalizeStr(user.role);
           const found = rolesList.find((rr) => normalizeStr(rr.label) === target || normalizeStr(rr.key) === target);
-          const userRoleNorm = normalizeStr(roleKey);
-          const userRoleId = user.role_id;
+          if (found) {
+            userRoleNorm = normalizeStr(found.key);
+          }
+        }
+      } catch (e) {
+        console.warn('Error fetching roles for normalization', e);
+      }
 
-          const map: Record<string, User[]> = {};
-          const selfMap: Record<string, boolean> = {};
+      const map: Record<string, User[]> = {};
+      const selfMap: Record<string, boolean> = {};
 
-          // Helper: filter candidates by manager relationship (strict)
-          const filterByManagerRelation = async (cands: any[]): Promise<any[]> => {
-            if (!user?.id) return [];
-            const evaluatorId = user.id;
+      // Helper: filter candidates by manager relationship (strict)
+      const filterByManagerRelation = async (cands: any[]): Promise<any[]> => {
+        if (!user?.id) return [];
+        const evaluatorId = user.id;
 
-            // 1) Collect managed users via `user_managers` table and `users.manager_id`
-            const { data: managedRows } = await supabase.from('user_managers').select('user_id').eq('manager_id', evaluatorId);
-            const managedIdsFromTable = (managedRows || []).map((r: any) => r.user_id).filter(Boolean);
+        // 1) Collect managed users via `user_managers` table and `users.manager_id`
+        const { data: managedRows } = await supabase.from('user_managers').select('user_id').eq('manager_id', evaluatorId);
+        const managedIdsFromTable = (managedRows || []).map((r: any) => r.user_id).filter(Boolean);
 
-            const { data: directManaged } = await supabase.from('users').select('id').eq('manager_id', evaluatorId);
-            const directManagedIds = (directManaged || []).map((r: any) => r.id).filter(Boolean);
+        const { data: directManaged } = await supabase.from('users').select('id').eq('manager_id', evaluatorId);
+        const directManagedIds = (directManaged || []).map((r: any) => r.id).filter(Boolean);
 
-            const managedIds = new Set([...(managedIdsFromTable || []), ...(directManagedIds || [])]);
+        const managedIds = new Set([...(managedIdsFromTable || []), ...(directManagedIds || [])]);
 
-            return (cands || []).filter((cand) => managedIds.has(cand.id));
-          };
+        return (cands || []).filter((cand) => managedIds.has(cand.id));
+      };
 
-          for (const tpl of availableTemplates) {
-            try {
-              let tplTypeKey = tpl.key || tpl.type; // prefer key if available
+      for (const tpl of availableTemplates) {
+        try {
+          let tplTypeKey = tpl.key || tpl.type; // prefer key if available
 
-              // Fetch relations for this form type
-              const { data: allRels } = await supabase
-                .from('form_type_relations')
-                .select('*')
-                .eq('form_type_key', tplTypeKey);
+          // Fetch relations for this form type
+          const { data: allRels } = await supabase
+            .from('form_type_relations')
+            .select('*')
+            .eq('form_type_key', tplTypeKey);
 
-              // 1. Determine Relations (Evaluator)
-              let rels = [];
-              if (userRoleId) {
-                rels = (allRels || []).filter((r: any) => r.evaluator_role_id === userRoleId);
-              }
+          // 1. Determine Relations (Evaluator)
+          let rels = [];
+          if (userRoleId) {
+            rels = (allRels || []).filter((r: any) => r.evaluator_role_id === userRoleId);
+          }
 
-              if (rels.length === 0) {
-                // Fallback to string key
-                rels = (allRels || []).filter((r: any) => normalizeStr(r.evaluator_role_key) === userRoleNorm);
+          if (rels.length === 0) {
+            // Fallback to string key
+            rels = (allRels || []).filter((r: any) => normalizeStr(r.evaluator_role_key) === userRoleNorm);
 
-                // Fallback to generic manager
-                if (rels.length === 0) {
-                  const genericManagerRels = (allRels || []).filter((r: any) => {
-                    const k = normalizeStr(r.evaluator_role_key);
-                    return ['office_manager', 'officemanager', 'lider', 'jefe', 'director', 'coordinador', 'lider_proceso', 'lider_vaf'].includes(k);
-                  });
-                  if (genericManagerRels.length > 0) rels = genericManagerRels;
-                }
-              }
-
-              // 2. Determine Self-Eval
-              let canSelfEval = false;
-              if (userRoleId) {
-                canSelfEval = rels.some((r: any) => r.evaluated_role_id === userRoleId);
-              }
-              if (!canSelfEval) {
-                canSelfEval = rels.some((r: any) => normalizeStr(r.evaluated_role_key) === userRoleNorm);
-              }
-
-              // Fallback Self-Eval (Form Type Roles)
-              if (!canSelfEval) {
-                const { data: ft } = await supabase.from('form_types').select('roles, role_ids').eq('key', tplTypeKey).single();
-                if (ft) {
-                  if (userRoleId && ft.role_ids && Array.isArray(ft.role_ids)) {
-                    if (ft.role_ids.includes(userRoleId)) canSelfEval = true;
-                  }
-                  if (!canSelfEval && ft.roles && Array.isArray(ft.roles)) {
-                    const normalizedFtRoles = ft.roles.map((r: any) => normalizeStr(r));
-                    if (normalizedFtRoles.includes(userRoleNorm)) canSelfEval = true;
-                  }
-                }
-              }
-              selfMap[tpl.id] = canSelfEval;
-
-              // 3. Determine Candidates (Evaluated)
-              if (rels.length === 0) {
-                map[tpl.id] = [];
-                continue;
-              }
-
-              // Get target roles/IDs
-              const targetRoleIds = new Set(rels.map((r: any) => r.evaluated_role_id).filter(Boolean));
-              const targetRoleKeys = new Set(rels.map((r: any) => normalizeStr(r.evaluated_role_key)));
-
-              const { data: candidates } = await supabase.from('users').select('*');
-
-              let eligible = (candidates || []).filter((u: any) => {
-                if (user && u.id === user.id) return false; // exclude self
-                if (u.role_id && targetRoleIds.has(u.role_id)) return true;
-                if (targetRoleKeys.has(normalizeStr(u.role))) return true;
-                return false;
+            // Fallback to generic manager
+            if (rels.length === 0) {
+              const genericManagerRels = (allRels || []).filter((r: any) => {
+                const k = normalizeStr(r.evaluator_role_key);
+                return ['office_manager', 'officemanager', 'lider', 'jefe', 'director', 'coordinador', 'lider_proceso', 'lider_vaf'].includes(k);
               });
-
-              // Filter by manager relation
-              eligible = await filterByManagerRelation(eligible);
-              map[tpl.id] = eligible;
-
-            } catch (err) {
-              console.warn('[Dashboard] Error processing template', tpl.id, err);
-              map[tpl.id] = [];
-              selfMap[tpl.id] = false;
+              if (genericManagerRels.length > 0) rels = genericManagerRels;
             }
           }
 
-          setManagerCandidatesMap(map);
-          setSelfEvalAllowedMap(selfMap);
+          // 2. Determine Self-Eval
+          let canSelfEval = false;
+          if (userRoleId) {
+            canSelfEval = rels.some((r: any) => r.evaluated_role_id === userRoleId);
+          }
+          if (!canSelfEval) {
+            canSelfEval = rels.some((r: any) => normalizeStr(r.evaluated_role_key) === userRoleNorm);
+          }
 
-        })();
+          // Fallback Self-Eval (Form Type Roles)
+          if (!canSelfEval) {
+            const { data: ft } = await supabase.from('form_types').select('roles, role_ids').eq('key', tplTypeKey).single();
+            if (ft) {
+              if (userRoleId && ft.role_ids && Array.isArray(ft.role_ids)) {
+                if (ft.role_ids.includes(userRoleId)) canSelfEval = true;
+              }
+              if (!canSelfEval && ft.roles && Array.isArray(ft.roles)) {
+                const normalizedFtRoles = ft.roles.map((r: any) => normalizeStr(r));
+                if (normalizedFtRoles.includes(userRoleNorm)) canSelfEval = true;
+              }
+            }
+          }
+          selfMap[tpl.id] = canSelfEval;
+
+          // 3. Determine Candidates (Evaluated)
+          if (rels.length === 0) {
+            map[tpl.id] = [];
+            continue;
+          }
+
+          // Get target roles/IDs
+          const targetRoleIds = new Set(rels.map((r: any) => r.evaluated_role_id).filter(Boolean));
+          const targetRoleKeys = new Set(rels.map((r: any) => normalizeStr(r.evaluated_role_key)));
+
+          const { data: candidates } = await supabase.from('users').select('*');
+
+          let eligible = (candidates || []).filter((u: any) => {
+            if (user && u.id === user.id) return false; // exclude self
+            if (u.role_id && targetRoleIds.has(u.role_id)) return true;
+            if (targetRoleKeys.has(normalizeStr(u.role))) return true;
+            return false;
+          });
+
+          // Filter by manager relation
+          eligible = await filterByManagerRelation(eligible);
+          map[tpl.id] = eligible;
+
+        } catch (err) {
+          console.warn('[Dashboard] Error processing template', tpl.id, err);
+          map[tpl.id] = [];
+          selfMap[tpl.id] = false;
+        }
+      }
+
+      setManagerCandidatesMap(map);
+      setSelfEvalAllowedMap(selfMap);
+
+    })();
   }, [availableTemplates, user]);
 
   const handleCloseForm = () => {
