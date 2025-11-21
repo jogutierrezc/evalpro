@@ -165,6 +165,10 @@ export function EvaluationsModule() {
         let relationKeys: string[] = [];
         // ensure allowedKeys are canonical form_type keys; if not, try to resolve labels
         let normalizedAllowed: string[] = [];
+
+        // Use ID-based logic if available
+        const userRoleId = user?.role_id;
+
         if (canonicalRole) {
           for (const k of allowedKeys) {
             let kKey = k;
@@ -183,17 +187,28 @@ export function EvaluationsModule() {
 
           // Fetch relations where user is either evaluated OR evaluator
           const { data: allRels } = await supabase.from('form_type_relations')
-            .select('form_type_key, evaluated_role_key, evaluator_role_key')
+            .select('*')
             .in('form_type_key', normalizedAllowed);
 
           const userRoleNorm = normalizeStr(canonicalRole);
           const relevantRels = (allRels || []).filter((r: any) => {
+            if (userRoleId) {
+              if (r.evaluated_role_id === userRoleId || r.evaluator_role_id === userRoleId) return true;
+            }
             return normalizeStr(r.evaluated_role_key) === userRoleNorm || normalizeStr(r.evaluator_role_key) === userRoleNorm;
           });
           relationKeys = relevantRels.map((r: any) => r.form_type_key);
         }
 
-        const allowedForUser = Array.from(new Set([...(fts || []).filter((ft: any) => Array.isArray(ft.roles) ? ft.roles.includes(canonicalRole as any) : false).map((ft: any) => ft.key), ...relationKeys]));
+        const allowedForUser = Array.from(new Set([
+          ...(fts || []).filter((ft: any) => {
+            if (userRoleId && ft.role_ids && Array.isArray(ft.role_ids)) {
+              if (ft.role_ids.includes(userRoleId)) return true;
+            }
+            return Array.isArray(ft.roles) ? ft.roles.includes(canonicalRole as any) : false;
+          }).map((ft: any) => ft.key),
+          ...relationKeys
+        ]));
         console.debug('[Evaluations] relationKeys=', relationKeys, 'allowedForUser=', allowedForUser);
 
         // Save diagnostic info for UI inspection
