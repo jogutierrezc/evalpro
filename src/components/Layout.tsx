@@ -28,9 +28,22 @@ export function Layout({ children, activeModule, onModuleChange }: LayoutProps) 
     { id: 'admin', label: 'Administración', icon: Settings, roles: ['admin'] },
   ];
 
-  const filteredMenuItems = menuItems.filter(item =>
-    item.roles.includes(user?.role || '')
-  );
+  const filteredMenuItems = menuItems.filter(item => {
+    const ur = (user?.role || '').toString().toLowerCase();
+    const matchesRole = (roleKey: string) => {
+      const rk = (roleKey || '').toString().toLowerCase();
+      if (!rk) return false;
+      if (rk === ur) return true;
+      // allow broad matching: 'employee' matches any role containing 'colaborador' or 'employee'
+      if (rk === 'employee' && (ur.includes('colaborador') || ur.includes('employee'))) return true;
+      if (rk === 'office_manager' && (ur.includes('jefe') || ur.includes('manager') || ur.includes('oficina'))) return true;
+      if (rk === 'admin' && (ur.includes('admin') || ur.includes('administrador'))) return true;
+      // fallback: substring match (useful when roles stored as labels)
+      if (ur.includes(rk) || rk.includes(ur)) return true;
+      return false;
+    };
+    return item.roles.some(matchesRole);
+  });
 
   const handleSignOut = async () => {
     await signOut();
