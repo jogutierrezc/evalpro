@@ -148,7 +148,23 @@ export function DashboardModule() {
           console.debug('[Dashboard] Relations found for template:', tpl.name, 'relations:', rels);
 
           // Check if user can self-evaluate (relation exists where evaluated == evaluator)
-          const canSelfEval = rels.some((r: any) => normalizeStr(r.evaluated_role_key) === userRoleNorm);
+          let canSelfEval = rels.some((r: any) => normalizeStr(r.evaluated_role_key) === userRoleNorm);
+
+          // Fallback: if no relation-based self-eval, check if role is directly allowed in form_type
+          if (!canSelfEval) {
+            try {
+              const { data: ft } = await supabase.from('form_types').select('roles').eq('key', tplTypeKey).single();
+              if (ft && Array.isArray(ft.roles)) {
+                const normalizedFtRoles = ft.roles.map((r: any) => normalizeStr(r));
+                if (normalizedFtRoles.includes(userRoleNorm)) {
+                  canSelfEval = true;
+                }
+              }
+            } catch (e) {
+              console.debug('[Dashboard] Error checking form_type roles fallback', e);
+            }
+          }
+
           selfMap[tpl.id] = canSelfEval;
 
           if (!rels || rels.length === 0) {
