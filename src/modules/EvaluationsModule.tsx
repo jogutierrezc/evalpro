@@ -332,16 +332,43 @@ export function EvaluationsModule() {
                   candidatesMap[tpl.id] = [];
                   continue;
                 }
-                // load all users whose canonical role matches any of evaluatedRoles
+
+                // Use manager relationships to determine which users this evaluator can evaluate.
+                // - Only users who list the evaluator as a manager (user_managers.manager_id = evaluatorId)
+                //   OR whose users.manager_id == evaluatorId are valid candidates.
+                // - If no manager relation exists for a user, they must NOT be evaluable by the manager.
+                const evaluatorId = (user as any).id;
+                // load manager links where evaluator is the manager
+                const { data: managedRows } = await supabase.from('user_managers').select('user_id').eq('manager_id', evaluatorId);
+                const managedIdsFromTable = (managedRows || []).map((r: any) => r.user_id).filter(Boolean);
+
+                // also include users.manager_id column references
+                const { data: directManaged } = await supabase.from('users').select('id').eq('manager_id', evaluatorId);
+                const directManagedIds = (directManaged || []).map((r: any) => r.id).filter(Boolean);
+
+                const managedIds = Array.from(new Set([...(managedIdsFromTable || []), ...(directManagedIds || [])]));
+
+                if (managedIds.length === 0) {
+                  // no direct managed users — none can be evaluated by this evaluator
+                  candidatesMap[tpl.id] = [];
+                  continue;
+                }
+
+                // fetch those managed users and filter by evaluatedRoles (allow label fallback)
                 const { data: rolesData } = await supabase.from('roles').select('*');
                 const roleKeyToLabel: Record<string, string> = {};
                 (rolesData || []).forEach((r: any) => { roleKeyToLabel[r.key] = r.label; });
-
                 const evaluatedLabels = evaluatedRoles.map((k) => roleKeyToLabel[k] || k);
-                const { data: candidateUsers } = await supabase.from('users').select('*').in('role', [...evaluatedRoles, ...evaluatedLabels]);
-                console.debug('[EvaluationsModule] Found', (candidateUsers || []).length, 'candidate users (pre-filter) for template', tpl.name);
-                const filtered = await filterByOfficeAndCampus((candidateUsers as any) || [], canonicalRole);
-                console.debug('[EvaluationsModule] Filtered candidates (by office/campus):', filtered.length);
+
+                const { data: managedUsers } = await supabase.from('users').select('*').in('id', managedIds);
+                const filtered = (managedUsers || []).filter((u: any) => {
+                  const r = (u.role || '').toString();
+                  if (evaluatedRoles.includes(r)) return true;
+                  if (evaluatedLabels.map((l: any) => l.toString().toLowerCase()).includes(r.toLowerCase())) return true;
+                  return false;
+                });
+
+                console.debug('[EvaluationsModule] Managed candidates (after role filter):', filtered.length);
                 candidatesMap[tpl.id] = filtered;
               }
               setEvaluationCandidatesByTemplate(candidatesMap);
