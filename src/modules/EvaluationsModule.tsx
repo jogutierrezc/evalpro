@@ -181,8 +181,16 @@ export function EvaluationsModule() {
             normalizedAllowed.push(kKey);
           }
 
-          const { data: rels } = await supabase.from('form_type_relations').select('form_type_key').in('form_type_key', normalizedAllowed).eq('evaluated_role_key', canonicalRole);
-          relationKeys = (rels || []).map((r: any) => r.form_type_key);
+          // Fetch relations where user is either evaluated OR evaluator
+          const { data: allRels } = await supabase.from('form_type_relations')
+            .select('form_type_key, evaluated_role_key, evaluator_role_key')
+            .in('form_type_key', normalizedAllowed);
+          
+          const userRoleNorm = normalizeStr(canonicalRole);
+          const relevantRels = (allRels || []).filter((r: any) => {
+             return normalizeStr(r.evaluated_role_key) === userRoleNorm || normalizeStr(r.evaluator_role_key) === userRoleNorm;
+          });
+          relationKeys = relevantRels.map((r: any) => r.form_type_key);
         }
 
         const allowedForUser = Array.from(new Set([...(fts || []).filter((ft: any) => Array.isArray(ft.roles) ? ft.roles.includes(canonicalRole as any) : false).map((ft: any) => ft.key), ...relationKeys]));
@@ -451,12 +459,16 @@ export function EvaluationsModule() {
         // Load all form types and pick those that include the user's role
         const { data: allFormTypes, error: ftErr } = await supabase.from('form_types').select('*');
         if (ftErr) throw ftErr;
-        // include types that include user's role OR that target the user's role via relations
+        // include types that include user's role OR that target the user's role via relations (as evaluator or evaluated)
         let relKeysAll: string[] = [];
         if (user) {
           const canonical = canonicalRole || (user.role as string);
-          const { data: relsAll } = await supabase.from('form_type_relations').select('form_type_key').eq('evaluated_role_key', canonical);
-          relKeysAll = (relsAll || []).map((r: any) => r.form_type_key);
+          const { data: relsAllData } = await supabase.from('form_type_relations').select('form_type_key, evaluated_role_key, evaluator_role_key');
+          const userRoleNorm = normalizeStr(canonical);
+          const relevantRelsAll = (relsAllData || []).filter((r: any) => {
+             return normalizeStr(r.evaluated_role_key) === userRoleNorm || normalizeStr(r.evaluator_role_key) === userRoleNorm;
+          });
+          relKeysAll = relevantRelsAll.map((r: any) => r.form_type_key);
         }
         const allowedKeysForUser = Array.from(new Set([...(allFormTypes || []).filter((ft: any) => Array.isArray(ft.roles) ? ft.roles.includes(canonicalRole) : false).map((ft: any) => ft.key), ...relKeysAll]));
 
