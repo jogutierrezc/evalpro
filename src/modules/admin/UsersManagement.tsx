@@ -324,12 +324,22 @@ export function UsersManagement() {
     return candidates;
   };
 
-  // Allow any user to have managers (bosses). If role-specific filtering yields no results,
-  // fall back to all users except the current editing user and exclude self.
+  // Allow any user to have managers (bosses). Include users with campus 'Todas' as universal managers.
+  // If role-specific filtering yields no results, fall back to all users. Exclude the editing user.
   const managerCandidates = (() => {
     const roleBased = getManagerCandidatesForRole(formData.role as string) || [];
-    let base = roleBased.length > 0 ? roleBased : users;
-    return base.filter((u) => u.id !== editingUser?.id && u.id !== (editingUser ? editingUser.id : undefined));
+    const universalCampus = users.filter((u) => ((u.campus || '').toString().toLowerCase() === 'todas'));
+    let base = roleBased.length > 0 ? [...roleBased, ...universalCampus] : [...users, ...universalCampus];
+    // Deduplicate by id while preserving order
+    const seen = new Set<string>();
+    const dedup: typeof users = [];
+    for (const u of base) {
+      if (!u || !u.id) continue;
+      if (seen.has(u.id)) continue;
+      seen.add(u.id);
+      dedup.push(u);
+    }
+    return dedup.filter((u) => u.id !== editingUser?.id);
   })();
 
   const roleRequiresManager = (selectedRoleKey: string | undefined) => {
