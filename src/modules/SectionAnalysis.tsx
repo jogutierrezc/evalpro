@@ -9,6 +9,7 @@ import {
   ChevronDown,
   ChevronUp,
   Award,
+  FileText,
   Target,
   ArrowUpRight,
   AlertTriangle,
@@ -47,7 +48,7 @@ const RadarChart = ({ data, size = 300 }: { data: SectionSummaryRow[]; size?: nu
 
   const points = data.map((d, i) => {
     const coords = getCoordinates(d.avg || 0, i);
-    return `${coords.x},${coords.y}`;
+    return `${coords.x},${coords.y} `;
   }).join(" ");
 
   return (
@@ -58,7 +59,7 @@ const RadarChart = ({ data, size = 300 }: { data: SectionSummaryRow[]; size?: nu
           const levelRadius = (radius / levels) * (level + 1);
           const levelPoints = data.map((_, i) => {
             const angle = i * angleSlice - Math.PI / 2;
-            return `${center + levelRadius * Math.cos(angle)},${center + levelRadius * Math.sin(angle)}`;
+            return `${center + levelRadius * Math.cos(angle)},${center + levelRadius * Math.sin(angle)} `;
           }).join(" ");
 
           return (
@@ -81,7 +82,7 @@ const RadarChart = ({ data, size = 300 }: { data: SectionSummaryRow[]; size?: nu
           const coords = getCoordinates(5, i);
           return (
             <line
-              key={`axis-${i}`}
+              key={`axis - ${i} `}
               x1={center}
               y1={center}
               x2={coords.x}
@@ -105,7 +106,7 @@ const RadarChart = ({ data, size = 300 }: { data: SectionSummaryRow[]; size?: nu
 
           return (
             <text
-              key={`label-${i}`}
+              key={`label - ${i} `}
               x={x}
               y={y}
               className="text-[10px] sm:text-xs fill-slate-600 font-semibold uppercase tracking-tight"
@@ -131,7 +132,7 @@ const RadarChart = ({ data, size = 300 }: { data: SectionSummaryRow[]; size?: nu
           const coords = getCoordinates(d.avg || 0, i);
           return (
             <circle
-              key={`point-${i}`}
+              key={`point - ${i} `}
               cx={coords.x}
               cy={coords.y}
               r="4"
@@ -196,8 +197,20 @@ export default function SectionAnalysis({ evaluation, onClose }: Props) {
             avg = Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100;
           }
         }
-        return { sectionId: s.id, sectionName: s.name || s.title || `Sección ${s.id}`, avg, questions: qDetails };
+
+        // Calculate weight as percentage of total questions (will be normalized later)
+        const weight = qs.length;
+
+        return { sectionId: s.id, sectionName: s.name || s.title || `Sección ${s.id}`, avg, weight, questions: qDetails };
       });
+
+      // Normalize weights to sum to 100%
+      const totalWeight = built.reduce((sum, s) => sum + s.weight, 0);
+      if (totalWeight > 0) {
+        built.forEach(s => {
+          s.weight = Math.round((s.weight / totalWeight) * 100);
+        });
+      }
 
       const allRating = built.flatMap((s) => s.questions.filter((q) => q.type === 'rating'));
       const anyW = allRating.some((q) => Number(q.weight || 0) > 0);
