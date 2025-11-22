@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { supabase, Evaluation } from '../lib/supabase';
 import {
   X,
@@ -9,7 +9,11 @@ import {
   ChevronDown,
   ChevronUp,
   Award,
-  FileText
+  Target,
+  ArrowUpRight,
+  AlertTriangle,
+  Users,
+  BarChart3
 } from 'lucide-react';
 
 interface Props {
@@ -21,6 +25,7 @@ interface SectionSummaryRow {
   sectionId: string | null;
   sectionName: string;
   avg: number | null;
+  weight: number;
   questions: Array<{ id: string; text: string; type: string; weight?: number; response?: any }>;
 }
 
@@ -421,13 +426,13 @@ export default function SectionAnalysis({ evaluation, onClose }: Props) {
                       <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
                         <div
                           className={`h-full rounded-full ${(section.avg || 0) >= 4.5 ? 'bg-emerald-500' :
-                              (section.avg || 0) >= 3.5 ? 'bg-blue-500' : 'bg-orange-500'
+                            (section.avg || 0) >= 3.5 ? 'bg-blue-500' : 'bg-orange-500'
                             }`}
                           style={{ width: `${((section.avg || 0) / 5) * 100}%` }}
                         ></div>
                       </div>
                       <div className={`font-bold text-lg w-12 text-right ${(section.avg || 0) >= 4.5 ? 'text-emerald-600' :
-                          (section.avg || 0) >= 3.5 ? 'text-blue-600' : 'text-orange-600'
+                        (section.avg || 0) >= 3.5 ? 'text-blue-600' : 'text-orange-600'
                         }`}>
                         {section.avg?.toFixed(1) || 'N/A'}
                       </div>
