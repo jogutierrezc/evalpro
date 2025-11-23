@@ -25,7 +25,9 @@ export function DashboardModule() {
     totalOffices: 0,
     pendingEvaluations: 0,
     completedEvaluations: 0,
+    totalRoles: 0,
   });
+  const [usersByCampus, setUsersByCampus] = useState<Record<string, number>>({});
   const [roles, setRoles] = useState<{ key: string; label: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [availableTemplatesCount, setAvailableTemplatesCount] = useState(0);
@@ -274,19 +276,30 @@ export function DashboardModule() {
       const roleKey = normalizeRoleKey(user?.role as any);
 
       if (user?.role === 'admin' || roleKey === 'admin') {
-        const [employeesRes, officesRes, pendingRes, completedRes] = await Promise.all([
+        const [employeesRes, officesRes, pendingRes, completedRes, rolesRes, usersData] = await Promise.all([
           supabase.from('users').select('id', { count: 'exact', head: true }),
           supabase.from('offices').select('id', { count: 'exact', head: true }),
           supabase.from('evaluations').select('id', { count: 'exact', head: true }).neq('status', 'completed'),
           supabase.from('evaluations').select('id', { count: 'exact', head: true }).eq('status', 'completed'),
+          supabase.from('roles').select('id', { count: 'exact', head: true }),
+          supabase.from('users').select('campus'),
         ]);
+
+        // Calculate users by campus
+        const campusDistribution: Record<string, number> = {};
+        (usersData.data || []).forEach((user: any) => {
+          const campus = user.campus || 'Sin asignar';
+          campusDistribution[campus] = (campusDistribution[campus] || 0) + 1;
+        });
 
         setStats({
           totalEmployees: employeesRes.count || 0,
           totalOffices: officesRes.count || 0,
           pendingEvaluations: pendingRes.count || 0,
           completedEvaluations: completedRes.count || 0,
+          totalRoles: rolesRes.count || 0,
         });
+        setUsersByCampus(campusDistribution);
       } else {
         // For all non-admin users, count only evaluations related to the user
         const [pendingRes, completedRes] = await Promise.all([
@@ -365,6 +378,7 @@ export function DashboardModule() {
           totalOffices: 0,
           pendingEvaluations: pendingRes.count || 0,
           completedEvaluations: completedRes.count || 0,
+          totalRoles: 0,
         });
         setAvailableTemplatesCount(availableCount);
       }
@@ -375,7 +389,46 @@ export function DashboardModule() {
     }
   };
 
-  const statCards = [
+  const roleKey = normalizeRoleKey(user?.role as any);
+  const isAdmin = user?.role === 'admin' || roleKey === 'admin';
+
+  const statCards = isAdmin ? [
+    {
+      label: "Total Personal",
+      value: stats.totalEmployees,
+      icon: <Users className="w-6 h-6 text-purple-600" />,
+      color: "bg-purple-50",
+      borderColor: "border-purple-100"
+    },
+    {
+      label: "Oficinas Creadas",
+      value: stats.totalOffices,
+      icon: <Building2 className="w-6 h-6 text-indigo-600" />,
+      color: "bg-indigo-50",
+      borderColor: "border-indigo-100"
+    },
+    {
+      label: "Roles Registrados",
+      value: stats.totalRoles,
+      icon: <FileCheck className="w-6 h-6 text-teal-600" />,
+      color: "bg-teal-50",
+      borderColor: "border-teal-100"
+    },
+    {
+      label: "Evaluaciones Pendientes",
+      value: stats.pendingEvaluations,
+      icon: <Clock className="w-6 h-6 text-orange-500" />,
+      color: "bg-orange-50",
+      borderColor: "border-orange-100"
+    },
+    {
+      label: "Evaluaciones Completadas",
+      value: stats.completedEvaluations,
+      icon: <CheckCircle2 className="w-6 h-6 text-emerald-500" />,
+      color: "bg-emerald-50",
+      borderColor: "border-emerald-100"
+    },
+  ] : [
     {
       label: "Evaluaciones Pendientes",
       value: stats.pendingEvaluations,
@@ -422,7 +475,7 @@ export function DashboardModule() {
         </div>
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+        <div className={`grid grid-cols-1 ${isAdmin ? 'md:grid-cols-2 lg:grid-cols-5' : 'md:grid-cols-3'} gap-6 mb-10`}>
           {statCards.map((stat, index) => (
             <div
               key={index}
@@ -438,6 +491,48 @@ export function DashboardModule() {
             </div>
           ))}
         </div>
+
+        {/* Campus Distribution Section - Admin Only */}
+        {isAdmin && Object.keys(usersByCampus).length > 0 && (
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 mb-10">
+            <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+              <Building2 className="w-5 h-5 text-indigo-600" />
+              Distribución de Personal por Campus
+            </h3>
+            <div className="space-y-3">
+              {Object.entries(usersByCampus)
+                .sort(([, a], [, b]) => b - a)
+                .map(([campus, count]) => {
+                  const maxCount = Math.max(...Object.values(usersByCampus));
+                  const percentage = (count / maxCount) * 100;
+                  return (
+                    <div key={campus} className="flex items-center gap-4">
+                      <div className="w-32 text-sm font-medium text-slate-700 truncate" title={campus}>
+                        {campus}
+                      </div>
+                      <div className="flex-grow">
+                        <div className="h-8 bg-slate-100 rounded-lg overflow-hidden relative">
+                          <div
+                            className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-lg transition-all duration-500 flex items-center justify-end pr-3"
+                            style={{ width: `${percentage}%` }}
+                          >
+                            {percentage > 15 && (
+                              <span className="text-white text-xs font-bold">{count}</span>
+                            )}
+                          </div>
+                          {percentage <= 15 && (
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-600 text-xs font-bold">
+                              {count}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
 
