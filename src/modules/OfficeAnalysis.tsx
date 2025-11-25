@@ -1,4 +1,3 @@
-
 import { useMemo } from 'react';
 import { ResultWithDetails } from './ResultsModule';
 import { RadarChart, SectionSummaryRow } from './SectionAnalysis';
@@ -6,10 +5,15 @@ import {
     TrendingUp,
     Award,
     BrainCircuit,
-    ClipboardList,
     CheckCircle2,
-    Lightbulb,
-    ArrowRight
+    ArrowRight,
+    Target,
+    Zap,
+    Activity,
+    BarChart3,
+    AlertTriangle,
+    Link,
+    PieChart
 } from 'lucide-react';
 
 // Helper to normalize text for matching
@@ -103,11 +107,127 @@ export default function OfficeAnalysis({ officeName, results }: Props) {
             longTerm: [] as string[]
         };
 
-        const weakestSection = [...teamSections].sort((a, b) => (a.avg || 0) - (b.avg || 0))[0];
+        const sortedSections = [...teamSections].sort((a, b) => (a.avg || 0) - (b.avg || 0));
+        const weakestSection = sortedSections[0];
+        const strongestSection = sortedSections[sortedSections.length - 1];
+
         const weakestName = normalize(weakestSection?.sectionName || "");
         const weakestScore = weakestSection?.avg || 0;
+        const strongestName = strongestSection?.sectionName || "Otras áreas";
+        const strongestScore = strongestSection?.avg || 0;
 
-        // Helper to add actions based on score range
+        // --- NEW PRISMA FEATURES ---
+
+        // I. Acción Enfocada (3 Options)
+        const focusedActions = [];
+        if (weakestScore >= 4.0) {
+            focusedActions.push({
+                title: `Desarrollo del "Líder Coach" (Alto Impacto)`,
+                desc: `Transformar el dominio en ${weakestSection?.sectionName} en un modelo de enseñanza. Crear mentores internos.`,
+                icon: <Award className="w-5 h-5 text-purple-600" />
+            });
+            focusedActions.push({
+                title: "Planes de Sucesión Estratégica",
+                desc: "Mitigar riesgo de talento clave estableciendo sucesores formales para roles críticos.",
+                icon: <Link className="w-5 h-5 text-blue-600" />
+            });
+            focusedActions.push({
+                title: "Consolidación vía Evaluaciones 360°",
+                desc: "Profesionalizar el diagnóstico con feedback 360° para mantener la excelencia.",
+                icon: <Activity className="w-5 h-5 text-emerald-600" />
+            });
+        } else if (weakestScore <= 3.0) {
+            focusedActions.push({
+                title: "Intervención de Choque (Corto Plazo)",
+                desc: `Auditoría inmediata de procesos en ${weakestSection?.sectionName} y reentrenamiento básico obligatorio.`,
+                icon: <AlertTriangle className="w-5 h-5 text-red-600" />
+            });
+            focusedActions.push({
+                title: "Mentoring Directivo Asignado",
+                desc: "Asignar un líder senior de otra área para supervisar la recuperación del desempeño.",
+                icon: <Link className="w-5 h-5 text-orange-600" />
+            });
+            focusedActions.push({
+                title: "Reestructuración de Objetivos",
+                desc: "Simplificar metas a corto plazo para generar victorias rápidas y recuperar confianza.",
+                icon: <Target className="w-5 h-5 text-yellow-600" />
+            });
+        } else {
+            focusedActions.push({
+                title: "Capacitación Focalizada (Skill Gap)",
+                desc: `Taller práctico intensivo en ${weakestSection?.sectionName} para cerrar brechas técnicas.`,
+                icon: <BrainCircuit className="w-5 h-5 text-blue-600" />
+            });
+            focusedActions.push({
+                title: "Círculos de Calidad",
+                desc: "Crear grupos de trabajo quincenales para resolver problemas específicos del área.",
+                icon: <PieChart className="w-5 h-5 text-indigo-600" />
+            });
+            focusedActions.push({
+                title: "Benchmarking Interno",
+                desc: "Visitas a oficinas con alto desempeño para copiar mejores prácticas.",
+                icon: <TrendingUp className="w-5 h-5 text-emerald-600" />
+            });
+        }
+
+        // II. Propuesta Estratégica (Rectoría)
+        const strategicProposals = [
+            {
+                name: "Opción A: Inmersión Transformacional",
+                kpi: "Incrementar eNPS en 15% en 12 meses",
+                scope: "Mandos Medios (25%) - Rápido Impacto",
+                color: "bg-blue-50 border-blue-200 text-blue-800"
+            },
+            {
+                name: "Opción B: Escuela de Innovación y Sucesión",
+                kpi: "Reducir rotación de talento clave en 10%",
+                scope: "Líderes Emergentes (15%) - Largo Plazo",
+                color: "bg-purple-50 border-purple-200 text-purple-800"
+            },
+            {
+                name: "Opción C: Certificación en Gestión Ágil",
+                kpi: "Reducir tiempo de proyectos en 20%",
+                scope: "Equipos de Proyecto (10%) - Eficiencia",
+                color: "bg-emerald-50 border-emerald-200 text-emerald-800"
+            }
+        ];
+
+        // III. Predictive Analysis
+        const riskProb = Math.max(5, Math.min(90, (5 - weakestScore) * 15)).toFixed(0);
+        const efficiencyLoss = Math.max(0, (4.5 - globalScore) * 8).toFixed(1);
+        const roi = (globalScore * 6).toFixed(0);
+
+        const predictiveAnalysis = {
+            risk: {
+                label: "Riesgo de Talento",
+                value: `${riskProb}%`,
+                desc: `Probabilidad de rotación si no se mejora ${weakestSection?.sectionName}.`,
+                color: "text-red-600"
+            },
+            financial: {
+                label: "Impacto Financiero",
+                value: `${efficiencyLoss}%`,
+                desc: "Costo estimado de ineficiencia operativa anual.",
+                color: "text-orange-600"
+            },
+            roi: {
+                label: "Oportunidad de ROI",
+                value: `${roi}%`,
+                desc: "Retorno esperado al implementar la Propuesta Estratégica.",
+                color: "text-emerald-600"
+            }
+        };
+
+        // IV. Correlation Map
+        const correlationMap = {
+            focus: weakestSection?.sectionName,
+            focusScore: weakestScore.toFixed(1),
+            impacted: strongestName,
+            impactedScore: strongestScore.toFixed(1),
+            analysis: `El desempeño actual en ${weakestSection?.sectionName} (${weakestScore.toFixed(1)}) podría estar limitando el potencial de ${strongestName} (${strongestScore.toFixed(1)}). ${weakestScore < 3.5 ? "Es crítico resolver las bases para desbloquear el crecimiento." : "Al perfeccionar el área foco, se maximizará el impacto de las fortalezas existentes."}`
+        };
+
+        // Helper to add actions based on score range (Existing Logic Preserved/Enhanced)
         const addActions = (score: number, competency: string) => {
             const comp = normalize(competency);
 
@@ -225,7 +345,11 @@ export default function OfficeAnalysis({ officeName, results }: Props) {
             competenciesAnalysis,
             strengths,
             weaknesses,
-            prismaPlan
+            prismaPlan,
+            focusedActions,
+            strategicProposals,
+            predictiveAnalysis,
+            correlationMap
         };
     }, [results]);
 
@@ -237,7 +361,7 @@ export default function OfficeAnalysis({ officeName, results }: Props) {
         );
     }
 
-    const { globalScore, teamSections, membersWithStandouts, competenciesAnalysis, strengths, weaknesses, prismaPlan } = analysis;
+    const { globalScore, teamSections, membersWithStandouts, competenciesAnalysis, strengths, weaknesses, prismaPlan, focusedActions, strategicProposals, predictiveAnalysis, correlationMap } = analysis;
 
     return (
         <div className="space-y-8 animate-in fade-in duration-500">
@@ -401,73 +525,166 @@ export default function OfficeAnalysis({ officeName, results }: Props) {
                 </div>
             </div>
 
-            {/* PRISMA SYSTEM SECTION */}
-            {/* PRISMA SYSTEM SECTION */}
-            <div className="bg-white rounded-3xl p-8 shadow-2xl border border-slate-100 relative overflow-hidden">
-                <div className="absolute top-0 left-0 opacity-5 pointer-events-none">
-                    <img src="/prisma.png" alt="Prisma Logo" className="w-96 h-96 object-contain -ml-20 -mt-20" />
+            {/* PRISMA SYSTEM SECTION - ENHANCED */}
+            <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 relative overflow-hidden">
+                {/* Background Logo */}
+                <div className="absolute top-0 right-0 opacity-5 pointer-events-none">
+                    {/* Placeholder if needed, but we use header logo now */}
                 </div>
 
-                <div className="relative z-10">
-                    <div className="flex items-center gap-3 mb-8">
-                        <div className="bg-blue-50 p-3 rounded-xl border border-blue-100">
-                            <Lightbulb className="w-8 h-8 text-blue-600" />
+                {/* Header with Logo */}
+                <div className="bg-slate-900 p-8 text-white relative overflow-hidden">
+                    <div className="absolute top-0 right-0 p-8 opacity-10">
+                        <BrainCircuit className="w-64 h-64" />
+                    </div>
+                    <div className="relative z-10 flex items-center gap-6">
+                        <div className="bg-white p-2 rounded-xl h-20 w-20 flex items-center justify-center">
+                            <img src="/prisma.png" alt="Prisma Logo" className="w-full h-full object-contain" />
                         </div>
                         <div>
-                            <h2 className="text-2xl font-bold text-slate-800">Sistema PRISMA: Inteligencia del Talento</h2>
-                            <p className="text-slate-500 text-sm">Plan de acción estratégico para la Oficina</p>
+                            <h2 className="text-3xl font-bold">Sistema PRISMA</h2>
+                            <p className="text-slate-400 text-lg">Inteligencia del Talento & Estrategia Organizacional</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="p-8 space-y-10">
+
+                    {/* 1. Predictive Analysis & Correlation */}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                        {/* Predictive Stats */}
+                        <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            {Object.values(predictiveAnalysis).map((item, idx) => (
+                                <div key={idx} className="bg-slate-50 rounded-xl p-4 border border-slate-100">
+                                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">{item.label}</h4>
+                                    <div className={`text-2xl font-bold mb-1 ${item.color}`}>{item.value}</div>
+                                    <p className="text-xs text-slate-400 leading-tight">{item.desc}</p>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Correlation Map */}
+                        <div className="bg-indigo-50 rounded-xl p-5 border border-indigo-100">
+                            <h4 className="text-sm font-bold text-indigo-900 mb-3 flex items-center gap-2">
+                                <Link className="w-4 h-4" /> Mapa de Correlación
+                            </h4>
+                            <p className="text-sm text-indigo-800 leading-relaxed mb-2">
+                                {correlationMap.analysis}
+                            </p>
+                            <div className="flex items-center gap-2 text-xs font-medium text-indigo-600 mt-3">
+                                <span className="px-2 py-1 bg-white rounded border border-indigo-200">{correlationMap.focus}</span>
+                                <ArrowRight className="w-3 h-3" />
+                                <span className="px-2 py-1 bg-white rounded border border-indigo-200">{correlationMap.impacted}</span>
+                            </div>
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        {/* Short Term */}
-                        <div className="bg-slate-50 rounded-2xl p-6 border border-slate-200 hover:shadow-md transition-all">
-                            <div className="flex items-center gap-2 mb-4 text-emerald-600">
-                                <CheckCircle2 className="w-5 h-5" />
-                                <h3 className="font-bold text-sm uppercase tracking-wider">Corto Plazo (1-3 Meses)</h3>
-                            </div>
-                            <ul className="space-y-3">
-                                {prismaPlan.shortTerm.map((action, idx) => (
-                                    <li key={idx} className="flex items-start gap-3 text-sm text-slate-600">
-                                        <ArrowRight className="w-4 h-4 mt-0.5 text-emerald-500 shrink-0" />
-                                        <span>{action}</span>
-                                    </li>
-                                ))}
-                            </ul>
-                        </div>
-
-                        {/* Medium Term */}
-                        <div className="bg-slate-50 rounded-2xl p-6 border border-slate-200 hover:shadow-md transition-all">
-                            <div className="flex items-center gap-2 mb-4 text-blue-600">
-                                <CheckCircle2 className="w-5 h-5" />
-                                <h3 className="font-bold text-sm uppercase tracking-wider">Mediano Plazo (3-6 Meses)</h3>
-                            </div>
-                            <ul className="space-y-3">
-                                {prismaPlan.mediumTerm.map((action, idx) => (
-                                    <li key={idx} className="flex items-start gap-3 text-sm text-slate-600">
-                                        <ArrowRight className="w-4 h-4 mt-0.5 text-blue-500 shrink-0" />
-                                        <span>{action}</span>
-                                    </li>
-                                ))}
-                            </ul>
-                        </div>
-
-                        {/* Long Term */}
-                        <div className="bg-slate-50 rounded-2xl p-6 border border-slate-200 hover:shadow-md transition-all">
-                            <div className="flex items-center gap-2 mb-4 text-purple-600">
-                                <CheckCircle2 className="w-5 h-5" />
-                                <h3 className="font-bold text-sm uppercase tracking-wider">Largo Plazo (+6 Meses)</h3>
-                            </div>
-                            <ul className="space-y-3">
-                                {prismaPlan.longTerm.map((action, idx) => (
-                                    <li key={idx} className="flex items-start gap-3 text-sm text-slate-600">
-                                        <ArrowRight className="w-4 h-4 mt-0.5 text-purple-500 shrink-0" />
-                                        <span>{action}</span>
-                                    </li>
-                                ))}
-                            </ul>
+                    {/* 2. Focused Actions (Matriz) */}
+                    <div>
+                        <h3 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
+                            <Target className="w-6 h-6 text-orange-500" />
+                            I. Acción Enfocada (Matriz de Recomendación)
+                        </h3>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            {focusedActions.map((action, idx) => (
+                                <div key={idx} className="group bg-white rounded-xl p-6 border border-slate-200 hover:border-orange-300 hover:shadow-lg transition-all cursor-default">
+                                    <div className="mb-4 bg-orange-50 w-10 h-10 rounded-lg flex items-center justify-center group-hover:bg-orange-100 transition-colors">
+                                        {action.icon}
+                                    </div>
+                                    <h4 className="font-bold text-slate-800 mb-2">{action.title}</h4>
+                                    <p className="text-sm text-slate-500 leading-relaxed">{action.desc}</p>
+                                </div>
+                            ))}
                         </div>
                     </div>
+
+                    {/* 3. Strategic Proposals (Rectoría) */}
+                    <div>
+                        <h3 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
+                            <Zap className="w-6 h-6 text-indigo-500" />
+                            II. Propuesta Estratégica (Rectoría)
+                        </h3>
+                        <div className="grid grid-cols-1 gap-4">
+                            {strategicProposals.map((prop, idx) => (
+                                <div key={idx} className={`rounded-xl p-5 border flex flex-col md:flex-row items-start md:items-center gap-6 ${prop.color}`}>
+                                    <div className="flex-1">
+                                        <h4 className="font-bold text-lg mb-1">{prop.name}</h4>
+                                        <div className="flex flex-wrap gap-3 mt-2">
+                                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-white/50 text-xs font-semibold border border-black/5">
+                                                <Target className="w-3 h-3" /> KPI: {prop.kpi}
+                                            </span>
+                                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-white/50 text-xs font-semibold border border-black/5">
+                                                <Activity className="w-3 h-3" /> Alcance: {prop.scope}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div className="shrink-0">
+                                        <button className="px-4 py-2 bg-white/80 hover:bg-white text-sm font-bold rounded-lg shadow-sm transition-colors border border-black/5">
+                                            Seleccionar Estrategia
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* 4. Detailed Implementation Plan (Existing PRISMA) */}
+                    <div>
+                        <h3 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
+                            <BarChart3 className="w-6 h-6 text-emerald-600" />
+                            III. Plan de Implementación Detallado
+                        </h3>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            {/* Short Term */}
+                            <div className="bg-slate-50 rounded-2xl p-6 border border-slate-200">
+                                <div className="flex items-center gap-2 mb-4 text-emerald-600">
+                                    <CheckCircle2 className="w-5 h-5" />
+                                    <h3 className="font-bold text-sm uppercase tracking-wider">Corto Plazo (1-3 Meses)</h3>
+                                </div>
+                                <ul className="space-y-3">
+                                    {prismaPlan.shortTerm.map((action, idx) => (
+                                        <li key={idx} className="flex items-start gap-3 text-sm text-slate-600">
+                                            <ArrowRight className="w-4 h-4 mt-0.5 text-emerald-500 shrink-0" />
+                                            <span>{action}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+
+                            {/* Medium Term */}
+                            <div className="bg-slate-50 rounded-2xl p-6 border border-slate-200">
+                                <div className="flex items-center gap-2 mb-4 text-blue-600">
+                                    <CheckCircle2 className="w-5 h-5" />
+                                    <h3 className="font-bold text-sm uppercase tracking-wider">Mediano Plazo (3-6 Meses)</h3>
+                                </div>
+                                <ul className="space-y-3">
+                                    {prismaPlan.mediumTerm.map((action, idx) => (
+                                        <li key={idx} className="flex items-start gap-3 text-sm text-slate-600">
+                                            <ArrowRight className="w-4 h-4 mt-0.5 text-blue-500 shrink-0" />
+                                            <span>{action}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+
+                            {/* Long Term */}
+                            <div className="bg-slate-50 rounded-2xl p-6 border border-slate-200">
+                                <div className="flex items-center gap-2 mb-4 text-purple-600">
+                                    <CheckCircle2 className="w-5 h-5" />
+                                    <h3 className="font-bold text-sm uppercase tracking-wider">Largo Plazo (+6 Meses)</h3>
+                                </div>
+                                <ul className="space-y-3">
+                                    {prismaPlan.longTerm.map((action, idx) => (
+                                        <li key={idx} className="flex items-start gap-3 text-sm text-slate-600">
+                                            <ArrowRight className="w-4 h-4 mt-0.5 text-purple-500 shrink-0" />
+                                            <span>{action}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
                 </div>
             </div>
 
