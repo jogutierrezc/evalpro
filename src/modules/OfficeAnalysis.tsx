@@ -5,8 +5,15 @@ import { RadarChart, SectionSummaryRow } from './SectionAnalysis';
 import {
     TrendingUp,
     Award,
-    BrainCircuit
+    BrainCircuit,
+    ClipboardList,
+    CheckCircle2,
+    Lightbulb,
+    ArrowRight
 } from 'lucide-react';
+
+// Helper to normalize text for matching
+const normalize = (text: string) => text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
 interface Props {
     officeName: string;
@@ -89,13 +96,49 @@ export default function OfficeAnalysis({ officeName, results }: Props) {
         const strengths = teamSections.filter(s => (s.avg || 0) >= 4.2).map(s => s.sectionName);
         const weaknesses = teamSections.filter(s => (s.avg || 0) < 3.8).map(s => s.sectionName);
 
+        // --- PRISMA Logic (Office Level) ---
+        const prismaPlan = {
+            shortTerm: [] as string[],
+            mediumTerm: [] as string[],
+            longTerm: [] as string[]
+        };
+
+        const weakestSection = [...teamSections].sort((a, b) => (a.avg || 0) - (b.avg || 0))[0];
+        const weakestName = normalize(weakestSection?.sectionName || "");
+
+        // Short Term
+        if (weakestName.includes("comunicacion")) {
+            prismaPlan.shortTerm.push("Implementar 'Daily Standups' de 15 minutos.");
+            prismaPlan.shortTerm.push("Establecer canales claros para feedback inmediato.");
+        } else if (weakestName.includes("equipo")) {
+            prismaPlan.shortTerm.push("Realizar una actividad de integración fuera de la oficina.");
+            prismaPlan.shortTerm.push("Asignar proyectos en parejas para fomentar colaboración.");
+        } else {
+            prismaPlan.shortTerm.push(`Sesión de lluvia de ideas para mejorar ${weakestSection?.sectionName}.`);
+            prismaPlan.shortTerm.push("Reuniones 1 a 1 con miembros del equipo.");
+        }
+
+        // Medium Term
+        if (globalScore < 4.0) {
+            prismaPlan.mediumTerm.push("Plan de capacitación técnica para cerrar brechas.");
+            prismaPlan.mediumTerm.push("Revisión de cargas de trabajo y roles.");
+        } else {
+            prismaPlan.mediumTerm.push("Programa de reconocimiento al empleado del mes.");
+            prismaPlan.mediumTerm.push("Delegación de nuevas responsabilidades a talentos clave.");
+        }
+
+        // Long Term
+        prismaPlan.longTerm.push("Desarrollar plan de carrera para miembros de alto potencial.");
+        prismaPlan.longTerm.push("Consolidar cultura de alto desempeño y autonomía.");
+
         return {
             globalScore,
             teamSections,
             membersWithStandouts,
             competenciesAnalysis,
             strengths,
-            weaknesses
+            weaknesses,
+            prismaPlan
         };
     }, [results]);
 
@@ -107,7 +150,7 @@ export default function OfficeAnalysis({ officeName, results }: Props) {
         );
     }
 
-    const { globalScore, teamSections, membersWithStandouts, competenciesAnalysis, strengths, weaknesses } = analysis;
+    const { globalScore, teamSections, membersWithStandouts, competenciesAnalysis, strengths, weaknesses, prismaPlan } = analysis;
 
     return (
         <div className="space-y-8 animate-in fade-in duration-500">
@@ -268,6 +311,75 @@ export default function OfficeAnalysis({ officeName, results }: Props) {
                             </div>
                         </div>
                     ))}
+                </div>
+            </div>
+
+            {/* PRISMA SYSTEM SECTION */}
+            <div className="bg-slate-900 rounded-3xl p-8 text-white relative overflow-hidden shadow-2xl">
+                <div className="absolute top-0 left-0 p-12 opacity-5">
+                    <ClipboardList className="w-64 h-64" />
+                </div>
+
+                <div className="relative z-10">
+                    <div className="flex items-center gap-3 mb-8">
+                        <div className="bg-blue-500/20 p-3 rounded-xl backdrop-blur-sm border border-blue-500/30">
+                            <Lightbulb className="w-8 h-8 text-blue-400" />
+                        </div>
+                        <div>
+                            <h2 className="text-2xl font-bold">Sistema PRISMA: Inteligencia del Talento</h2>
+                            <p className="text-slate-400 text-sm">Plan de acción estratégico para la Oficina</p>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        {/* Short Term */}
+                        <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-6 border border-white/10 hover:bg-white/10 transition-colors">
+                            <div className="flex items-center gap-2 mb-4 text-emerald-400">
+                                <CheckCircle2 className="w-5 h-5" />
+                                <h3 className="font-bold text-sm uppercase tracking-wider">Corto Plazo (1-3 Meses)</h3>
+                            </div>
+                            <ul className="space-y-3">
+                                {prismaPlan.shortTerm.map((action, idx) => (
+                                    <li key={idx} className="flex items-start gap-3 text-sm text-slate-300">
+                                        <ArrowRight className="w-4 h-4 mt-0.5 text-emerald-500/50 shrink-0" />
+                                        <span>{action}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+
+                        {/* Medium Term */}
+                        <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-6 border border-white/10 hover:bg-white/10 transition-colors">
+                            <div className="flex items-center gap-2 mb-4 text-blue-400">
+                                <CheckCircle2 className="w-5 h-5" />
+                                <h3 className="font-bold text-sm uppercase tracking-wider">Mediano Plazo (3-6 Meses)</h3>
+                            </div>
+                            <ul className="space-y-3">
+                                {prismaPlan.mediumTerm.map((action, idx) => (
+                                    <li key={idx} className="flex items-start gap-3 text-sm text-slate-300">
+                                        <ArrowRight className="w-4 h-4 mt-0.5 text-blue-500/50 shrink-0" />
+                                        <span>{action}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+
+                        {/* Long Term */}
+                        <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-6 border border-white/10 hover:bg-white/10 transition-colors">
+                            <div className="flex items-center gap-2 mb-4 text-purple-400">
+                                <CheckCircle2 className="w-5 h-5" />
+                                <h3 className="font-bold text-sm uppercase tracking-wider">Largo Plazo (+6 Meses)</h3>
+                            </div>
+                            <ul className="space-y-3">
+                                {prismaPlan.longTerm.map((action, idx) => (
+                                    <li key={idx} className="flex items-start gap-3 text-sm text-slate-300">
+                                        <ArrowRight className="w-4 h-4 mt-0.5 text-purple-500/50 shrink-0" />
+                                        <span>{action}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    </div>
                 </div>
             </div>
 

@@ -1,13 +1,159 @@
 import { useMemo } from 'react';
-import { ResultWithDetails } from './ResultsModule';
 import { RadarChart, SectionSummaryRow } from './SectionAnalysis';
+import { ResultWithDetails } from './ResultsModule';
 import {
     TrendingUp,
     Award,
     BrainCircuit,
     Building2,
-    AlertTriangle
+    AlertTriangle,
+    ClipboardList,
+    CheckCircle2,
+    Lightbulb,
+    ArrowRight
 } from 'lucide-react';
+
+// --- COMPARISON RADAR CHART (Campus vs Global) ---
+const ComparisonRadarChart = ({ data, campusName, globalScore }: { data: any[], campusName: string, globalScore: number }) => {
+    const size = 350;
+    const center = size / 2;
+    const radius = (size / 2) - 50;
+    const levels = 5;
+    const angleSlice = (Math.PI * 2) / data.length;
+
+    const getCoordinates = (value: number, index: number, maxVal = 5) => {
+        const angle = index * angleSlice - Math.PI / 2;
+        const r = (value / maxVal) * radius;
+        return {
+            x: center + r * Math.cos(angle),
+            y: center + r * Math.sin(angle)
+        };
+    };
+
+    return (
+        <div className="relative flex flex-col items-center">
+            <svg width={size} height={size} className="overflow-visible">
+                {/* Background levels */}
+                {[...Array(levels)].map((_, level) => {
+                    const levelRadius = (radius / levels) * (level + 1);
+                    const levelPoints = data.map((_, i) => {
+                        const angle = i * angleSlice - Math.PI / 2;
+                        return `${center + levelRadius * Math.cos(angle)},${center + levelRadius * Math.sin(angle)} `;
+                    }).join(" ");
+
+                    return (
+                        <g key={level}>
+                            <polygon points={levelPoints} fill="none" stroke="#e2e8f0" strokeWidth="1" />
+                            <text
+                                x={center}
+                                y={center - levelRadius - 5}
+                                className="text-[10px] fill-slate-400 font-medium"
+                                textAnchor="middle"
+                            >
+                                {level + 1}
+                            </text>
+                        </g>
+                    );
+                })}
+
+                {/* Axes */}
+                {data.map((_, i) => {
+                    const coords = getCoordinates(5, i);
+                    return (
+                        <line
+                            key={`axis-${i}`}
+                            x1={center}
+                            y1={center}
+                            x2={coords.x}
+                            y2={coords.y}
+                            stroke="#e2e8f0"
+                            strokeWidth="1"
+                        />
+                    );
+                })}
+
+                {/* Axis labels */}
+                {data.map((d, i) => {
+                    const angle = i * angleSlice - Math.PI / 2;
+                    const labelRadius = radius + 20;
+                    const x = center + labelRadius * Math.cos(angle);
+                    const y = center + labelRadius * Math.sin(angle);
+                    let anchor = "middle";
+                    if (x > center + 10) anchor = "start";
+                    if (x < center - 10) anchor = "end";
+
+                    return (
+                        <text
+                            key={`label-${i}`}
+                            x={x}
+                            y={y}
+                            className="text-[10px] fill-slate-600 font-semibold uppercase tracking-tight"
+                            textAnchor={anchor}
+                            dominantBaseline="middle"
+                        >
+                            {d.sectionName.length > 15 ? d.sectionName.substring(0, 12) + '...' : d.sectionName}
+                        </text>
+                    );
+                })}
+
+                {/* Global Average Polygon (Gray) */}
+                <g>
+                    <polygon
+                        points={data.map((d, i) => {
+                            const coords = getCoordinates(globalScore, i); // Using globalScore as a flat average for simplicity, or we could pass per-section global avg if available. 
+                            // Ideally we want per-section global average. The prompt said "delta que debe ser el promedio de los resultados de todos los colaboradores relacionados comparados con el promedio global".
+                            // Assuming 'globalScore' passed here is the scalar global average. If we want per-section, we need that data.
+                            // The user said "promedio global" which usually implies the scalar. But for a radar chart, a scalar makes a perfect circle.
+                            // Let's assume scalar for now as per-section global data isn't easily passed into this component without refactoring ResultsModule to pass it down.
+                            // Wait, 'organizationAverage' is passed to CampusAnalysis.
+                            return `${coords.x},${coords.y} `;
+                        }).join(" ")}
+                        fill="none"
+                        stroke="#94a3b8"
+                        strokeWidth="2"
+                        strokeDasharray="4 4"
+                    />
+                </g>
+
+                {/* Campus Polygon (Blue) */}
+                <g>
+                    <polygon
+                        points={data.map((d, i) => {
+                            const coords = getCoordinates(d.avg || 0, i);
+                            return `${coords.x},${coords.y} `;
+                        }).join(" ")}
+                        fill="rgba(59, 130, 246, 0.2)"
+                        stroke="#2563eb"
+                        strokeWidth="2"
+                    />
+                    {data.map((d, i) => {
+                        const coords = getCoordinates(d.avg || 0, i);
+                        return (
+                            <circle
+                                key={`point-${i}`}
+                                cx={coords.x}
+                                cy={coords.y}
+                                r="3"
+                                fill="#2563eb"
+                                stroke="white"
+                                strokeWidth="1"
+                            />
+                        );
+                    })}
+                </g>
+            </svg>
+
+            <div className="flex gap-4 mt-2">
+                <div className="flex items-center gap-2 text-xs text-slate-600">
+                    <span className="w-3 h-3 rounded-full bg-blue-500"></span> {campusName}
+                </div>
+                <div className="flex items-center gap-2 text-xs text-slate-500">
+                    <span className="w-3 h-3 rounded-full border border-slate-400 border-dashed"></span> Promedio Global ({globalScore.toFixed(1)})
+                </div>
+            </div>
+        </div>
+    );
+};
 
 interface Props {
     campusName: string;
@@ -219,6 +365,38 @@ export default function CampusAnalysis({ campusName, results, organizationAverag
             recommendationText = `Se recomienda enfocar esfuerzos de capacitación y seguimiento en ${weakest?.sectionName} para cerrar las brechas detectadas.`;
         }
 
+        // --- PRISMA Logic (Campus Level) ---
+        const prismaPlan = {
+            shortTerm: [] as string[],
+            mediumTerm: [] as string[],
+            longTerm: [] as string[]
+        };
+
+        // Short Term
+        if (weakestName.includes("integridad")) {
+            prismaPlan.shortTerm.push("Campaña de sensibilización sobre valores éticos en el campus.");
+            prismaPlan.shortTerm.push("Revisión de procesos de toma de decisiones locales.");
+        } else if (weakestName.includes("resultados")) {
+            prismaPlan.shortTerm.push("Establecimiento de metas semanales por oficina.");
+            prismaPlan.shortTerm.push("Reuniones de seguimiento de indicadores clave.");
+        } else {
+            prismaPlan.shortTerm.push(`Diagnóstico rápido de causas raíz en ${weakest?.sectionName}.`);
+            prismaPlan.shortTerm.push("Feedback individual a líderes de oficinas con bajo desempeño.");
+        }
+
+        // Medium Term
+        if (delta < 0) {
+            prismaPlan.mediumTerm.push("Programa de mentoría con campus de alto desempeño.");
+            prismaPlan.mediumTerm.push("Capacitación intensiva en competencias críticas.");
+        } else {
+            prismaPlan.mediumTerm.push("Documentación de casos de éxito para compartir con la organización.");
+            prismaPlan.mediumTerm.push("Refuerzo de la cultura de excelencia.");
+        }
+
+        // Long Term
+        prismaPlan.longTerm.push(`Consolidar ${strongest?.sectionName} como sello distintivo del campus.`);
+        prismaPlan.longTerm.push("Plan de sucesión para roles clave de liderazgo en el campus.");
+
         return {
             globalScore,
             strategicScore: finalStrategicScore,
@@ -231,7 +409,8 @@ export default function CampusAnalysis({ campusName, results, organizationAverag
                 comparativeText,
                 recommendationText,
                 delta
-            }
+            },
+            prismaPlan
         };
     }, [results, organizationAverage]);
 
@@ -243,7 +422,7 @@ export default function CampusAnalysis({ campusName, results, organizationAverag
         );
     }
 
-    const { globalScore, strategicScore, campusSections, offices, competenciesAnalysis, intelligentAnalysis } = analysis;
+    const { globalScore, strategicScore, campusSections, offices, competenciesAnalysis, intelligentAnalysis, prismaPlan } = analysis;
 
     return (
         <div className="space-y-8 animate-in fade-in duration-500">
@@ -298,7 +477,7 @@ export default function CampusAnalysis({ campusName, results, organizationAverag
                         <div className="text-xs text-slate-400">Promedio General</div>
                     </div>
                     <div className="flex items-center justify-center bg-slate-50/50 rounded-xl border border-slate-100 border-dashed p-4">
-                        <RadarChart data={campusSections} size={350} />
+                        <ComparisonRadarChart data={campusSections} campusName={campusName} globalScore={organizationAverage} />
                     </div>
                 </div>
 
@@ -451,7 +630,75 @@ export default function CampusAnalysis({ campusName, results, organizationAverag
                     </div>
                 </div>
             </div>
-
         </div>
+
+            {/* PRISMA SYSTEM SECTION */ }
+    <div className="bg-slate-900 rounded-3xl p-8 text-white relative overflow-hidden shadow-2xl">
+        <div className="absolute top-0 left-0 p-12 opacity-5">
+            <ClipboardList className="w-64 h-64" />
+        </div>
+
+        <div className="relative z-10">
+            <div className="flex items-center gap-3 mb-8">
+                <div className="bg-emerald-500/20 p-3 rounded-xl backdrop-blur-sm border border-emerald-500/30">
+                    <Lightbulb className="w-8 h-8 text-emerald-400" />
+                </div>
+                <div>
+                    <h2 className="text-2xl font-bold">Sistema PRISMA: Inteligencia del Talento</h2>
+                    <p className="text-slate-400 text-sm">Plan de acción estratégico para el Campus</p>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* Short Term */}
+                <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-6 border border-white/10 hover:bg-white/10 transition-colors">
+                    <div className="flex items-center gap-2 mb-4 text-emerald-400">
+                        <CheckCircle2 className="w-5 h-5" />
+                        <h3 className="font-bold text-sm uppercase tracking-wider">Corto Plazo (1-3 Meses)</h3>
+                    </div>
+                    <ul className="space-y-3">
+                        {prismaPlan.shortTerm.map((action, idx) => (
+                            <li key={idx} className="flex items-start gap-3 text-sm text-slate-300">
+                                <ArrowRight className="w-4 h-4 mt-0.5 text-emerald-500/50 shrink-0" />
+                                <span>{action}</span>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+
+                {/* Medium Term */}
+                <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-6 border border-white/10 hover:bg-white/10 transition-colors">
+                    <div className="flex items-center gap-2 mb-4 text-blue-400">
+                        <CheckCircle2 className="w-5 h-5" />
+                        <h3 className="font-bold text-sm uppercase tracking-wider">Mediano Plazo (3-6 Meses)</h3>
+                    </div>
+                    <ul className="space-y-3">
+                        {prismaPlan.mediumTerm.map((action, idx) => (
+                            <li key={idx} className="flex items-start gap-3 text-sm text-slate-300">
+                                <ArrowRight className="w-4 h-4 mt-0.5 text-blue-500/50 shrink-0" />
+                                <span>{action}</span>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+
+                {/* Long Term */}
+                <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-6 border border-white/10 hover:bg-white/10 transition-colors">
+                    <div className="flex items-center gap-2 mb-4 text-purple-400">
+                        <CheckCircle2 className="w-5 h-5" />
+                        <h3 className="font-bold text-sm uppercase tracking-wider">Largo Plazo (+6 Meses)</h3>
+                    </div>
+                    <ul className="space-y-3">
+                        {prismaPlan.longTerm.map((action, idx) => (
+                            <li key={idx} className="flex items-start gap-3 text-sm text-slate-300">
+                                <ArrowRight className="w-4 h-4 mt-0.5 text-purple-500/50 shrink-0" />
+                                <span>{action}</span>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
     );
 }
