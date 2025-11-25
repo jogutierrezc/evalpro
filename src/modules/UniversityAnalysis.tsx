@@ -5,7 +5,11 @@ import {
     BrainCircuit,
     Building2,
     Target,
-    Zap
+    Zap,
+    ClipboardList,
+    CheckCircle2,
+    Lightbulb,
+    ArrowRight
 } from 'lucide-react';
 
 interface Props {
@@ -350,6 +354,48 @@ export default function UniversityAnalysis({ results }: Props) {
             level3Text = "Se sugiere mantener los programas actuales de bienestar y reforzar la capacitación técnica en las áreas operativas para sostener el crecimiento.";
         }
 
+        // --- 6. HR Action Plan Generator (New Feature) ---
+        const hrPlan = {
+            shortTerm: [] as string[],
+            mediumTerm: [] as string[],
+            longTerm: [] as string[]
+        };
+
+        // Short Term: Address the weakest link immediately
+        if (weakestName.includes("integridad")) {
+            hrPlan.shortTerm.push("Lanzar campaña de comunicación interna sobre el Código de Ética.");
+            hrPlan.shortTerm.push("Habilitar canal de denuncias anónimo y seguro.");
+        } else if (weakestName.includes("comunicacion")) {
+            hrPlan.shortTerm.push("Implementar reuniones de 'Check-in' semanal en todas las oficinas.");
+            hrPlan.shortTerm.push("Taller de comunicación efectiva para mandos medios.");
+        } else if (weakestName.includes("resultados")) {
+            hrPlan.shortTerm.push("Revisión inmediata de KPIs por departamento.");
+            hrPlan.shortTerm.push("Seguimiento quincenal de metas críticas.");
+        } else {
+            hrPlan.shortTerm.push(`Diagnóstico focalizado en el área de ${weakestSection?.sectionName}.`);
+            hrPlan.shortTerm.push("Sesiones de feedback 1 a 1 con líderes de áreas críticas.");
+        }
+
+        // Medium Term: Standardization & Culture
+        if (stdDev > 0.3) {
+            hrPlan.mediumTerm.push("Programa de estandarización de procesos entre campus.");
+            hrPlan.mediumTerm.push("Rotación temporal de líderes entre sedes (Intercambio de prácticas).");
+        } else {
+            hrPlan.mediumTerm.push("Fortalecimiento de la marca empleadora interna.");
+            hrPlan.mediumTerm.push("Programa de reconocimiento al desempeño sobresaliente.");
+        }
+
+        if (s_equipo < 4.0) {
+            hrPlan.mediumTerm.push("Actividades de Team Building semestrales por campus.");
+        }
+
+        // Long Term: Strategic Differentiation
+        const strongestSection = sortedSections[sortedSections.length - 1]; // Last one is highest
+        hrPlan.longTerm.push(`Consolidar "${strongestSection?.sectionName}" como pilar de la cultura organizacional.`);
+        hrPlan.longTerm.push("Desarrollo de plan de carrera y sucesión para talento clave.");
+        hrPlan.longTerm.push("Certificación Great Place to Work basada en fortalezas actuales.");
+
+
         return {
             globalAverage,
             campuses,
@@ -359,13 +405,14 @@ export default function UniversityAnalysis({ results }: Props) {
                 level1: { title: level1Title, text: level1Text, color: level1Color },
                 level2: { title: level2Title, text: level2Text },
                 level3: { title: level3Title, text: level3Text }
-            }
+            },
+            hrPlan
         };
     }, [results]);
 
     if (!analysis) return <div className="p-8 text-center text-slate-500">Cargando análisis universitario...</div>;
 
-    const { globalAverage, campuses, radarData, topOffices, intelligentAnalysis } = analysis;
+    const { globalAverage, campuses, radarData, topOffices, intelligentAnalysis, hrPlan } = analysis;
     const campusColors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
 
     return (
@@ -529,6 +576,75 @@ export default function UniversityAnalysis({ results }: Props) {
                     </div>
                 </div>
 
+            </div>
+
+            {/* HR Action Plan Section */}
+            <div className="bg-slate-900 rounded-3xl p-8 text-white relative overflow-hidden shadow-2xl">
+                <div className="absolute top-0 left-0 p-12 opacity-5">
+                    <ClipboardList className="w-64 h-64" />
+                </div>
+
+                <div className="relative z-10">
+                    <div className="flex items-center gap-3 mb-8">
+                        <div className="bg-emerald-500/20 p-3 rounded-xl backdrop-blur-sm border border-emerald-500/30">
+                            <Lightbulb className="w-8 h-8 text-emerald-400" />
+                        </div>
+                        <div>
+                            <h2 className="text-2xl font-bold">Plan de Acción Sugerido para Talento Humano</h2>
+                            <p className="text-slate-400 text-sm">Hoja de ruta generada automáticamente basada en brechas y fortalezas</p>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        {/* Short Term */}
+                        <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-6 border border-white/10 hover:bg-white/10 transition-colors">
+                            <div className="flex items-center gap-2 mb-4 text-emerald-400">
+                                <CheckCircle2 className="w-5 h-5" />
+                                <h3 className="font-bold text-sm uppercase tracking-wider">Corto Plazo (1-3 Meses)</h3>
+                            </div>
+                            <ul className="space-y-3">
+                                {hrPlan.shortTerm.map((action, idx) => (
+                                    <li key={idx} className="flex items-start gap-3 text-sm text-slate-300">
+                                        <ArrowRight className="w-4 h-4 mt-0.5 text-emerald-500/50 shrink-0" />
+                                        <span>{action}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+
+                        {/* Medium Term */}
+                        <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-6 border border-white/10 hover:bg-white/10 transition-colors">
+                            <div className="flex items-center gap-2 mb-4 text-blue-400">
+                                <CheckCircle2 className="w-5 h-5" />
+                                <h3 className="font-bold text-sm uppercase tracking-wider">Mediano Plazo (3-6 Meses)</h3>
+                            </div>
+                            <ul className="space-y-3">
+                                {hrPlan.mediumTerm.map((action, idx) => (
+                                    <li key={idx} className="flex items-start gap-3 text-sm text-slate-300">
+                                        <ArrowRight className="w-4 h-4 mt-0.5 text-blue-500/50 shrink-0" />
+                                        <span>{action}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+
+                        {/* Long Term */}
+                        <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-6 border border-white/10 hover:bg-white/10 transition-colors">
+                            <div className="flex items-center gap-2 mb-4 text-purple-400">
+                                <CheckCircle2 className="w-5 h-5" />
+                                <h3 className="font-bold text-sm uppercase tracking-wider">Largo Plazo (+6 Meses)</h3>
+                            </div>
+                            <ul className="space-y-3">
+                                {hrPlan.longTerm.map((action, idx) => (
+                                    <li key={idx} className="flex items-start gap-3 text-sm text-slate-300">
+                                        <ArrowRight className="w-4 h-4 mt-0.5 text-purple-500/50 shrink-0" />
+                                        <span>{action}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    </div>
+                </div>
             </div>
 
         </div>
