@@ -5,6 +5,7 @@ import { supabase, EvaluationResult, Evaluation, User, Office, EvaluationTemplat
 import { Building2, BarChart3, ChevronRight, ChevronDown } from 'lucide-react';
 import SectionAnalysis from './SectionAnalysis';
 import OfficeAnalysis from './OfficeAnalysis';
+import CampusAnalysis from './CampusAnalysis';
 
 export interface ResultWithDetails extends EvaluationResult {
   evaluation?: Evaluation;
@@ -26,9 +27,11 @@ export function ResultsModule() {
   const { user } = useAuth();
   const [results, setResults] = useState<ResultWithDetails[]>([]);
   const [groupedByOffice, setGroupedByOffice] = useState<Record<string, ResultWithDetails[]>>({});
+  const [groupedByCampus, setGroupedByCampus] = useState<Record<string, ResultWithDetails[]>>({});
   const [expandedOffices, setExpandedOffices] = useState<Set<string>>(new Set());
+  const [expandedCampuses, setExpandedCampuses] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState<'individual' | 'office'>('individual');
+  const [viewMode, setViewMode] = useState<'individual' | 'office' | 'campus'>('individual');
   const [selectedResultForAnalysis, setSelectedResultForAnalysis] = useState<ResultWithDetails | null>(null);
 
   useEffect(() => {
@@ -245,6 +248,16 @@ export function ResultsModule() {
       });
 
       setGroupedByOffice(grouped);
+
+      const groupedCampus: Record<string, ResultWithDetails[]> = {};
+      filteredResults.forEach((result) => {
+        const campus = result.evaluated?.campus || 'Sin Campus';
+        if (!groupedCampus[campus]) {
+          groupedCampus[campus] = [];
+        }
+        groupedCampus[campus].push(result);
+      });
+      setGroupedByCampus(groupedCampus);
     } catch (error) {
       console.error('Error loading results:', error);
     } finally {
@@ -260,6 +273,16 @@ export function ResultsModule() {
       newExpanded.add(officeId);
     }
     setExpandedOffices(newExpanded);
+  };
+
+  const toggleCampusExpand = (campus: string) => {
+    const newExpanded = new Set(expandedCampuses);
+    if (newExpanded.has(campus)) {
+      newExpanded.delete(campus);
+    } else {
+      newExpanded.add(campus);
+    }
+    setExpandedCampuses(newExpanded);
   };
 
   const calculateOfficeAverage = (officeResults: ResultWithDetails[]) => {
@@ -318,8 +341,71 @@ export function ResultsModule() {
           >
             Vista por Oficina
           </button>
+          <button
+            onClick={() => setViewMode('campus')}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${viewMode === 'campus'
+              ? 'bg-blue-600 text-white'
+              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+          >
+            Vista por Campus
+          </button>
         </div>
       )}
+
+      {viewMode === 'campus' && user?.role !== 'employee' ? (
+        <div className="space-y-4">
+          {Object.entries(groupedByCampus).map(([campusName, campusResults]) => {
+            const average = Number(calculateOfficeAverage(campusResults));
+            const isExpanded = expandedCampuses.has(campusName);
+            // Calculate global average for comparison
+            const allResults = Object.values(groupedByCampus).flat();
+            const globalAverage = Number(calculateOfficeAverage(allResults));
+
+            return (
+              <div key={campusName} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                <button
+                  onClick={() => toggleCampusExpand(campusName)}
+                  className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                >
+                  <div className="flex items-center gap-4">
+                    <Building2 className="w-6 h-6 text-indigo-600" />
+                    <div className="text-left">
+                      <h3 className="font-semibold text-gray-900">{campusName}</h3>
+                      <p className="text-sm text-gray-600">
+                        {campusResults.length} evaluación{campusResults.length !== 1 ? 'es' : ''}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <div className="text-right">
+                      <p className="text-sm text-gray-600">Promedio</p>
+                      <p className={`text-2xl font-bold ${getScoreColor(average)}`}>
+                        {average}
+                      </p>
+                    </div>
+                    {isExpanded ? (
+                      <ChevronDown className="w-5 h-5 text-gray-400" />
+                    ) : (
+                      <ChevronRight className="w-5 h-5 text-gray-400" />
+                    )}
+                  </div>
+                </button>
+
+                {isExpanded && (
+                  <div className="border-t border-gray-200 p-6 bg-gray-50">
+                    <CampusAnalysis
+                      campusName={campusName}
+                      results={campusResults}
+                      organizationAverage={globalAverage}
+                    />
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
 
       {viewMode === 'office' && user?.role !== 'employee' ? (
         <div className="space-y-4">
@@ -367,7 +453,9 @@ export function ResultsModule() {
             );
           })}
         </div>
-      ) : (
+      ) : null}
+
+      {viewMode === 'individual' || user?.role === 'employee' ? (
         <div className="grid grid-cols-1 gap-4">
           {results.map((result) => (
             <div key={result.id} className="bg-white rounded-lg border border-gray-200 p-6">
@@ -431,7 +519,7 @@ export function ResultsModule() {
             </div>
           ))}
         </div>
-      )}
+      ) : null}
 
       {selectedResultForAnalysis && selectedResultForAnalysis.evaluation && (
         <SectionAnalysis evaluation={selectedResultForAnalysis.evaluation as any} onClose={() => setSelectedResultForAnalysis(null)} />
