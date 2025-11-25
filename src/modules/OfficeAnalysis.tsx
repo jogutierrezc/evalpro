@@ -105,31 +105,118 @@ export default function OfficeAnalysis({ officeName, results }: Props) {
 
         const weakestSection = [...teamSections].sort((a, b) => (a.avg || 0) - (b.avg || 0))[0];
         const weakestName = normalize(weakestSection?.sectionName || "");
+        const weakestScore = weakestSection?.avg || 0;
 
-        // Short Term
-        if (weakestName.includes("comunicacion")) {
-            prismaPlan.shortTerm.push("Implementar 'Daily Standups' de 15 minutos.");
-            prismaPlan.shortTerm.push("Establecer canales claros para feedback inmediato.");
-        } else if (weakestName.includes("equipo")) {
-            prismaPlan.shortTerm.push("Realizar una actividad de integración fuera de la oficina.");
-            prismaPlan.shortTerm.push("Asignar proyectos en parejas para fomentar colaboración.");
+        // Helper to add actions based on score range
+        const addActions = (score: number, competency: string) => {
+            const comp = normalize(competency);
+
+            // ⚠️ Nivel de Alerta Crítica (0.0 - 2.0)
+            if (score <= 2.0) {
+                if (comp.includes("liderazgo")) {
+                    prismaPlan.shortTerm.push("Diagnóstico Profundo Obligatorio: Implementar 'Shadowing' de Liderazgo.");
+                    prismaPlan.shortTerm.push("Coaching Ejecutivo de Crisis 1:1 centrado en comunicación básica.");
+                    prismaPlan.mediumTerm.push("Reestructuración de equipos para asignar mentores temporales.");
+                } else if (comp.includes("integridad")) {
+                    prismaPlan.shortTerm.push("Auditoría Ética Rápida y Reinducción Obligatoria en Código de Ética.");
+                    prismaPlan.shortTerm.push("Establecer Compromiso Ético Formal firmado por el personal.");
+                    prismaPlan.mediumTerm.push("Crear un Canal de Denuncia Anónimo de acceso directo.");
+                } else if (comp.includes("compromiso") || comp.includes("calidad")) {
+                    prismaPlan.shortTerm.push("Capacitación intensiva en Metodología 5S y revisión de procesos.");
+                    prismaPlan.shortTerm.push("Establecer Puntos de Control de Calidad (QC) diarios.");
+                    prismaPlan.mediumTerm.push("Sesiones de 'Lessons Learned' obligatorias tras fallos.");
+                } else if (comp.includes("orientacion") || comp.includes("resultados")) {
+                    prismaPlan.shortTerm.push("Taller de Alineación de Objetivos y definición de métricas SMART.");
+                    prismaPlan.shortTerm.push("Implementar reuniones diarias (Daily Stand-ups) de progreso.");
+                    prismaPlan.mediumTerm.push("Implementar tablero Kanban de visibilidad de resultados.");
+                } else if (comp.includes("institucional")) {
+                    prismaPlan.shortTerm.push("Taller de Inducción de Cultura y refuerzo de misión/visión.");
+                    prismaPlan.shortTerm.push("Sesión de 'Valores en Acción' con ejemplos de comportamiento.");
+                    prismaPlan.mediumTerm.push("Programa de Padrinazgo Institucional con empleados clave.");
+                }
+            }
+            // 🟢 Nivel de Desarrollo (2.1 - 3.0)
+            else if (score <= 3.0) {
+                if (comp.includes("liderazgo")) {
+                    prismaPlan.shortTerm.push("Taller de Liderazgo Situacional y manejo de conflictos.");
+                    prismaPlan.mediumTerm.push("Programa de Mentoring formal (líderes experimentados a nuevos).");
+                    prismaPlan.longTerm.push("Iniciar el uso de Evaluaciones 360° iniciales.");
+                } else if (comp.includes("integridad")) {
+                    prismaPlan.shortTerm.push("Mesa de Diálogo Ético semestral y análisis de casos.");
+                    prismaPlan.mediumTerm.push("Entrenamientos sobre manejo de información confidencial.");
+                    prismaPlan.longTerm.push("Reconocimiento a la Transparencia como valor institucional.");
+                } else if (comp.includes("compromiso") || comp.includes("calidad")) {
+                    prismaPlan.shortTerm.push("Implementación de Herramientas de Gestión (Scrum/Kanban).");
+                    prismaPlan.mediumTerm.push("Sistema de Revisión por Pares estandarizado.");
+                    prismaPlan.longTerm.push("Taller de Análisis Causa Raíz (Ishikawa/5 Porqués).");
+                } else if (comp.includes("orientacion") || comp.includes("resultados")) {
+                    prismaPlan.shortTerm.push("Capacitación en OKR (Objectives and Key Results).");
+                    prismaPlan.mediumTerm.push("Crear un Dashboard de resultados visible para la unidad.");
+                    prismaPlan.longTerm.push("Formación en Gestión del Tiempo y Productividad Personal.");
+                } else if (comp.includes("institucional")) {
+                    prismaPlan.shortTerm.push("Actividades de integración (Team Building) sobre historia UDES.");
+                    prismaPlan.mediumTerm.push("Voluntariado corporativo para reforzar impacto social.");
+                    prismaPlan.longTerm.push("Campaña interna de 'Héroes Institucionales'.");
+                }
+            }
+            // 🌟 Nivel de Fortalecimiento (3.1 - 4.0)
+            else if (score <= 4.0) {
+                if (comp.includes("liderazgo")) {
+                    prismaPlan.shortTerm.push("Implementar Escuela de Liderazgo Transformacional.");
+                    prismaPlan.mediumTerm.push("Iniciar Planes de Sucesión para mandos medios.");
+                } else if (comp.includes("integridad")) {
+                    prismaPlan.shortTerm.push("Certificación de áreas clave en normas de calidad y ética.");
+                    prismaPlan.mediumTerm.push("Crear un Comité de Ética multidisciplinario.");
+                } else if (comp.includes("compromiso") || comp.includes("calidad")) {
+                    prismaPlan.shortTerm.push("Implementar Sistema de Gestión de Calidad (SGC) formal.");
+                    prismaPlan.mediumTerm.push("Proyectos Lean Six Sigma para reducción de errores.");
+                } else if (comp.includes("orientacion") || comp.includes("resultados")) {
+                    prismaPlan.shortTerm.push("Introducir Presupuesto Base Cero vinculado a estrategia.");
+                    prismaPlan.mediumTerm.push("Incentivos variables ligados a KPI de alta calidad.");
+                } else if (comp.includes("institucional")) {
+                    prismaPlan.shortTerm.push("Programas de intercambio de personal entre campus/áreas.");
+                    prismaPlan.mediumTerm.push("Fomentar visión global mediante rotación de puestos.");
+                }
+            }
+            // 🚀 Nivel de Excelencia (4.1 - 5.0)
+            else {
+                if (comp.includes("liderazgo")) {
+                    prismaPlan.shortTerm.push("Programa de 'Líder Coach' interno para certificar líderes.");
+                    prismaPlan.longTerm.push("Publicar un Modelo de Liderazgo Propio de la Universidad.");
+                } else if (comp.includes("integridad")) {
+                    prismaPlan.shortTerm.push("Buscar Certificación Great Place to Work.");
+                    prismaPlan.longTerm.push("Mentoring de Liderazgo Ético a instituciones externas.");
+                } else if (comp.includes("compromiso") || comp.includes("calidad")) {
+                    prismaPlan.shortTerm.push("Benchmarking con universidades de clase mundial.");
+                    prismaPlan.longTerm.push("Fondo de Innovación para mejora de procesos de calidad.");
+                } else if (comp.includes("orientacion") || comp.includes("resultados")) {
+                    prismaPlan.shortTerm.push("Implementar Oficina de Gestión de Proyectos (PMO) estratégica.");
+                    prismaPlan.longTerm.push("Reconocimiento público a equipos que superan OKRs.");
+                } else if (comp.includes("institucional")) {
+                    prismaPlan.shortTerm.push("Desarrollar Modelo de Proyección Social basado en valores.");
+                    prismaPlan.longTerm.push("Promover Movilidad Interinstitucional internacional.");
+                }
+            }
+        };
+
+        // Apply logic to the weakest section found
+        if (weakestSection) {
+            addActions(weakestScore, weakestName);
         } else {
-            prismaPlan.shortTerm.push(`Sesión de lluvia de ideas para mejorar ${weakestSection?.sectionName}.`);
-            prismaPlan.shortTerm.push("Reuniones 1 a 1 con miembros del equipo.");
+            // Fallback generic actions if no specific section data
+            prismaPlan.shortTerm.push("Realizar diagnóstico general de clima organizacional.");
+            prismaPlan.mediumTerm.push("Establecer plan de capacitación basado en roles.");
+            prismaPlan.longTerm.push("Evaluación de desempeño anual alineada a objetivos.");
         }
 
-        // Medium Term
-        if (globalScore < 4.0) {
-            prismaPlan.mediumTerm.push("Plan de capacitación técnica para cerrar brechas.");
-            prismaPlan.mediumTerm.push("Revisión de cargas de trabajo y roles.");
-        } else {
-            prismaPlan.mediumTerm.push("Programa de reconocimiento al empleado del mes.");
-            prismaPlan.mediumTerm.push("Delegación de nuevas responsabilidades a talentos clave.");
+        // Add a general "Next Step" based on Global Score if plan is sparse
+        if (prismaPlan.shortTerm.length < 2) {
+            if (globalScore < 3.5) {
+                prismaPlan.shortTerm.push("Reunión de alineación estratégica con la dirección.");
+            } else {
+                prismaPlan.shortTerm.push("Sesión de reconocimiento de logros del equipo.");
+            }
         }
-
-        // Long Term
-        prismaPlan.longTerm.push("Desarrollar plan de carrera para miembros de alto potencial.");
-        prismaPlan.longTerm.push("Consolidar cultura de alto desempeño y autonomía.");
 
         return {
             globalScore,
