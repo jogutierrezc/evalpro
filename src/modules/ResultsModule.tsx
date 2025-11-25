@@ -110,12 +110,22 @@ export function ResultsModule() {
             avgScore = (typeof (result as any).overall_score === 'number') ? Number((result as any).overall_score) : null;
           }
 
+          let targetOfficeId = evaluatedRes.data?.office_id;
+
+          // Si el evaluador es un jefe de oficina, usamos su oficina para el contexto del resultado
+          // Esto maneja el caso de colaboradores con múltiples oficinas/jefes
+          if (evaluatorRes.data?.role === 'office_manager' && evaluatorRes.data?.office_id) {
+            targetOfficeId = evaluatorRes.data.office_id;
+          } else if (templateRes.data?.type === 'manager_to_employee' && evaluatorRes.data?.office_id) {
+            targetOfficeId = evaluatorRes.data.office_id;
+          }
+
           let office = null;
-          if (evaluatedRes.data?.office_id) {
+          if (targetOfficeId) {
             const officeRes = await supabase
               .from('offices')
               .select('*')
-              .eq('id', evaluatedRes.data.office_id)
+              .eq('id', targetOfficeId)
               .single();
             office = officeRes.data;
           }
@@ -147,12 +157,21 @@ export function ResultsModule() {
             supabase.from('evaluation_templates').select('*').eq('id', evaluation.template_id).single(),
           ]);
 
+          let targetOfficeId = evaluatedRes.data?.office_id;
+
+          // Si el evaluador es un jefe de oficina, usamos su oficina para el contexto del resultado
+          if (evaluatorRes.data?.role === 'office_manager' && evaluatorRes.data?.office_id) {
+            targetOfficeId = evaluatorRes.data.office_id;
+          } else if (templateRes.data?.type === 'manager_to_employee' && evaluatorRes.data?.office_id) {
+            targetOfficeId = evaluatorRes.data.office_id;
+          }
+
           let office = null;
-          if (evaluatedRes.data?.office_id) {
+          if (targetOfficeId) {
             const officeRes = await supabase
               .from('offices')
               .select('*')
-              .eq('id', evaluatedRes.data.office_id)
+              .eq('id', targetOfficeId)
               .single();
             office = officeRes.data;
           }
