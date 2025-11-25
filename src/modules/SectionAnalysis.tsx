@@ -22,7 +22,7 @@ interface Props {
   onClose: () => void;
 }
 
-interface SectionSummaryRow {
+export interface SectionSummaryRow {
   sectionId: string | null;
   sectionName: string;
   avg: number | null;
@@ -31,7 +31,7 @@ interface SectionSummaryRow {
 }
 
 // --- RADAR CHART COMPONENT ---
-const RadarChart = ({ data, size = 300 }: { data: SectionSummaryRow[]; size?: number }) => {
+export const RadarChart = ({ data, size = 300 }: { data: SectionSummaryRow[]; size?: number }) => {
   const center = size / 2;
   const radius = (size / 2) - 40;
   const levels = 5;

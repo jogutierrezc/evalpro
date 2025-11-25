@@ -1,10 +1,12 @@
+
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, EvaluationResult, Evaluation, User, Office, EvaluationTemplate } from '../lib/supabase';
 import { Building2, BarChart3, ChevronRight, ChevronDown } from 'lucide-react';
 import SectionAnalysis from './SectionAnalysis';
+import OfficeAnalysis from './OfficeAnalysis';
 
-interface ResultWithDetails extends EvaluationResult {
+export interface ResultWithDetails extends EvaluationResult {
   evaluation?: Evaluation;
   evaluated?: User;
   evaluator?: User;
@@ -287,36 +289,7 @@ export function ResultsModule() {
     );
   }
 
-  const exportSectionsCSV = (result: ResultWithDetails) => {
-    try {
-      const header = ['SECCIÓN', 'PROMEDIO', 'PREGUNTA', 'TIPO', 'PESO', 'RESPUESTA'];
-      const rows: any[] = [];
-      (result.sectionsSummary || []).forEach((s) => {
-        if ((s.questions || []).length === 0) {
-          rows.push([s.sectionName, s.avg ?? '', '', '', '', '']);
-        } else {
-          s.questions.forEach((q: any, idx: number) => {
-            rows.push([idx === 0 ? s.sectionName : '', idx === 0 ? (s.avg ?? '') : '', q.text, q.type, q.weight ?? '', q.response ?? '']);
-          });
-        }
-      });
-      const csv = [header, ...rows]
-        .map((r: any[]) => r.map((c: any) => `"${String(c).replace(/\"/g, '""')}"`).join(','))
-        .join('\n');
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `secciones_${result.evaluation?.id || result.id}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error('Error exporting sections CSV', err);
-      alert('No se pudo exportar CSV de secciones.');
-    }
-  };
+
 
   return (
     <div>
@@ -329,21 +302,19 @@ export function ResultsModule() {
         <div className="mb-6 flex gap-2">
           <button
             onClick={() => setViewMode('individual')}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              viewMode === 'individual'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-            }`}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${viewMode === 'individual'
+              ? 'bg-blue-600 text-white'
+              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
           >
             Vista Individual
           </button>
           <button
             onClick={() => setViewMode('office')}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              viewMode === 'office'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-            }`}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${viewMode === 'office'
+              ? 'bg-blue-600 text-white'
+              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
           >
             Vista por Oficina
           </button>
@@ -389,95 +360,7 @@ export function ResultsModule() {
 
                 {isExpanded && (
                   <div className="border-t border-gray-200 p-6 bg-gray-50">
-                    <div className="space-y-3">
-                      {officeResults.map((result) => (
-                        <div
-                          key={result.id}
-                          className="bg-white rounded-lg border border-gray-200 p-4"
-                        >
-                          <div className="flex items-center justify-between">
-                            <div className="flex-1">
-                              <h4 className="font-semibold text-gray-900">
-                                {result.evaluated?.full_name}
-                              </h4>
-                              <p className="text-sm text-gray-600">
-                                {result.template?.name}
-                              </p>
-                              <p className="text-xs text-gray-500 mt-1">
-                                Evaluador: {result.evaluator?.full_name}
-                              </p>
-                            </div>
-                            <div className="text-right">
-                              <div className={`inline-flex items-center justify-center w-16 h-16 rounded-full ${getScoreBgColor(Number(result.avgScore || result.overall_score || 0))}`}>
-                                <span className={`text-2xl font-bold ${getScoreColor(Number(result.avgScore || result.overall_score || 0))}`}>
-                                  {(result.avgScore ?? result.overall_score ?? 0) as any}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                          {result.ai_analysis && (
-                            <div className="mt-4 p-3 bg-blue-50 rounded-lg">
-                              <p className="text-sm text-gray-700">{result.ai_analysis}</p>
-                            </div>
-                          )}
-                          {result.sectionsSummary && result.sectionsSummary.length > 0 && (
-                            <div className="mt-4">
-                              <details className="text-sm">
-                                <summary className="cursor-pointer text-blue-600">Desglose por sección ({result.sectionsSummary.length})</summary>
-                                <div className="mt-2 text-xs text-gray-700">
-                                  {result.sectionsSummary.map((s) => (
-                                    <div key={s.sectionId} className={`mb-3 border rounded p-2 ${s.avg !== null && s.avg < 3 ? 'bg-red-50' : 'bg-white'}`}>
-                                      <div className="flex justify-between items-center">
-                                        <div className={`font-medium ${s.avg !== null && s.avg < 3 ? 'text-red-700' : ''}`}>{s.sectionName}</div>
-                                        <div className={`text-sm ${s.avg !== null && s.avg < 3 ? 'text-red-700' : 'text-gray-600'}`}>Promedio: {s.avg !== null ? s.avg.toFixed(2) : '—'}</div>
-                                      </div>
-                                      <div className="mt-2">
-                                        <table className="w-full text-xs">
-                                          <thead>
-                                            <tr>
-                                              <th className="text-left p-1">Pregunta</th>
-                                              <th className="text-right p-1">Tipo</th>
-                                              <th className="text-right p-1">Peso</th>
-                                              <th className="text-right p-1">Respuesta</th>
-                                            </tr>
-                                          </thead>
-                                          <tbody>
-                                            {s.questions.map((q: any) => (
-                                              <tr key={q.id} className="border-t">
-                                                <td className="p-1">{q.text}</td>
-                                                <td className="p-1 text-right">{q.type}</td>
-                                                <td className="p-1 text-right">{q.weight ?? 0}</td>
-                                                <td className="p-1 text-right">{q.response ?? '—'}</td>
-                                              </tr>
-                                            ))}
-                                          </tbody>
-                                        </table>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </details>
-                              <div className="mt-2">
-                                <button
-                                  onClick={() => exportSectionsCSV(result)}
-                                  className="px-2 py-1 text-xs bg-gray-100 rounded hover:bg-gray-200"
-                                >
-                                  Exportar CSV secciones
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                          <div className="mt-4 flex gap-2">
-                            <button
-                              onClick={() => setSelectedResultForAnalysis(result)}
-                              className="px-3 py-2 bg-blue-600 text-white rounded-md"
-                            >
-                              Ver Análisis
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                    <OfficeAnalysis officeName={officeName} results={officeResults} />
                   </div>
                 )}
               </div>
@@ -523,8 +406,8 @@ export function ResultsModule() {
                   <ul className="text-sm text-gray-700 space-y-1">
                     {Array.isArray(result.recommendations)
                       ? result.recommendations.map((rec: string, idx: number) => (
-                          <li key={idx}>• {rec}</li>
-                        ))
+                        <li key={idx}>• {rec}</li>
+                      ))
                       : null}
                   </ul>
                 </div>
