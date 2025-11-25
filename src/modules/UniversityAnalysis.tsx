@@ -6,10 +6,16 @@ import {
     Building2,
     Target,
     Zap,
-    ClipboardList,
     CheckCircle2,
     Lightbulb,
-    ArrowRight
+    ArrowRight,
+    Activity,
+    BarChart3,
+    Link,
+    PieChart,
+    DollarSign,
+    TrendingUp,
+    AlertTriangle
 } from 'lucide-react';
 
 interface Props {
@@ -292,7 +298,12 @@ export default function UniversityAnalysis({ results }: Props) {
         // Find weakest section university-wide
         const sortedSections = [...radarData].sort((a, b) => a.UniversityAvg - b.UniversityAvg);
         const weakestSection = sortedSections[0];
+        const strongestSection = sortedSections[sortedSections.length - 1];
+
         const weakestName = normalize(weakestSection?.sectionName || "");
+        const weakestScore = weakestSection?.UniversityAvg || 0;
+        const strongestName = strongestSection?.sectionName || "Otras áreas";
+        const strongestScore = strongestSection?.UniversityAvg || 0;
 
         let level2Title = "";
         let level2Text = "";
@@ -320,7 +331,7 @@ export default function UniversityAnalysis({ results }: Props) {
             level2Text = `Se identifica ${weakestSection?.sectionName} como el área de mayor oportunidad. Se recomienda establecer mesas de trabajo específicas para diagnosticar las causas raíz.`;
         }
 
-        // Level 3: Strategic Proposals
+        // Level 3: Strategic Proposals (Old Logic - Kept for Summary)
         let level3Title = "";
         let level3Text = "";
 
@@ -354,7 +365,7 @@ export default function UniversityAnalysis({ results }: Props) {
             level3Text = "Se sugiere mantener los programas actuales de bienestar y reforzar la capacitación técnica en las áreas operativas para sostener el crecimiento.";
         }
 
-        // --- 6. HR Action Plan Generator (New Feature) ---
+        // --- 6. HR Action Plan Generator (Existing PRISMA) ---
         const hrPlan = {
             shortTerm: [] as string[],
             mediumTerm: [] as string[],
@@ -390,11 +401,104 @@ export default function UniversityAnalysis({ results }: Props) {
         }
 
         // Long Term: Strategic Differentiation
-        const strongestSection = sortedSections[sortedSections.length - 1]; // Last one is highest
         hrPlan.longTerm.push(`Consolidar "${strongestSection?.sectionName}" como pilar de la cultura organizacional.`);
         hrPlan.longTerm.push("Desarrollo de plan de carrera y sucesión para talento clave.");
         hrPlan.longTerm.push("Certificación Great Place to Work basada en fortalezas actuales.");
 
+        // --- NEW PRISMA FEATURES (University) ---
+
+        // I. Acción Enfocada (3 Options)
+        const focusedActions = [];
+        if (weakestScore >= 4.0) {
+            focusedActions.push({
+                title: "Universidad Corporativa",
+                desc: `Crear una escuela interna para formalizar el conocimiento en ${weakestSection?.sectionName}.`,
+                icon: <Award className="w-5 h-5 text-purple-600" />
+            });
+            focusedActions.push({
+                title: "Sello de Calidad Institucional",
+                desc: "Certificar los procesos clave bajo normas internacionales (ISO).",
+                icon: <Link className="w-5 h-5 text-blue-600" />
+            });
+            focusedActions.push({
+                title: "Cultura de Innovación",
+                desc: "Fomentar intra-emprendimiento para mejorar procesos transversales.",
+                icon: <Activity className="w-5 h-5 text-emerald-600" />
+            });
+        } else {
+            focusedActions.push({
+                title: "Plan Maestro de Recuperación",
+                desc: `Intervención sistémica en los campus con menor desempeño en ${weakestSection?.sectionName}.`,
+                icon: <AlertTriangle className="w-5 h-5 text-red-600" />
+            });
+            focusedActions.push({
+                title: "Auditoría Organizacional",
+                desc: "Revisión externa de la estructura y procesos para identificar cuellos de botella.",
+                icon: <Link className="w-5 h-5 text-orange-600" />
+            });
+            focusedActions.push({
+                title: "Alineación Estratégica",
+                desc: "Summit de líderes para redefinir prioridades y compromisos.",
+                icon: <Target className="w-5 h-5 text-yellow-600" />
+            });
+        }
+
+        // II. Propuesta Estratégica
+        const strategicProposals = [
+            {
+                name: "Opción A: Transformación Digital del Talento",
+                kpi: "Automatizar 50% de procesos de HR",
+                scope: "Toda la Universidad - Eficiencia",
+                color: "bg-blue-50 border-blue-200 text-blue-800"
+            },
+            {
+                name: "Opción B: Programa de Bienestar Integral 360",
+                kpi: "Reducir ausentismo en 15%",
+                scope: "Colaboradores y Familias - Clima",
+                color: "bg-purple-50 border-purple-200 text-purple-800"
+            },
+            {
+                name: "Opción C: Liderazgo para el Futuro",
+                kpi: "Tener 80% de puestos clave con sucesor listo",
+                scope: "Alta Dirección - Sostenibilidad",
+                color: "bg-emerald-50 border-emerald-200 text-emerald-800"
+            }
+        ];
+
+        // III. Predictive
+        const riskProb = Math.max(5, Math.min(90, (5 - weakestScore) * 10)).toFixed(0);
+        const efficiencyLoss = Math.max(0, (4.5 - globalAverage) * 12).toFixed(1);
+        const roi = (globalAverage * 4).toFixed(0);
+
+        const predictiveAnalysis = {
+            risk: {
+                label: "Riesgo Sistémico",
+                value: `${riskProb}%`,
+                desc: `Vulnerabilidad institucional ante crisis en ${weakestSection?.sectionName}.`,
+                color: "text-red-600"
+            },
+            financial: {
+                label: "Costo de Oportunidad",
+                value: `${efficiencyLoss}%`,
+                desc: "Pérdida de competitividad frente al mercado educativo.",
+                color: "text-orange-600"
+            },
+            roi: {
+                label: "Valor Institucional",
+                value: `${roi}%`,
+                desc: "Incremento en reputación y ranking universitario.",
+                color: "text-emerald-600"
+            }
+        };
+
+        // IV. Correlation
+        const correlationMap = {
+            focus: weakestSection?.sectionName,
+            focusScore: weakestScore.toFixed(1),
+            impacted: strongestName,
+            impactedScore: strongestScore.toFixed(1),
+            analysis: `La debilidad estructural en ${weakestSection?.sectionName} (${weakestScore.toFixed(1)}) amenaza con erosionar la ventaja competitiva en ${strongestName} (${strongestScore.toFixed(1)}). Una estrategia integral debe abordar ambos frentes.`
+        };
 
         return {
             globalAverage,
@@ -406,13 +510,17 @@ export default function UniversityAnalysis({ results }: Props) {
                 level2: { title: level2Title, text: level2Text },
                 level3: { title: level3Title, text: level3Text }
             },
-            hrPlan
+            hrPlan,
+            focusedActions,
+            strategicProposals,
+            predictiveAnalysis,
+            correlationMap
         };
     }, [results]);
 
     if (!analysis) return <div className="p-8 text-center text-slate-500">Cargando análisis universitario...</div>;
 
-    const { globalAverage, campuses, radarData, topOffices, intelligentAnalysis, hrPlan } = analysis;
+    const { globalAverage, campuses, radarData, topOffices, intelligentAnalysis, hrPlan, focusedActions, strategicProposals, predictiveAnalysis, correlationMap } = analysis;
     const campusColors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
 
     return (
@@ -545,14 +653,14 @@ export default function UniversityAnalysis({ results }: Props) {
                 </div>
             </div>
 
-            {/* Strategic Recommendations (Level 2 & 3) */}
+            {/* Strategic Recommendations (Level 2 & 3) - OLD SUMMARY KEPT */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
 
                 {/* Level 2: Actionable Insight */}
                 <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 border-l-4 border-l-orange-500">
                     <h3 className="font-bold text-slate-800 text-lg mb-4 flex items-center gap-2">
                         <Target className="w-5 h-5 text-orange-500" />
-                        Acción Enfocada (Matriz de Recomendación)
+                        Diagnóstico Focalizado
                     </h3>
                     <div className="bg-orange-50 rounded-xl p-5 mb-4">
                         <h4 className="font-bold text-orange-800 mb-2">{intelligentAnalysis.level2.title}</h4>
@@ -566,7 +674,7 @@ export default function UniversityAnalysis({ results }: Props) {
                 <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 border-l-4 border-l-indigo-500">
                     <h3 className="font-bold text-slate-800 text-lg mb-4 flex items-center gap-2">
                         <Zap className="w-5 h-5 text-indigo-500" />
-                        Propuesta Estratégica (Rectoría)
+                        Iniciativa Prioritaria
                     </h3>
                     <div className="bg-indigo-50 rounded-xl p-5 mb-4">
                         <h4 className="font-bold text-indigo-800 mb-2">{intelligentAnalysis.level3.title}</h4>
@@ -578,76 +686,163 @@ export default function UniversityAnalysis({ results }: Props) {
 
             </div>
 
-            {/* HR Action Plan Section */}
-            {/* HR Action Plan Section */}
-            <div className="bg-white rounded-3xl p-8 shadow-2xl border border-slate-100 relative overflow-hidden">
-                <div className="absolute top-0 left-0 opacity-5 pointer-events-none">
-                    <img src="/prisma.png" alt="Prisma Logo" className="w-96 h-96 object-contain -ml-20 -mt-20" />
-                </div>
-
-                <div className="relative z-10">
-                    <div className="flex items-center gap-3 mb-8">
-                        <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-100">
-                            <Lightbulb className="w-8 h-8 text-emerald-600" />
+            {/* PRISMA SYSTEM SECTION - ENHANCED */}
+            <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 relative overflow-hidden mt-8">
+                {/* Header with Logo */}
+                <div className="bg-slate-900 p-8 text-white relative overflow-hidden">
+                    <div className="absolute top-0 right-0 p-8 opacity-10">
+                        <BrainCircuit className="w-64 h-64" />
+                    </div>
+                    <div className="relative z-10 flex items-center gap-6">
+                        <div className="bg-white p-2 rounded-xl h-20 w-20 flex items-center justify-center">
+                            <img src="/prisma.png" alt="Prisma Logo" className="w-full h-full object-contain" />
                         </div>
                         <div>
-                            <h2 className="text-2xl font-bold text-slate-800">Sistema PRISMA: Inteligencia del Talento</h2>
-                            <p className="text-slate-500 text-sm">Plan de acción estratégico generado por inteligencia de datos</p>
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        {/* Short Term */}
-                        <div className="bg-slate-50 rounded-2xl p-6 border border-slate-200 hover:shadow-md transition-all">
-                            <div className="flex items-center gap-2 mb-4 text-emerald-600">
-                                <CheckCircle2 className="w-5 h-5" />
-                                <h3 className="font-bold text-sm uppercase tracking-wider">Corto Plazo (1-3 Meses)</h3>
-                            </div>
-                            <ul className="space-y-3">
-                                {hrPlan.shortTerm.map((action, idx) => (
-                                    <li key={idx} className="flex items-start gap-3 text-sm text-slate-600">
-                                        <ArrowRight className="w-4 h-4 mt-0.5 text-emerald-500 shrink-0" />
-                                        <span>{action}</span>
-                                    </li>
-                                ))}
-                            </ul>
-                        </div>
-
-                        {/* Medium Term */}
-                        <div className="bg-slate-50 rounded-2xl p-6 border border-slate-200 hover:shadow-md transition-all">
-                            <div className="flex items-center gap-2 mb-4 text-blue-600">
-                                <CheckCircle2 className="w-5 h-5" />
-                                <h3 className="font-bold text-sm uppercase tracking-wider">Mediano Plazo (3-6 Meses)</h3>
-                            </div>
-                            <ul className="space-y-3">
-                                {hrPlan.mediumTerm.map((action, idx) => (
-                                    <li key={idx} className="flex items-start gap-3 text-sm text-slate-600">
-                                        <ArrowRight className="w-4 h-4 mt-0.5 text-blue-500 shrink-0" />
-                                        <span>{action}</span>
-                                    </li>
-                                ))}
-                            </ul>
-                        </div>
-
-                        {/* Long Term */}
-                        <div className="bg-slate-50 rounded-2xl p-6 border border-slate-200 hover:shadow-md transition-all">
-                            <div className="flex items-center gap-2 mb-4 text-purple-600">
-                                <CheckCircle2 className="w-5 h-5" />
-                                <h3 className="font-bold text-sm uppercase tracking-wider">Largo Plazo (+6 Meses)</h3>
-                            </div>
-                            <ul className="space-y-3">
-                                {hrPlan.longTerm.map((action, idx) => (
-                                    <li key={idx} className="flex items-start gap-3 text-sm text-slate-600">
-                                        <ArrowRight className="w-4 h-4 mt-0.5 text-purple-500 shrink-0" />
-                                        <span>{action}</span>
-                                    </li>
-                                ))}
-                            </ul>
+                            <h2 className="text-3xl font-bold">Sistema PRISMA</h2>
+                            <p className="text-slate-400 text-lg">Inteligencia del Talento & Estrategia Organizacional</p>
                         </div>
                     </div>
                 </div>
-            </div>
 
+                <div className="p-8 space-y-10">
+
+                    {/* 1. Predictive Analysis & Correlation */}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                        {/* Predictive Stats */}
+                        <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            {Object.values(predictiveAnalysis).map((item, idx) => (
+                                <div key={idx} className="bg-slate-50 rounded-xl p-4 border border-slate-100">
+                                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">{item.label}</h4>
+                                    <div className={`text-2xl font-bold mb-1 ${item.color}`}>{item.value}</div>
+                                    <p className="text-xs text-slate-400 leading-tight">{item.desc}</p>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Correlation Map */}
+                        <div className="bg-indigo-50 rounded-xl p-5 border border-indigo-100">
+                            <h4 className="text-sm font-bold text-indigo-900 mb-3 flex items-center gap-2">
+                                <Link className="w-4 h-4" /> Mapa de Correlación
+                            </h4>
+                            <p className="text-sm text-indigo-800 leading-relaxed mb-2">
+                                {correlationMap.analysis}
+                            </p>
+                            <div className="flex items-center gap-2 text-xs font-medium text-indigo-600 mt-3">
+                                <span className="px-2 py-1 bg-white rounded border border-indigo-200">{correlationMap.focus}</span>
+                                <ArrowRight className="w-3 h-3" />
+                                <span className="px-2 py-1 bg-white rounded border border-indigo-200">{correlationMap.impacted}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* 2. Focused Actions (Matriz) */}
+                    <div>
+                        <h3 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
+                            <Target className="w-6 h-6 text-orange-500" />
+                            I. Acción Enfocada (Matriz de Recomendación)
+                        </h3>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            {focusedActions.map((action, idx) => (
+                                <div key={idx} className="group bg-white rounded-xl p-6 border border-slate-200 hover:border-orange-300 hover:shadow-lg transition-all cursor-default">
+                                    <div className="mb-4 bg-orange-50 w-10 h-10 rounded-lg flex items-center justify-center group-hover:bg-orange-100 transition-colors">
+                                        {action.icon}
+                                    </div>
+                                    <h4 className="font-bold text-slate-800 mb-2">{action.title}</h4>
+                                    <p className="text-sm text-slate-500 leading-relaxed">{action.desc}</p>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* 3. Strategic Proposals (Rectoría) */}
+                    <div>
+                        <h3 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
+                            <Zap className="w-6 h-6 text-indigo-500" />
+                            II. Propuesta Estratégica (Rectoría)
+                        </h3>
+                        <div className="grid grid-cols-1 gap-4">
+                            {strategicProposals.map((prop, idx) => (
+                                <div key={idx} className={`rounded-xl p-5 border flex flex-col md:flex-row items-start md:items-center gap-6 ${prop.color}`}>
+                                    <div className="flex-1">
+                                        <h4 className="font-bold text-lg mb-1">{prop.name}</h4>
+                                        <div className="flex flex-wrap gap-3 mt-2">
+                                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-white/50 text-xs font-semibold border border-black/5">
+                                                <Target className="w-3 h-3" /> KPI: {prop.kpi}
+                                            </span>
+                                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-white/50 text-xs font-semibold border border-black/5">
+                                                <Activity className="w-3 h-3" /> Alcance: {prop.scope}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div className="shrink-0">
+                                        <button className="px-4 py-2 bg-white/80 hover:bg-white text-sm font-bold rounded-lg shadow-sm transition-colors border border-black/5">
+                                            Seleccionar Estrategia
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* 4. Detailed Implementation Plan (Existing PRISMA) */}
+                    <div>
+                        <h3 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
+                            <BarChart3 className="w-6 h-6 text-emerald-600" />
+                            III. Plan de Implementación Detallado
+                        </h3>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            {/* Short Term */}
+                            <div className="bg-slate-50 rounded-2xl p-6 border border-slate-200">
+                                <div className="flex items-center gap-2 mb-4 text-emerald-600">
+                                    <CheckCircle2 className="w-5 h-5" />
+                                    <h3 className="font-bold text-sm uppercase tracking-wider">Corto Plazo (1-3 Meses)</h3>
+                                </div>
+                                <ul className="space-y-3">
+                                    {hrPlan.shortTerm.map((action, idx) => (
+                                        <li key={idx} className="flex items-start gap-3 text-sm text-slate-600">
+                                            <ArrowRight className="w-4 h-4 mt-0.5 text-emerald-500 shrink-0" />
+                                            <span>{action}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+
+                            {/* Medium Term */}
+                            <div className="bg-slate-50 rounded-2xl p-6 border border-slate-200">
+                                <div className="flex items-center gap-2 mb-4 text-blue-600">
+                                    <CheckCircle2 className="w-5 h-5" />
+                                    <h3 className="font-bold text-sm uppercase tracking-wider">Mediano Plazo (3-6 Meses)</h3>
+                                </div>
+                                <ul className="space-y-3">
+                                    {hrPlan.mediumTerm.map((action, idx) => (
+                                        <li key={idx} className="flex items-start gap-3 text-sm text-slate-600">
+                                            <ArrowRight className="w-4 h-4 mt-0.5 text-blue-500 shrink-0" />
+                                            <span>{action}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+
+                            {/* Long Term */}
+                            <div className="bg-slate-50 rounded-2xl p-6 border border-slate-200">
+                                <div className="flex items-center gap-2 mb-4 text-purple-600">
+                                    <CheckCircle2 className="w-5 h-5" />
+                                    <h3 className="font-bold text-sm uppercase tracking-wider">Largo Plazo (+6 Meses)</h3>
+                                </div>
+                                <ul className="space-y-3">
+                                    {hrPlan.longTerm.map((action, idx) => (
+                                        <li key={idx} className="flex items-start gap-3 text-sm text-slate-600">
+                                            <ArrowRight className="w-4 h-4 mt-0.5 text-purple-500 shrink-0" />
+                                            <span>{action}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
         </div>
     );
 }

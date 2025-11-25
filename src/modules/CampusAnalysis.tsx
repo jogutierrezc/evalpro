@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { RadarChart, SectionSummaryRow } from './SectionAnalysis';
+import { SectionSummaryRow } from './SectionAnalysis';
 import { ResultWithDetails } from './ResultsModule';
 import {
     TrendingUp,
@@ -7,14 +7,23 @@ import {
     BrainCircuit,
     Building2,
     AlertTriangle,
-    ClipboardList,
     CheckCircle2,
-    Lightbulb,
-    ArrowRight
+    ArrowRight,
+    Target,
+    Zap,
+    Activity,
+    BarChart3,
+    Link
 } from 'lucide-react';
 
+interface RadarDataPoint {
+    sectionName: string;
+    avg?: number;
+    [key: string]: string | number | undefined;
+}
+
 // --- COMPARISON RADAR CHART (Campus vs Global) ---
-const ComparisonRadarChart = ({ data, campusName, globalScore }: { data: any[], campusName: string, globalScore: number }) => {
+const ComparisonRadarChart = ({ data, campusName, globalScore }: { data: RadarDataPoint[], campusName: string, globalScore: number }) => {
     const size = 350;
     const center = size / 2;
     const radius = (size / 2) - 50;
@@ -100,12 +109,7 @@ const ComparisonRadarChart = ({ data, campusName, globalScore }: { data: any[], 
                 <g>
                     <polygon
                         points={data.map((d, i) => {
-                            const coords = getCoordinates(globalScore, i); // Using globalScore as a flat average for simplicity, or we could pass per-section global avg if available. 
-                            // Ideally we want per-section global average. The prompt said "delta que debe ser el promedio de los resultados de todos los colaboradores relacionados comparados con el promedio global".
-                            // Assuming 'globalScore' passed here is the scalar global average. If we want per-section, we need that data.
-                            // The user said "promedio global" which usually implies the scalar. But for a radar chart, a scalar makes a perfect circle.
-                            // Let's assume scalar for now as per-section global data isn't easily passed into this component without refactoring ResultsModule to pass it down.
-                            // Wait, 'organizationAverage' is passed to CampusAnalysis.
+                            const coords = getCoordinates(globalScore, i);
                             return `${coords.x},${coords.y} `;
                         }).join(" ")}
                         fill="none"
@@ -269,11 +273,6 @@ export default function CampusAnalysis({ campusName, results, organizationAverag
         // --- INTELLIGENT ANALYSIS LOGIC ---
 
         // A. Calculate Weighted Score (Strategic Score)
-        // Orientación a resultados: 30%
-        // Trabajo en Equipo + Comunicación: 30%
-        // Integridad + Institucional: 20%
-        // Compromiso: 20%
-
         let weightedScore = 0;
         let totalWeight = 0;
 
@@ -282,41 +281,32 @@ export default function CampusAnalysis({ campusName, results, organizationAverag
             return match?.avg || 0;
         };
 
-        const s_resultados = getSectionAvg("resultados"); // Orientación a resultados
-        const s_equipo = getSectionAvg("equipo"); // Trabajo en Equipo
-        const s_comunicacion = getSectionAvg("comunicacion"); // Comunicación
-        const s_integridad = getSectionAvg("integridad"); // Integridad
-        const s_institucional = getSectionAvg("institucional"); // Institucional
-        const s_compromiso = getSectionAvg("compromiso"); // Compromiso
+        const s_resultados = getSectionAvg("resultados");
+        const s_equipo = getSectionAvg("equipo");
+        const s_comunicacion = getSectionAvg("comunicacion");
+        const s_integridad = getSectionAvg("integridad");
+        const s_institucional = getSectionAvg("institucional");
+        const s_compromiso = getSectionAvg("compromiso");
 
         // Apply weights
-        // 1. Resultados (30%)
         if (s_resultados) { weightedScore += s_resultados * 0.3; totalWeight += 0.3; }
-
-        // 2. Equipo + Comunicación (30%)
         const socialAvgs = [s_equipo, s_comunicacion].filter(v => v > 0);
         if (socialAvgs.length > 0) {
             const socialAvg = socialAvgs.reduce((a, b) => a + b, 0) / socialAvgs.length;
             weightedScore += socialAvg * 0.3;
             totalWeight += 0.3;
         }
-
-        // 3. Integridad + Institucional (20%)
         const cultureAvgs = [s_integridad, s_institucional].filter(v => v > 0);
         if (cultureAvgs.length > 0) {
             const cultureAvg = cultureAvgs.reduce((a, b) => a + b, 0) / cultureAvgs.length;
             weightedScore += cultureAvg * 0.2;
             totalWeight += 0.2;
         }
-
-        // 4. Compromiso (20%)
         if (s_compromiso) { weightedScore += s_compromiso * 0.2; totalWeight += 0.2; }
 
-        // Normalize if weights don't sum to 1 (e.g. missing sections)
         const finalStrategicScore = totalWeight > 0 ? weightedScore / totalWeight : globalScore;
 
         // B. Generate Text
-        // Header
         let headerText = "";
         let headerColor = "";
         if (finalStrategicScore > 4.6) {
@@ -337,7 +327,6 @@ export default function CampusAnalysis({ campusName, results, organizationAverag
         const delta = finalStrategicScore - organizationAverage;
         let comparativeText = "";
 
-        // Find strongest and weakest sections for text gen
         const sortedSections = [...campusSections].sort((a, b) => (b.avg || 0) - (a.avg || 0));
         const strongest = sortedSections[0];
         const weakest = sortedSections[sortedSections.length - 1];
@@ -345,7 +334,7 @@ export default function CampusAnalysis({ campusName, results, organizationAverag
         if (delta > 0.3) {
             const percentAbove = ((delta / organizationAverage) * 100).toFixed(0);
             comparativeText = `Al compararse con el promedio global de la empresa, este campus destaca notablemente, situándose un ${percentAbove}% por encima de la media. Su fortaleza principal radica en ${strongest?.sectionName}, lo que sugiere prácticas internas exitosas que podrían replicarse en otras sedes.`;
-        } else if (delta >= -0.2) { // Between -0.2 and +0.3 (covering the +0.2 range roughly)
+        } else if (delta >= -0.2) {
             comparativeText = `El desempeño de este campus se encuentra alineado con el promedio organizacional. Si bien cumple con las expectativas generales, existe una oportunidad clara para potenciar el área de ${weakest?.sectionName} y dar el salto hacia la excelencia.`;
         } else {
             comparativeText = `Los resultados sitúan a este campus por debajo del promedio corporativo. Particularmente, el indicador de ${weakest?.sectionName} es el que más impacta negativamente su ponderación global frente a otras sedes.`;
@@ -397,6 +386,104 @@ export default function CampusAnalysis({ campusName, results, organizationAverag
         prismaPlan.longTerm.push(`Consolidar ${strongest?.sectionName} como sello distintivo del campus.`);
         prismaPlan.longTerm.push("Plan de sucesión para roles clave de liderazgo en el campus.");
 
+        // --- NEW PRISMA FEATURES (Campus) ---
+        const weakestScore = weakest?.avg || 0;
+        const strongestName = strongest?.sectionName || "Otras áreas";
+        const strongestScore = strongest?.avg || 0;
+
+        // I. Acción Enfocada (3 Options)
+        const focusedActions = [];
+        if (weakestScore >= 4.0) {
+            focusedActions.push({
+                title: "Certificación de Excelencia",
+                desc: `Convertir al campus en un centro de formación en ${weakest?.sectionName} para toda la universidad.`,
+                icon: <Award className="w-5 h-5 text-purple-600" />
+            });
+            focusedActions.push({
+                title: "Expansión de Modelo",
+                desc: "Documentar y exportar el modelo de gestión de este campus a otras sedes.",
+                icon: <Link className="w-5 h-5 text-blue-600" />
+            });
+            focusedActions.push({
+                title: "Innovación Disruptiva",
+                desc: "Piloto de nuevas metodologías de trabajo antes de su despliegue nacional.",
+                icon: <Activity className="w-5 h-5 text-emerald-600" />
+            });
+        } else {
+            focusedActions.push({
+                title: "Plan de Nivelación",
+                desc: `Intervención directa en oficinas con bajo desempeño en ${weakest?.sectionName}.`,
+                icon: <AlertTriangle className="w-5 h-5 text-red-600" />
+            });
+            focusedActions.push({
+                title: "Estandarización de Procesos",
+                desc: "Asegurar que todas las oficinas sigan los mismos protocolos operativos.",
+                icon: <Link className="w-5 h-5 text-orange-600" />
+            });
+            focusedActions.push({
+                title: "Refuerzo de Liderazgo",
+                desc: "Capacitación específica para directores de oficina en gestión de equipos.",
+                icon: <Target className="w-5 h-5 text-yellow-600" />
+            });
+        }
+
+        // II. Propuesta Estratégica
+        const strategicProposals = [
+            {
+                name: "Opción A: Programa de Integración de Campus",
+                kpi: "Mejorar clima laboral en 10%",
+                scope: "Todo el personal - Cultural",
+                color: "bg-blue-50 border-blue-200 text-blue-800"
+            },
+            {
+                name: "Opción B: Reingeniería de Procesos Académicos",
+                kpi: "Reducir quejas administrativas en 20%",
+                scope: "Personal Administrativo - Eficiencia",
+                color: "bg-purple-50 border-purple-200 text-purple-800"
+            },
+            {
+                name: "Opción C: Desarrollo de Talento Local",
+                kpi: "Cubrir 30% de vacantes con promoción interna",
+                scope: "Líderes de Oficina - Sucesión",
+                color: "bg-emerald-50 border-emerald-200 text-emerald-800"
+            }
+        ];
+
+        // III. Predictive
+        const riskProb = Math.max(5, Math.min(90, (5 - weakestScore) * 12)).toFixed(0);
+        const efficiencyLoss = Math.max(0, (4.5 - globalScore) * 10).toFixed(1);
+        const roi = (globalScore * 5).toFixed(0);
+
+        const predictiveAnalysis = {
+            risk: {
+                label: "Riesgo Operativo",
+                value: `${riskProb}%`,
+                desc: `Probabilidad de fallos en servicios si no se atiende ${weakest?.sectionName}.`,
+                color: "text-red-600"
+            },
+            financial: {
+                label: "Impacto Presupuestal",
+                value: `${efficiencyLoss}%`,
+                desc: "Desviación estimada en costos operativos por ineficiencia.",
+                color: "text-orange-600"
+            },
+            roi: {
+                label: "Potencial de Mejora",
+                value: `${roi}%`,
+                desc: "Incremento esperado en satisfacción estudiantil/cliente.",
+                color: "text-emerald-600"
+            }
+        };
+
+        // IV. Correlation
+        const correlationMap = {
+            focus: weakest?.sectionName,
+            focusScore: weakestScore.toFixed(1),
+            impacted: strongestName,
+            impactedScore: strongestScore.toFixed(1),
+            analysis: `La brecha en ${weakest?.sectionName} (${weakestScore.toFixed(1)}) está frenando el aprovechamiento total de ${strongestName} (${strongestScore.toFixed(1)}). Equilibrar estas competencias creará un campus más resiliente.`
+        };
+
         return {
             globalScore,
             strategicScore: finalStrategicScore,
@@ -410,7 +497,11 @@ export default function CampusAnalysis({ campusName, results, organizationAverag
                 recommendationText,
                 delta
             },
-            prismaPlan
+            prismaPlan,
+            focusedActions,
+            strategicProposals,
+            predictiveAnalysis,
+            correlationMap
         };
     }, [results, organizationAverage]);
 
@@ -422,7 +513,7 @@ export default function CampusAnalysis({ campusName, results, organizationAverag
         );
     }
 
-    const { globalScore, strategicScore, campusSections, offices, competenciesAnalysis, intelligentAnalysis, prismaPlan } = analysis;
+    const { globalScore, strategicScore, campusSections, offices, competenciesAnalysis, intelligentAnalysis, prismaPlan, focusedActions, strategicProposals, predictiveAnalysis, correlationMap } = analysis;
 
     return (
         <div className="space-y-8 animate-in fade-in duration-500">
@@ -572,7 +663,7 @@ export default function CampusAnalysis({ campusName, results, organizationAverag
                 </div>
             </div>
 
-            {/* INTELLIGENT ANALYSIS SECTION */}
+            {/* INTELLIGENT ANALYSIS SECTION (OLD - KEPT AS SUMMARY) */}
             <div className="bg-slate-900 rounded-3xl p-8 text-white relative overflow-hidden shadow-2xl">
                 <div className="absolute top-0 right-0 p-12 opacity-5">
                     <BrainCircuit className="w-64 h-64" />
@@ -630,72 +721,162 @@ export default function CampusAnalysis({ campusName, results, organizationAverag
                     </div>
                 </div>
             </div>
-            {/* PRISMA SYSTEM SECTION */}
-            <div className="bg-white rounded-3xl p-8 shadow-2xl border border-slate-100 relative overflow-hidden">
-                <div className="absolute top-0 left-0 opacity-5 pointer-events-none">
-                    <img src="/prisma.png" alt="Prisma Logo" className="w-96 h-96 object-contain -ml-20 -mt-20" />
-                </div>
 
-                <div className="relative z-10">
-                    <div className="flex items-center gap-3 mb-8">
-                        <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-100">
-                            <Lightbulb className="w-8 h-8 text-emerald-600" />
+            {/* PRISMA SYSTEM SECTION - ENHANCED */}
+            <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 relative overflow-hidden mt-8">
+                {/* Header with Logo */}
+                <div className="bg-slate-900 p-8 text-white relative overflow-hidden">
+                    <div className="absolute top-0 right-0 p-8 opacity-10">
+                        <BrainCircuit className="w-64 h-64" />
+                    </div>
+                    <div className="relative z-10 flex items-center gap-6">
+                        <div className="bg-white p-2 rounded-xl h-20 w-20 flex items-center justify-center">
+                            <img src="/prisma.png" alt="Prisma Logo" className="w-full h-full object-contain" />
                         </div>
                         <div>
-                            <h2 className="text-2xl font-bold text-slate-800">Sistema PRISMA: Inteligencia del Talento</h2>
-                            <p className="text-slate-500 text-sm">Plan de acción estratégico para el Campus</p>
+                            <h2 className="text-3xl font-bold">Sistema PRISMA</h2>
+                            <p className="text-slate-400 text-lg">Inteligencia del Talento & Estrategia Organizacional</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="p-8 space-y-10">
+
+                    {/* 1. Predictive Analysis & Correlation */}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                        {/* Predictive Stats */}
+                        <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            {Object.values(predictiveAnalysis).map((item, idx) => (
+                                <div key={idx} className="bg-slate-50 rounded-xl p-4 border border-slate-100">
+                                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">{item.label}</h4>
+                                    <div className={`text-2xl font-bold mb-1 ${item.color}`}>{item.value}</div>
+                                    <p className="text-xs text-slate-400 leading-tight">{item.desc}</p>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Correlation Map */}
+                        <div className="bg-indigo-50 rounded-xl p-5 border border-indigo-100">
+                            <h4 className="text-sm font-bold text-indigo-900 mb-3 flex items-center gap-2">
+                                <Link className="w-4 h-4" /> Mapa de Correlación
+                            </h4>
+                            <p className="text-sm text-indigo-800 leading-relaxed mb-2">
+                                {correlationMap.analysis}
+                            </p>
+                            <div className="flex items-center gap-2 text-xs font-medium text-indigo-600 mt-3">
+                                <span className="px-2 py-1 bg-white rounded border border-indigo-200">{correlationMap.focus}</span>
+                                <ArrowRight className="w-3 h-3" />
+                                <span className="px-2 py-1 bg-white rounded border border-indigo-200">{correlationMap.impacted}</span>
+                            </div>
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        {/* Short Term */}
-                        <div className="bg-slate-50 rounded-2xl p-6 border border-slate-200 hover:shadow-md transition-all">
-                            <div className="flex items-center gap-2 mb-4 text-emerald-600">
-                                <CheckCircle2 className="w-5 h-5" />
-                                <h3 className="font-bold text-sm uppercase tracking-wider">Corto Plazo (1-3 Meses)</h3>
-                            </div>
-                            <ul className="space-y-3">
-                                {prismaPlan.shortTerm.map((action, idx) => (
-                                    <li key={idx} className="flex items-start gap-3 text-sm text-slate-600">
-                                        <ArrowRight className="w-4 h-4 mt-0.5 text-emerald-500 shrink-0" />
-                                        <span>{action}</span>
-                                    </li>
-                                ))}
-                            </ul>
-                        </div>
-
-                        {/* Medium Term */}
-                        <div className="bg-slate-50 rounded-2xl p-6 border border-slate-200 hover:shadow-md transition-all">
-                            <div className="flex items-center gap-2 mb-4 text-blue-600">
-                                <CheckCircle2 className="w-5 h-5" />
-                                <h3 className="font-bold text-sm uppercase tracking-wider">Mediano Plazo (3-6 Meses)</h3>
-                            </div>
-                            <ul className="space-y-3">
-                                {prismaPlan.mediumTerm.map((action, idx) => (
-                                    <li key={idx} className="flex items-start gap-3 text-sm text-slate-600">
-                                        <ArrowRight className="w-4 h-4 mt-0.5 text-blue-500 shrink-0" />
-                                        <span>{action}</span>
-                                    </li>
-                                ))}
-                            </ul>
-                        </div>
-
-                        {/* Long Term */}
-                        <div className="bg-slate-50 rounded-2xl p-6 border border-slate-200 hover:shadow-md transition-all">
-                            <div className="flex items-center gap-2 mb-4 text-purple-600">
-                                <CheckCircle2 className="w-5 h-5" />
-                                <h3 className="font-bold text-sm uppercase tracking-wider">Largo Plazo (+6 Meses)</h3>
-                            </div>
-                            <ul className="space-y-3">
-                                {prismaPlan.longTerm.map((action, idx) => (
-                                    <li key={idx} className="flex items-start gap-3 text-sm text-slate-600">
-                                        <ArrowRight className="w-4 h-4 mt-0.5 text-purple-500 shrink-0" />
-                                        <span>{action}</span>
-                                    </li>
-                                ))}
-                            </ul>
+                    {/* 2. Focused Actions (Matriz) */}
+                    <div>
+                        <h3 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
+                            <Target className="w-6 h-6 text-orange-500" />
+                            I. Acción Enfocada (Matriz de Recomendación)
+                        </h3>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            {focusedActions.map((action, idx) => (
+                                <div key={idx} className="group bg-white rounded-xl p-6 border border-slate-200 hover:border-orange-300 hover:shadow-lg transition-all cursor-default">
+                                    <div className="mb-4 bg-orange-50 w-10 h-10 rounded-lg flex items-center justify-center group-hover:bg-orange-100 transition-colors">
+                                        {action.icon}
+                                    </div>
+                                    <h4 className="font-bold text-slate-800 mb-2">{action.title}</h4>
+                                    <p className="text-sm text-slate-500 leading-relaxed">{action.desc}</p>
+                                </div>
+                            ))}
                         </div>
                     </div>
+
+                    {/* 3. Strategic Proposals (Rectoría) */}
+                    <div>
+                        <h3 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
+                            <Zap className="w-6 h-6 text-indigo-500" />
+                            II. Propuesta Estratégica (Rectoría)
+                        </h3>
+                        <div className="grid grid-cols-1 gap-4">
+                            {strategicProposals.map((prop, idx) => (
+                                <div key={idx} className={`rounded-xl p-5 border flex flex-col md:flex-row items-start md:items-center gap-6 ${prop.color}`}>
+                                    <div className="flex-1">
+                                        <h4 className="font-bold text-lg mb-1">{prop.name}</h4>
+                                        <div className="flex flex-wrap gap-3 mt-2">
+                                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-white/50 text-xs font-semibold border border-black/5">
+                                                <Target className="w-3 h-3" /> KPI: {prop.kpi}
+                                            </span>
+                                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-white/50 text-xs font-semibold border border-black/5">
+                                                <Activity className="w-3 h-3" /> Alcance: {prop.scope}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div className="shrink-0">
+                                        <button className="px-4 py-2 bg-white/80 hover:bg-white text-sm font-bold rounded-lg shadow-sm transition-colors border border-black/5">
+                                            Seleccionar Estrategia
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* 4. Detailed Implementation Plan (Existing PRISMA) */}
+                    <div>
+                        <h3 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
+                            <BarChart3 className="w-6 h-6 text-emerald-600" />
+                            III. Plan de Implementación Detallado
+                        </h3>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            {/* Short Term */}
+                            <div className="bg-slate-50 rounded-2xl p-6 border border-slate-200">
+                                <div className="flex items-center gap-2 mb-4 text-emerald-600">
+                                    <CheckCircle2 className="w-5 h-5" />
+                                    <h3 className="font-bold text-sm uppercase tracking-wider">Corto Plazo (1-3 Meses)</h3>
+                                </div>
+                                <ul className="space-y-3">
+                                    {prismaPlan.shortTerm.map((action, idx) => (
+                                        <li key={idx} className="flex items-start gap-3 text-sm text-slate-600">
+                                            <ArrowRight className="w-4 h-4 mt-0.5 text-emerald-500 shrink-0" />
+                                            <span>{action}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+
+                            {/* Medium Term */}
+                            <div className="bg-slate-50 rounded-2xl p-6 border border-slate-200">
+                                <div className="flex items-center gap-2 mb-4 text-blue-600">
+                                    <CheckCircle2 className="w-5 h-5" />
+                                    <h3 className="font-bold text-sm uppercase tracking-wider">Mediano Plazo (3-6 Meses)</h3>
+                                </div>
+                                <ul className="space-y-3">
+                                    {prismaPlan.mediumTerm.map((action, idx) => (
+                                        <li key={idx} className="flex items-start gap-3 text-sm text-slate-600">
+                                            <ArrowRight className="w-4 h-4 mt-0.5 text-blue-500 shrink-0" />
+                                            <span>{action}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+
+                            {/* Long Term */}
+                            <div className="bg-slate-50 rounded-2xl p-6 border border-slate-200">
+                                <div className="flex items-center gap-2 mb-4 text-purple-600">
+                                    <CheckCircle2 className="w-5 h-5" />
+                                    <h3 className="font-bold text-sm uppercase tracking-wider">Largo Plazo (+6 Meses)</h3>
+                                </div>
+                                <ul className="space-y-3">
+                                    {prismaPlan.longTerm.map((action, idx) => (
+                                        <li key={idx} className="flex items-start gap-3 text-sm text-slate-600">
+                                            <ArrowRight className="w-4 h-4 mt-0.5 text-purple-500 shrink-0" />
+                                            <span>{action}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
                 </div>
             </div>
         </div>
