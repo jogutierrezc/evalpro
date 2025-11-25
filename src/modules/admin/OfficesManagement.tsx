@@ -8,7 +8,7 @@ export function OfficesManagement() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingOffice, setEditingOffice] = useState<Office | null>(null);
-  const [formData, setFormData] = useState({ name: '', description: '' });
+  const [formData, setFormData] = useState({ name: '', description: '', parent_id: '' });
   const [showImport, setShowImport] = useState(false);
   const [parsing, setParsing] = useState(false);
   const [importRows, setImportRows] = useState<Array<{ name: string; description?: string }>>([]);
@@ -41,22 +41,28 @@ export function OfficesManagement() {
     e.preventDefault();
 
     try {
+      const payload = {
+        name: formData.name,
+        description: formData.description,
+        parent_id: formData.parent_id || null,
+      };
+
       if (editingOffice) {
         const { error } = await supabase
           .from('offices')
-          .update({ ...formData, updated_at: new Date().toISOString() })
+          .update({ ...payload, updated_at: new Date().toISOString() })
           .eq('id', editingOffice.id);
 
         if (error) throw error;
       } else {
         const { error } = await supabase
           .from('offices')
-          .insert([formData]);
+          .insert([payload]);
 
         if (error) throw error;
       }
 
-      setFormData({ name: '', description: '' });
+      setFormData({ name: '', description: '', parent_id: '' });
       setEditingOffice(null);
       setShowForm(false);
       loadOffices();
@@ -68,7 +74,11 @@ export function OfficesManagement() {
 
   const handleEdit = (office: Office) => {
     setEditingOffice(office);
-    setFormData({ name: office.name, description: office.description || '' });
+    setFormData({
+      name: office.name,
+      description: office.description || '',
+      parent_id: office.parent_id || ''
+    });
     setShowForm(true);
   };
 
@@ -90,7 +100,7 @@ export function OfficesManagement() {
   };
 
   const handleCancel = () => {
-    setFormData({ name: '', description: '' });
+    setFormData({ name: '', description: '', parent_id: '' });
     setEditingOffice(null);
     setShowForm(false);
   };
@@ -170,6 +180,12 @@ export function OfficesManagement() {
     return <div className="text-center py-8">Cargando...</div>;
   }
 
+  // Helper to get parent name
+  const getParentName = (parentId: string | null | undefined) => {
+    if (!parentId) return null;
+    return offices.find(o => o.id === parentId)?.name;
+  };
+
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
@@ -200,17 +216,37 @@ export function OfficesManagement() {
             {editingOffice ? 'Editar Oficina' : 'Nueva Oficina'}
           </h3>
           <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Nombre de la Oficina
-              </label>
-              <input
-                type="text"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
-              />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Nombre de la Oficina
+                </label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Oficina Superior (Opcional)
+                </label>
+                <select
+                  value={formData.parent_id}
+                  onChange={(e) => setFormData({ ...formData, parent_id: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">Ninguna (Oficina Principal)</option>
+                  {offices
+                    .filter(o => o.id !== editingOffice?.id) // Prevent selecting self as parent
+                    .map(o => (
+                      <option key={o.id} value={o.id}>{o.name}</option>
+                    ))
+                  }
+                </select>
+              </div>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -244,10 +280,17 @@ export function OfficesManagement() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {offices.map((office) => (
-          <div key={office.id} className="bg-white border border-gray-200 rounded-lg p-4">
+          <div key={office.id} className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
             <div className="flex justify-between items-start mb-2">
-              <h3 className="font-semibold text-gray-900">{office.name}</h3>
-              <div className="flex gap-1">
+              <div>
+                <h3 className="font-semibold text-gray-900">{office.name}</h3>
+                {office.parent_id && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-50 text-indigo-700 mt-1">
+                    ↳ {getParentName(office.parent_id)}
+                  </span>
+                )}
+              </div>
+              <div className="flex gap-1 shrink-0 ml-2">
                 <button
                   onClick={() => handleEdit(office)}
                   className="p-1 text-blue-600 hover:bg-blue-50 rounded transition-colors"
@@ -265,7 +308,7 @@ export function OfficesManagement() {
               </div>
             </div>
             {office.description && (
-              <p className="text-sm text-gray-600">{office.description}</p>
+              <p className="text-sm text-gray-600 mt-2 line-clamp-2">{office.description}</p>
             )}
           </div>
         ))}

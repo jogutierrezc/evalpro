@@ -618,6 +618,10 @@ export function UsersManagement() {
   const handleImport = async () => {
     if (!importFile) return;
 
+    let successCount = 0;
+    let failureCount = 0;
+    const errors: string[] = [];
+
     try {
       const data = await importFile.arrayBuffer();
       const workbook = XLSX.read(data);
@@ -639,7 +643,7 @@ export function UsersManagement() {
       };
 
       const officeMap = offices.reduce((acc, office) => {
-        acc[office.name] = office.id;
+        acc[office.name.toLowerCase()] = office.id;
         return acc;
       }, {} as Record<string, string>);
 
@@ -657,14 +661,22 @@ export function UsersManagement() {
         const managerName = row['Jefe Inmediato']?.toString().trim();
         const campus = row['Campus']?.toString().trim() || null;
 
-        if (!identification || !full_name || !roleStr) continue;
+        if (!identification || !full_name || !roleStr) {
+          failureCount++;
+          errors.push(`Fila incompleta: ${full_name || 'Sin nombre'} - Falta cédula, nombre o rol.`);
+          continue;
+        }
 
         const role = importResolveRole(roleStr);
-        if (!role) continue;
+        if (!role) {
+          failureCount++;
+          errors.push(`Rol desconocido para: ${full_name} (${roleStr})`);
+          continue;
+        }
 
         // Support multiple offices in the 'Oficina' column separated by commas/semicolons
         const officeNames = officeName ? officeName.split(/[;,|]/).map((s: string) => s.trim()).filter(Boolean) : [];
-        const office_ids = officeNames.map((n: string) => officeMap[n]).filter(Boolean);
+        const office_ids = officeNames.map((n: string) => officeMap[n.toLowerCase()]).filter(Boolean);
         const office_id = office_ids.length > 0 ? office_ids[0] : null;
         // Support multiple managers separated by commas/semicolons
         const managerNames = managerName ? managerName.split(/[;,|]/).map((s: string) => s.trim()).filter(Boolean) : [];
@@ -673,36 +685,68 @@ export function UsersManagement() {
           .filter(Boolean);
         const manager_id = manager_ids.length > 0 ? manager_ids[0] : null;
 
-        if (role === 'admin') {
-          // Create auth user for admin
-          const emailToUse = email || `${identification}@evaluation.local`;
-          const passwordToUse = identification;
+        const emailToUse = email || `${identification}@evaluation.local`;
+        const passwordToUse = identification;
 
+        try {
+          // Attempt to create Auth user
           const { data: signUpData, error: signUpError } = await signUpPreserveCreator({
             email: emailToUse,
             password: passwordToUse,
           });
 
+          let createdUserId = (signUpData as any)?.user?.id || (signUpData as any)?.id;
+
           if (signUpError) {
-            console.error('Auth signUp error for', full_name, signUpError);
-            continue;
-          }
-
-          const createdUserId = (signUpData as any)?.user?.id || (signUpData as any)?.id;
-
-          // If signUp failed because the user already exists in Auth, try to use existing users.id
-          let finalUserId = createdUserId;
-          if (!finalUserId) {
-            try {
+            // If user already exists, try to recover ID
+            if (signUpError.message.includes('already registered') || signUpError.status === 422 || signUpError.status === 400) {
+              // 1. Try public.users lookup
               const { data: existingUser } = await supabase.from('users').select('id').eq('email', emailToUse).maybeSingle();
-              if (existingUser && existingUser.id) finalUserId = existingUser.id;
-            } catch (e) {
-              console.error('Error looking up existing users row by email after signUp:', e);
+              if (existingUser && existingUser.id) {
+                createdUserId = existingUser.id;
+              } else {
+                // 2. Try SignIn recovery (Zombie Auth User)
+                // We need to save session again because signIn will overwrite it
+                const { data: currentSessionData } = await supabase.auth.getSession();
+                const adminSession = currentSessionData.session;
+
+                const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+                  email: emailToUse,
+                  password: passwordToUse
+                });
+
+                if (signInData.user) {
+                  createdUserId = signInData.user.id;
+                  // Restore admin session immediately
+                  if (adminSession) {
+                    await supabase.auth.setSession({
+                      access_token: adminSession.access_token,
+                      refresh_token: adminSession.refresh_token,
+                    });
+                  }
+                } else {
+                  // Restore session if sign in failed
+                  if (adminSession) {
+                    await supabase.auth.setSession({
+                      access_token: adminSession.access_token,
+                      refresh_token: adminSession.refresh_token,
+                    });
+                  }
+                  throw new Error(`Usuario ya existe en Auth pero no se pudo recuperar ID (posible contraseña diferente): ${signInError?.message || signUpError.message}`);
+                }
+              }
+            } else {
+              throw signUpError;
             }
           }
 
-          const { error: userError } = await supabase.from('users').insert([{
-            id: finalUserId,
+          if (!createdUserId) {
+            throw new Error('No se pudo obtener el ID del usuario.');
+          }
+
+          // Upsert into public.users
+          const { error: userError } = await supabase.from('users').upsert([{
+            id: createdUserId,
             identification,
             full_name,
             email: emailToUse,
@@ -710,87 +754,46 @@ export function UsersManagement() {
             office_id,
             manager_id,
             campus,
+            updated_at: new Date().toISOString()
           }]);
 
-          if (userError) {
-            console.error('Error inserting user', full_name, userError);
-          }
-          // If the imported user is a manager role, create colaboradores counterpart
-          try {
-            await upsertCollaboratorForUser(finalUserId, {
-              identification,
-              full_name,
-              email: emailToUse,
-              role,
-              campus,
-              manager_id,
-            });
-            await ensureCollaboratorOffices(finalUserId, office_ids);
-            await upsertUserManagers(finalUserId, manager_ids, office_ids);
-          } catch (e) {
-            console.warn('Could not upsert collaborator for imported admin user', full_name, e);
-          }
-        } else {
-          // For non-admin, create auth user first then insert into users
-          const emailToUse = email || `${identification}@evaluation.local`;
-          const passwordToUse = identification;
+          if (userError) throw userError;
 
-          try {
-            const { data: signUpData, error: signUpError } = await signUpPreserveCreator({
-              email: emailToUse,
-              password: passwordToUse,
-            });
+          // Handle relations
+          await upsertCollaboratorForUser(createdUserId, {
+            identification,
+            full_name,
+            email: emailToUse,
+            role,
+            campus,
+            manager_id,
+            office_id,
+          });
+          await ensureCollaboratorOffices(createdUserId, office_ids);
+          await upsertUserManagers(createdUserId, manager_ids, office_ids);
 
-            if (signUpError) {
-              console.error('Auth signUp error for', full_name, signUpError);
-              continue;
-            }
+          successCount++;
 
-            const createdUserId = (signUpData as any)?.user?.id || (signUpData as any)?.id;
-
-            const { error: userError } = await supabase.from('users').insert([{
-              id: createdUserId,
-              identification,
-              full_name,
-              email: emailToUse,
-              role,
-              office_id,
-              manager_id,
-              campus,
-            }]);
-
-            if (userError) {
-              console.error('Error inserting user', full_name, userError);
-            }
-            // If the imported user is a manager role, create colaboradores counterpart
-            try {
-              await upsertCollaboratorForUser(createdUserId, {
-                identification,
-                full_name,
-                email: emailToUse,
-                role,
-                campus,
-                manager_id,
-                office_id,
-              });
-              await upsertUserManagers(createdUserId, manager_ids, office_ids);
-              await ensureCollaboratorOffices(createdUserId, office_ids);
-            } catch (e) {
-              console.warn('Could not upsert collaborator for imported user', full_name, e);
-            }
-          } catch (e) {
-            console.error('Auth/create user error for', full_name, e);
-          }
+        } catch (rowError: any) {
+          console.error(`Error importando ${full_name}:`, rowError);
+          failureCount++;
+          errors.push(`Error con ${full_name}: ${rowError.message || 'Error desconocido'}`);
         }
       }
 
-      alert('Importación completada');
+      let message = `Importación finalizada.\nExitosos: ${successCount}\nFallidos: ${failureCount}`;
+      if (errors.length > 0) {
+        message += `\n\nErrores:\n${errors.slice(0, 10).join('\n')}`;
+        if (errors.length > 10) message += `\n... y ${errors.length - 10} más.`;
+      }
+      alert(message);
+
       setShowImport(false);
       setImportFile(null);
       loadData();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error importing:', error);
-      alert('Error al importar');
+      alert(`Error crítico al importar: ${error.message}`);
     }
   };
 

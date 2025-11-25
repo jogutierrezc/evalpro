@@ -31,6 +31,7 @@ export interface Office {
   id: string;
   name: string;
   description: string | null;
+  parent_id?: string | null; // Added for hierarchy
   created_at: string;
   updated_at: string;
 }
