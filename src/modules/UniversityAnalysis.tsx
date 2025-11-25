@@ -590,8 +590,8 @@ export default function UniversityAnalysis({ results }: Props) {
                             <Lightbulb className="w-8 h-8 text-emerald-400" />
                         </div>
                         <div>
-                            <h2 className="text-2xl font-bold">Plan de Acción Sugerido para Talento Humano</h2>
-                            <p className="text-slate-400 text-sm">Hoja de ruta generada automáticamente basada en brechas y fortalezas</p>
+                            <h2 className="text-2xl font-bold">Sistema PRISMA: Inteligencia del Talento</h2>
+                            <p className="text-slate-400 text-sm">Plan de acción estratégico generado por inteligencia de datos</p>
                         </div>
                     </div>
 
