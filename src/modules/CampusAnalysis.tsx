@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { SectionSummaryRow } from './SectionAnalysis';
 import { ResultWithDetails } from './ResultsModule';
 import {
@@ -13,7 +13,9 @@ import {
     Zap,
     Activity,
     BarChart3,
-    Link
+    Link,
+    ChevronDown,
+    ChevronUp
 } from 'lucide-react';
 
 interface RadarDataPoint {
@@ -168,6 +170,14 @@ interface Props {
 const normalize = (text: string) => text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
 export default function CampusAnalysis({ campusName, results, organizationAverage }: Props) {
+    const [expandedProposals, setExpandedProposals] = useState<Record<number, boolean>>({});
+
+    const toggleProposal = (idx: number) => {
+        setExpandedProposals(prev => ({
+            ...prev,
+            [idx]: !prev[idx]
+        }));
+    };
 
     const analysis = useMemo(() => {
         // Filter results that have scores
@@ -432,19 +442,34 @@ export default function CampusAnalysis({ campusName, results, organizationAverag
                 name: "Opción A: Programa de Integración de Campus",
                 kpi: "Mejorar clima laboral en 10%",
                 scope: "Todo el personal - Cultural",
-                color: "bg-blue-50 border-blue-200 text-blue-800"
+                color: "bg-blue-50 border-blue-200 text-blue-800",
+                actions: [
+                    "Organizar eventos trimestrales de integración entre facultades.",
+                    "Crear comités mixtos para la resolución de conflictos.",
+                    "Implementar un buzón de sugerencias de clima laboral con respuesta garantizada."
+                ]
             },
             {
                 name: "Opción B: Reingeniería de Procesos Académicos",
                 kpi: "Reducir quejas administrativas en 20%",
                 scope: "Personal Administrativo - Eficiencia",
-                color: "bg-purple-50 border-purple-200 text-purple-800"
+                color: "bg-purple-50 border-purple-200 text-purple-800",
+                actions: [
+                    "Auditar los procesos actuales de atención al estudiante.",
+                    "Digitalizar trámites manuales prioritarios.",
+                    "Capacitar al personal en nuevas herramientas de gestión."
+                ]
             },
             {
                 name: "Opción C: Desarrollo de Talento Local",
                 kpi: "Cubrir 30% de vacantes con promoción interna",
                 scope: "Líderes de Oficina - Sucesión",
-                color: "bg-emerald-50 border-emerald-200 text-emerald-800"
+                color: "bg-emerald-50 border-emerald-200 text-emerald-800",
+                actions: [
+                    "Identificar empleados con alto potencial (HiPo) en cada oficina.",
+                    "Diseñar planes de carrera individualizados.",
+                    "Establecer programa de mentoring con directivos del campus."
+                ]
             }
         ];
 
@@ -797,22 +822,45 @@ export default function CampusAnalysis({ campusName, results, organizationAverag
                         </h3>
                         <div className="grid grid-cols-1 gap-4">
                             {strategicProposals.map((prop, idx) => (
-                                <div key={idx} className={`rounded-xl p-5 border flex flex-col md:flex-row items-start md:items-center gap-6 ${prop.color}`}>
-                                    <div className="flex-1">
-                                        <h4 className="font-bold text-lg mb-1">{prop.name}</h4>
-                                        <div className="flex flex-wrap gap-3 mt-2">
-                                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-white/50 text-xs font-semibold border border-black/5">
-                                                <Target className="w-3 h-3" /> KPI: {prop.kpi}
-                                            </span>
-                                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-white/50 text-xs font-semibold border border-black/5">
-                                                <Activity className="w-3 h-3" /> Alcance: {prop.scope}
+                                <div key={idx} className={`rounded-xl border transition-all duration-300 ${prop.color} ${expandedProposals[idx] ? 'ring-2 ring-offset-2 ring-indigo-100' : ''}`}>
+                                    <div
+                                        className="p-5 flex flex-col md:flex-row items-start md:items-center gap-6 cursor-pointer"
+                                        onClick={() => toggleProposal(idx)}
+                                    >
+                                        <div className="flex-1">
+                                            <h4 className="font-bold text-lg mb-1 flex items-center gap-2">
+                                                {prop.name}
+                                                {expandedProposals[idx] ? <ChevronUp className="w-4 h-4 opacity-50" /> : <ChevronDown className="w-4 h-4 opacity-50" />}
+                                            </h4>
+                                            <div className="flex flex-wrap gap-3 mt-2">
+                                                <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-white/50 text-xs font-semibold border border-black/5">
+                                                    <Target className="w-3 h-3" /> KPI: {prop.kpi}
+                                                </span>
+                                                <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-white/50 text-xs font-semibold border border-black/5">
+                                                    <Activity className="w-3 h-3" /> Alcance: {prop.scope}
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div className="shrink-0">
+                                            <span className="text-xs font-bold uppercase tracking-wider opacity-60">
+                                                {expandedProposals[idx] ? 'Ocultar Acciones' : 'Ver Acciones'}
                                             </span>
                                         </div>
                                     </div>
-                                    <div className="shrink-0">
-                                        <button className="px-4 py-2 bg-white/80 hover:bg-white text-sm font-bold rounded-lg shadow-sm transition-colors border border-black/5">
-                                            Seleccionar Estrategia
-                                        </button>
+
+                                    {/* Accordion Content */}
+                                    <div className={`overflow-hidden transition-all duration-300 ${expandedProposals[idx] ? 'max-h-96 opacity-100 p-5 pt-0' : 'max-h-0 opacity-0'}`}>
+                                        <div className="bg-white/60 rounded-lg p-4">
+                                            <h5 className="font-bold text-sm mb-2 opacity-80">Acciones Sugeridas:</h5>
+                                            <ul className="space-y-2">
+                                                {prop.actions.map((action, i) => (
+                                                    <li key={i} className="flex items-start gap-2 text-sm opacity-90">
+                                                        <div className="mt-1.5 w-1.5 h-1.5 rounded-full bg-current opacity-50" />
+                                                        {action}
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
                                     </div>
                                 </div>
                             ))}

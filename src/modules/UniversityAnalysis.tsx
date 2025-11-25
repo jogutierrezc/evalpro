@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { ResultWithDetails } from './ResultsModule';
 import {
     Award,
@@ -11,7 +11,9 @@ import {
     Activity,
     BarChart3,
     Link,
-    AlertTriangle
+    AlertTriangle,
+    ChevronDown,
+    ChevronUp
 } from 'lucide-react';
 
 interface Props {
@@ -166,6 +168,14 @@ const MultiRadarChart = ({ data, campuses, colors }: { data: RadarDataPoint[], c
 };
 
 export default function UniversityAnalysis({ results }: Props) {
+    const [expandedProposals, setExpandedProposals] = useState<Record<number, boolean>>({});
+
+    const toggleProposal = (idx: number) => {
+        setExpandedProposals(prev => ({
+            ...prev,
+            [idx]: !prev[idx]
+        }));
+    };
 
     const analysis = useMemo(() => {
         const validResults = results.filter(r => r.avgScore !== null && r.avgScore !== undefined);
@@ -451,19 +461,34 @@ export default function UniversityAnalysis({ results }: Props) {
                 name: "Opción A: Transformación Digital del Talento",
                 kpi: "Automatizar 50% de procesos de HR",
                 scope: "Toda la Universidad - Eficiencia",
-                color: "bg-blue-50 border-blue-200 text-blue-800"
+                color: "bg-blue-50 border-blue-200 text-blue-800",
+                actions: [
+                    "Implementar plataforma de autogestión para colaboradores.",
+                    "Digitalizar el proceso de onboarding y offboarding.",
+                    "Integrar analítica de datos en tiempo real para toma de decisiones."
+                ]
             },
             {
                 name: "Opción B: Programa de Bienestar Integral 360",
                 kpi: "Reducir ausentismo en 15%",
                 scope: "Colaboradores y Familias - Clima",
-                color: "bg-purple-50 border-purple-200 text-purple-800"
+                color: "bg-purple-50 border-purple-200 text-purple-800",
+                actions: [
+                    "Lanzar programa de salud mental y emocional.",
+                    "Establecer beneficios flexibles para familias.",
+                    "Promover actividades deportivas y culturales inter-campus."
+                ]
             },
             {
                 name: "Opción C: Liderazgo para el Futuro",
                 kpi: "Tener 80% de puestos clave con sucesor listo",
                 scope: "Alta Dirección - Sostenibilidad",
-                color: "bg-emerald-50 border-emerald-200 text-emerald-800"
+                color: "bg-emerald-50 border-emerald-200 text-emerald-800",
+                actions: [
+                    "Crear comité de sucesión para roles críticos.",
+                    "Diseñar programa de desarrollo para altos potenciales.",
+                    "Establecer mentoría cruzada entre directivos."
+                ]
             }
         ];
 
@@ -764,22 +789,45 @@ export default function UniversityAnalysis({ results }: Props) {
                         </h3>
                         <div className="grid grid-cols-1 gap-4">
                             {strategicProposals.map((prop, idx) => (
-                                <div key={idx} className={`rounded-xl p-5 border flex flex-col md:flex-row items-start md:items-center gap-6 ${prop.color}`}>
-                                    <div className="flex-1">
-                                        <h4 className="font-bold text-lg mb-1">{prop.name}</h4>
-                                        <div className="flex flex-wrap gap-3 mt-2">
-                                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-white/50 text-xs font-semibold border border-black/5">
-                                                <Target className="w-3 h-3" /> KPI: {prop.kpi}
-                                            </span>
-                                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-white/50 text-xs font-semibold border border-black/5">
-                                                <Activity className="w-3 h-3" /> Alcance: {prop.scope}
+                                <div key={idx} className={`rounded-xl border transition-all duration-300 ${prop.color} ${expandedProposals[idx] ? 'ring-2 ring-offset-2 ring-indigo-100' : ''}`}>
+                                    <div
+                                        className="p-5 flex flex-col md:flex-row items-start md:items-center gap-6 cursor-pointer"
+                                        onClick={() => toggleProposal(idx)}
+                                    >
+                                        <div className="flex-1">
+                                            <h4 className="font-bold text-lg mb-1 flex items-center gap-2">
+                                                {prop.name}
+                                                {expandedProposals[idx] ? <ChevronUp className="w-4 h-4 opacity-50" /> : <ChevronDown className="w-4 h-4 opacity-50" />}
+                                            </h4>
+                                            <div className="flex flex-wrap gap-3 mt-2">
+                                                <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-white/50 text-xs font-semibold border border-black/5">
+                                                    <Target className="w-3 h-3" /> KPI: {prop.kpi}
+                                                </span>
+                                                <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-white/50 text-xs font-semibold border border-black/5">
+                                                    <Activity className="w-3 h-3" /> Alcance: {prop.scope}
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div className="shrink-0">
+                                            <span className="text-xs font-bold uppercase tracking-wider opacity-60">
+                                                {expandedProposals[idx] ? 'Ocultar Acciones' : 'Ver Acciones'}
                                             </span>
                                         </div>
                                     </div>
-                                    <div className="shrink-0">
-                                        <button className="px-4 py-2 bg-white/80 hover:bg-white text-sm font-bold rounded-lg shadow-sm transition-colors border border-black/5">
-                                            Seleccionar Estrategia
-                                        </button>
+
+                                    {/* Accordion Content */}
+                                    <div className={`overflow-hidden transition-all duration-300 ${expandedProposals[idx] ? 'max-h-96 opacity-100 p-5 pt-0' : 'max-h-0 opacity-0'}`}>
+                                        <div className="bg-white/60 rounded-lg p-4">
+                                            <h5 className="font-bold text-sm mb-2 opacity-80">Acciones Sugeridas:</h5>
+                                            <ul className="space-y-2">
+                                                {prop.actions.map((action, i) => (
+                                                    <li key={i} className="flex items-start gap-2 text-sm opacity-90">
+                                                        <div className="mt-1.5 w-1.5 h-1.5 rounded-full bg-current opacity-50" />
+                                                        {action}
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
                                     </div>
                                 </div>
                             ))}
