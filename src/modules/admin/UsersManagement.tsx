@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase, User, Office, UserRole, Role } from '../../lib/supabase';
-import { Plus, Edit2, Trash2, Search, Upload } from 'lucide-react';
+import { Plus, Edit2, Trash2, Search, Upload, X, ChevronLeft, ChevronRight, Users, Filter, Download, Save } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 export function UsersManagement() {
@@ -27,6 +27,10 @@ export function UsersManagement() {
   const [managerQuery, setManagerQuery] = useState('');
   const [selectedManagerId, setSelectedManagerId] = useState<string>('');
   const [campusFilter, setCampusFilter] = useState<string>('');
+
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   useEffect(() => {
     loadData();
@@ -222,7 +226,7 @@ export function UsersManagement() {
     const leadershipLabels = ['Lider VAF', 'Rectoria', 'Vicerrectoria Académica'];
     const directorProgramLabel = ['Director de Programa'];
     const liderProcesoLabels = ['Lider de Proceso', 'Subproceso VAF', 'Lider de Proceso VAF'];
-    const bienestarLabel = ['Dirección de bienestar institucional', 'Direccion de bienestar institucional'];
+
 
     // Manager candidates for coordination roles: Bienestar, Directors, Leaders, Rectoría, Vicerrectoría
     const coordinationManagerLabels = [
@@ -348,45 +352,7 @@ export function UsersManagement() {
     return dedup.filter((u) => u.id !== editingUser?.id);
   })();
 
-  const roleRequiresManager = (selectedRoleKey: string | undefined) => {
-    if (!selectedRoleKey) return false;
-    const selLabel = (roles || []).find((r) => r.key === selectedRoleKey)?.label || '';
-    const lower = selLabel.toLowerCase();
-    const needManagerLabels = [
-      'colaborador',
-      'colaborador vaf',
-      'coordinador acad',
-      'coordinación de extensión',
-      'coordinacion de extension',
-      'coordinación desarrollo profesoral',
-      'coordinacion desarrollo profesoral',
-      'coordinación de gestión curricular',
-      'coordinacion de gestion curricular',
-      'director de programa',
-      'jefe campus vaf',
-      'lider de proceso',
-      'subproceso',
-      'personal operativo',
-      'directores de programa'
-    ];
-    if (needManagerLabels.some((lbl) => lower.includes(lbl))) return true;
-    // also consider legacy key names
-    const keyLower = selectedRoleKey.toLowerCase();
-    if ([
-      'colaborador_vaf',
-      'colaborador',
-      'coordinador_academico',
-      'coordinacion_extension',
-      'coordinacion_desarrollo_profesoral',
-      'coordinacion_gestion_curricular',
-      'director_programa',
-      'jefe_campus_vaf',
-      'lider_proceso',
-      'subproceso_vaf',
-      'personal_operativo'
-    ].some((k) => keyLower.includes(k))) return true;
-    return false;
-  };
+
 
   const getFallbackManagerCandidates = () => {
     const fallbackKeys = ['lider_vaf', 'rectoria', 'vicerrectoria_academica', 'director_programa', 'lider_proceso', 'subproceso_vaf', 'office_manager'];
@@ -615,6 +581,40 @@ export function UsersManagement() {
     }
   );
 
+  // Pagination Logic
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, campusFilter]);
+
+  const totalPages = Math.ceil(filteredUsers.length / itemsPerPage);
+  const paginatedUsers = filteredUsers.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  const getPageNumbers = () => {
+    const pages = [];
+    const maxVisible = 5;
+
+    if (totalPages <= maxVisible) {
+      for (let i = 1; i <= totalPages; i++) pages.push(i);
+    } else {
+      if (currentPage <= 3) {
+        for (let i = 1; i <= 4; i++) pages.push(i);
+        pages.push('...');
+        pages.push(totalPages);
+      } else if (currentPage >= totalPages - 2) {
+        pages.push(1);
+        pages.push('...');
+        for (let i = totalPages - 3; i <= totalPages; i++) pages.push(i);
+      } else {
+        pages.push(1);
+        pages.push('...');
+        for (let i = currentPage - 1; i <= currentPage + 1; i++) pages.push(i);
+        pages.push('...');
+        pages.push(totalPages);
+      }
+    }
+    return pages;
+  };
+
   const handleImport = async () => {
     if (!importFile) return;
 
@@ -799,306 +799,55 @@ export function UsersManagement() {
   }
 
   return (
-    <div>
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-xl font-semibold text-gray-900">Gestión de Personal</h2>
+    <div className="space-y-6 animate-in fade-in duration-500">
+      {/* Header Section */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+            <Users className="w-6 h-6 text-blue-600" />
+            Gestión de Personal
+          </h2>
+          <p className="text-slate-500 text-sm mt-1">Administra los colaboradores, roles y asignaciones.</p>
+        </div>
         {!showForm && !showImport && (
-          <div className="flex gap-2">
-            <button
-              onClick={() => setShowForm(true)}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
-            >
-              <Plus className="w-5 h-5" />
-              Nuevo Usuario
-            </button>
+          <div className="flex gap-3">
             <button
               onClick={() => setShowImport(true)}
-              className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors"
+              className="flex items-center gap-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-xl transition-all font-medium shadow-sm"
             >
-              <Upload className="w-5 h-5" />
-              Importar Excel
+              <Upload className="w-4 h-4" />
+              Importar
+            </button>
+            <button
+              onClick={() => setShowForm(true)}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl transition-all font-medium shadow-lg shadow-blue-600/20"
+            >
+              <Plus className="w-4 h-4" />
+              Nuevo Usuario
             </button>
           </div>
         )}
       </div>
 
-      {showForm && (
-        <form onSubmit={handleSubmit} className="bg-gray-50 rounded-lg p-6 mb-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">
-            {editingUser ? 'Editar Usuario' : 'Nuevo Usuario'}
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Cédula</label>
-              <input
-                type="text"
-                value={formData.identification}
-                onChange={(e) => setFormData({ ...formData, identification: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
-                disabled={!!editingUser}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Nombre Completo</label>
-              <input
-                type="text"
-                value={formData.full_name}
-                onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
-              <input
-                type="email"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Rol</label>
-              <select
-                value={formData.role}
-                onChange={(e) => setFormData({ ...formData, role: e.target.value as UserRole })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
-              >
-                {roles && roles.length > 0 ? (
-                  roles.map((r) => (
-                    <option key={r.key} value={r.key}>{r.label}</option>
-                  ))
-                ) : (
-                  <>
-                    <option value="employee">Colaborador</option>
-                    <option value="office_manager">Jefe de Oficina</option>
-                    <option value="admin">Administrador</option>
-                  </>
-                )}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Oficinas</label>
-              <div className="space-y-2">
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <input
-                      type="text"
-                      value={officeQuery}
-                      onChange={(e) => setOfficeQuery(e.target.value)}
-                      placeholder="Buscar oficina..."
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                    {officeQuery && (
-                      <div className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow max-h-48 overflow-auto">
-                        {offices
-                          .filter((o) => o.name.toLowerCase().includes(officeQuery.toLowerCase()))
-                          .slice(0, 20)
-                          .map((o) => (
-                            <button
-                              type="button"
-                              key={o.id}
-                              onClick={() => { setSelectedOfficeId(o.id); setOfficeQuery(o.name); }}
-                              className={`w-full text-left px-3 py-2 hover:bg-gray-50 ${selectedOfficeId === o.id ? 'bg-blue-50' : ''}`}
-                            >
-                              {o.name}
-                            </button>
-                          ))}
-                        {offices.filter((o) => o.name.toLowerCase().includes(officeQuery.toLowerCase())).length === 0 && (
-                          <div className="px-3 py-2 text-sm text-gray-500">Sin resultados</div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!selectedOfficeId) return;
-                      if (!formData.office_ids.includes(selectedOfficeId)) {
-                        setFormData({ ...formData, office_ids: [...formData.office_ids, selectedOfficeId] });
-                      }
-                      setOfficeQuery('');
-                      setSelectedOfficeId('');
-                    }}
-                    className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                  >
-                    Agregar
-                  </button>
-                </div>
-                {formData.office_ids.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {formData.office_ids.map((id) => {
-                      const o = offices.find((x) => x.id === id);
-                      if (!o) return null;
-                      return (
-                        <span key={id} className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 text-blue-800 text-xs">
-                          {o.name}
-                          <button
-                            type="button"
-                            onClick={() => setFormData({ ...formData, office_ids: formData.office_ids.filter((x) => x !== id) })}
-                            className="hover:text-red-600"
-                            aria-label="Quitar"
-                          >
-                            ×
-                          </button>
-                        </span>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Campus</label>
-              <select
-                value={formData.campus}
-                onChange={(e) => setFormData({ ...formData, campus: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="">Sin asignar</option>
-                <option value="Valledupar">Valledupar</option>
-                <option value="Bogota">Bogota</option>
-                <option value="Cúcuta">Cúcuta</option>
-                <option value="Bucaramanga">Bucaramanga</option>
-                <option value="Arauca">Arauca</option>
-                <option value="Todas">Todas</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Jefes Inmediatos</label>
-              <div className="space-y-2">
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <input
-                      type="text"
-                      value={managerQuery}
-                      onChange={(e) => setManagerQuery(e.target.value)}
-                      placeholder="Buscar jefe..."
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                    {managerQuery && (
-                      <div className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow max-h-48 overflow-auto">
-                        {(managerCandidates.length > 0 ? managerCandidates : getFallbackManagerCandidates())
-                          .filter((m) => m.full_name.toLowerCase().includes(managerQuery.toLowerCase()))
-                          .slice(0, 20)
-                          .map((m) => (
-                            <button
-                              type="button"
-                              key={m.id}
-                              onClick={() => { setSelectedManagerId(m.id); setManagerQuery(m.full_name); }}
-                              className={`w-full text-left px-3 py-2 hover:bg-gray-50 ${selectedManagerId === m.id ? 'bg-blue-50' : ''}`}
-                            >
-                              {m.full_name}
-                            </button>
-                          ))}
-                        {(managerCandidates.length > 0 ? managerCandidates : getFallbackManagerCandidates()).filter((m) => m.full_name.toLowerCase().includes(managerQuery.toLowerCase())).length === 0 && (
-                          <div className="px-3 py-2 text-sm text-gray-500">Sin resultados</div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!selectedManagerId) return;
-                      if (!formData.manager_ids.includes(selectedManagerId)) {
-                        setFormData({ ...formData, manager_ids: [...formData.manager_ids, selectedManagerId] });
-                      }
-                      setSelectedManagerId('');
-                      setManagerQuery('');
-                    }}
-                    className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                  >
-                    Agregar
-                  </button>
-                </div>
-                {formData.manager_ids.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {formData.manager_ids.map((mid) => {
-                      const m = (managerCandidates.length > 0 ? managerCandidates : getFallbackManagerCandidates()).find((x) => x.id === mid) || (users.find((u) => u.id === mid) as any);
-                      if (!m) return null;
-                      return (
-                        <span key={mid} className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-green-50 text-green-800 text-xs">
-                          {m.full_name}
-                          <button
-                            type="button"
-                            onClick={() => setFormData({ ...formData, manager_ids: formData.manager_ids.filter((x) => x !== mid) })}
-                            className="hover:text-red-600"
-                            aria-label="Quitar"
-                          >
-                            ×
-                          </button>
-                        </span>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-          <div className="flex gap-2 mt-4">
-            <button
-              type="submit"
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
-            >
-              {editingUser ? 'Actualizar' : 'Guardar'}
-            </button>
-            <button
-              type="button"
-              onClick={resetForm}
-              className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg transition-colors"
-            >
-              Cancelar
-            </button>
-          </div>
-        </form>
-      )}
-
-      {showImport && (
-        <div className="bg-gray-50 rounded-lg p-6 mb-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Importar Usuarios desde Excel</h3>
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Archivo Excel</label>
+      {/* Filters & Search */}
+      <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col md:flex-row gap-4 items-center justify-between">
+        <div className="flex items-center gap-2 w-full md:w-auto">
+          <div className="relative flex-1 md:w-80">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
             <input
-              type="file"
-              accept=".xlsx,.xls"
-              onChange={(e) => setImportFile(e.target.files?.[0] || null)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              type="text"
+              placeholder="Buscar por nombre o cédula..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm"
             />
           </div>
-          <div className="flex gap-2">
-            <button
-              onClick={handleImport}
-              disabled={!importFile}
-              className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg transition-colors"
-            >
-              Importar
-            </button>
-            <button
-              onClick={() => { setShowImport(false); setImportFile(null); }}
-              className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg transition-colors"
-            >
-              Cancelar
-            </button>
-          </div>
-          <p className="text-sm text-gray-600 mt-2">
-            El archivo debe tener las columnas: Nombre Completo, No. de Cedula, Correo, Rol, Oficina, Jefe Inmediato, Campus
-            <br />
-            <a href="/plantilla_usuarios.xlsx" download className="text-blue-600 underline">Descargar plantilla</a>
-          </p>
-        </div>
-      )}
-
-      <div className="mb-4 space-y-3">
-        <div className="flex gap-3">
-          <div className="w-64">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Filtrar por Campus</label>
+          <div className="relative md:w-64">
+            <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
             <select
               value={campusFilter}
               onChange={(e) => setCampusFilter(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm appearance-none cursor-pointer"
             >
               <option value="">Todos los campus</option>
               <option value="Valledupar">Valledupar</option>
@@ -1110,69 +859,85 @@ export function UsersManagement() {
             </select>
           </div>
         </div>
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-          <input
-            type="text"
-            placeholder="Buscar por nombre o cédula..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
+
+        <div className="text-sm text-slate-500 font-medium">
+          Mostrando <span className="text-slate-900">{filteredUsers.length}</span> colaboradores
         </div>
       </div>
 
-      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+      {/* Table Section */}
+      <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-gray-50 border-b border-gray-200">
+            <thead className="bg-slate-50/50 border-b border-slate-100">
               <tr>
-                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Nombre</th>
-                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Cédula</th>
-                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Rol</th>
-                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Oficinas</th>
-                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Campus</th>
-                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Jefes</th>
-                <th className="px-4 py-3 text-right text-sm font-semibold text-gray-900">Acciones</th>
+                <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Nombre / Cédula</th>
+                <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Rol</th>
+                <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Ubicación</th>
+                <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Jefes Inmediatos</th>
+                <th className="px-6 py-4 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">Acciones</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200">
-              {filteredUsers.map((user) => (
-                <tr key={user.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 text-sm text-gray-900">{user.full_name}</td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{user.identification}</td>
-                  <td className="px-4 py-3 text-sm">
-                    <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium capitalize">
-                      {user.role.replace('_', ' ')}
+            <tbody className="divide-y divide-slate-100">
+              {paginatedUsers.map((user) => (
+                <tr key={user.id} className="hover:bg-slate-50/80 transition-colors group">
+                  <td className="px-6 py-4">
+                    <div className="flex flex-col">
+                      <span className="font-semibold text-slate-800">{user.full_name}</span>
+                      <span className="text-xs text-slate-500 font-mono">{user.identification}</span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 text-xs font-semibold capitalize border border-blue-100">
+                      {user.role.replace(/_/g, ' ')}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-600">
-                    {(user.offices && user.offices.length > 0) ? (
+                  <td className="px-6 py-4">
+                    <div className="flex flex-col gap-1">
+                      <span className="text-sm text-slate-700 font-medium">{user.campus || 'Sin Campus'}</span>
                       <div className="flex flex-wrap gap-1">
-                        {user.offices.map((o) => (
-                          <span key={o.id} className="inline-flex items-center px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-xs">
-                            {o.name}
-                          </span>
-                        ))}
+                        {(user.offices && user.offices.length > 0) ? (
+                          user.offices.slice(0, 2).map((o) => (
+                            <span key={o.id} className="inline-flex text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
+                              {o.name}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-xs text-slate-400 italic">{user.office?.name || '-'}</span>
+                        )}
+                        {user.offices && user.offices.length > 2 && (
+                          <span className="text-[10px] text-slate-400">+{user.offices.length - 2} más</span>
+                        )}
                       </div>
-                    ) : (
-                      user.office?.name || '-'
-                    )}
+                    </div>
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{user.campus || '-'}</td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{(user.managers && user.managers.length > 0) ? user.managers.map((m) => m.full_name).join(', ') : (user.manager?.full_name || '-')}</td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex justify-end gap-2">
+                  <td className="px-6 py-4">
+                    <div className="text-sm text-slate-600 max-w-xs truncate">
+                      {(user.managers && user.managers.length > 0) ? (
+                        <div className="flex flex-wrap gap-1">
+                          {user.managers.map(m => (
+                            <span key={m.id} className="inline-flex items-center gap-1 text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded border border-green-100">
+                              {m.full_name}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-slate-400 text-xs italic">Sin asignar</span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 text-right">
+                    <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button
                         onClick={() => handleEdit(user)}
-                        className="p-1 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-transparent hover:border-blue-100"
                         title="Editar"
                       >
                         <Edit2 className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => handleDelete(user.id)}
-                        className="p-1 text-red-600 hover:bg-red-50 rounded transition-colors"
+                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-100"
                         title="Eliminar"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -1181,14 +946,392 @@ export function UsersManagement() {
                   </td>
                 </tr>
               ))}
+              {paginatedUsers.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-6 py-12 text-center text-slate-400">
+                    <div className="flex flex-col items-center gap-2">
+                      <Search className="w-8 h-8 opacity-20" />
+                      <p>No se encontraron usuarios que coincidan con la búsqueda.</p>
+                    </div>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
+
+        {/* Pagination Controls */}
+        <div className="px-6 py-4 bg-slate-50/50 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-2 text-sm text-slate-600">
+            <span>Mostrar</span>
+            <select
+              value={itemsPerPage}
+              onChange={(e) => setItemsPerPage(Number(e.target.value))}
+              className="bg-white border border-slate-200 rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none"
+            >
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+            <span>por página</span>
+          </div>
+
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="p-2 rounded-lg hover:bg-white hover:shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all text-slate-600"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+
+            {getPageNumbers().map((page, idx) => (
+              <button
+                key={idx}
+                onClick={() => typeof page === 'number' && setCurrentPage(page)}
+                disabled={page === '...'}
+                className={`w-8 h-8 rounded-lg text-sm font-medium transition-all ${page === currentPage
+                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
+                  : page === '...'
+                    ? 'text-slate-400 cursor-default'
+                    : 'text-slate-600 hover:bg-white hover:shadow-sm'
+                  }`}
+              >
+                {page}
+              </button>
+            ))}
+
+            <button
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="p-2 rounded-lg hover:bg-white hover:shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all text-slate-600"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
       </div>
 
-      {filteredUsers.length === 0 && (
-        <div className="text-center py-12 text-gray-500">
-          {searchTerm ? 'No se encontraron usuarios' : 'No hay usuarios registrados'}
+      {/* Create/Edit User Modal */}
+      {showForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-200 border border-slate-100">
+            <div className="sticky top-0 z-10 bg-white/80 backdrop-blur-md px-8 py-6 border-b border-slate-100 flex justify-between items-center">
+              <div>
+                <h3 className="text-xl font-bold text-slate-800">
+                  {editingUser ? 'Editar Colaborador' : 'Nuevo Colaborador'}
+                </h3>
+                <p className="text-sm text-slate-500">Complete la información del personal</p>
+              </div>
+              <button
+                onClick={resetForm}
+                className="p-2 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="p-8 space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-slate-700">Cédula / Identificación</label>
+                  <input
+                    type="text"
+                    value={formData.identification}
+                    onChange={(e) => setFormData({ ...formData, identification: e.target.value })}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none"
+                    required
+                    disabled={!!editingUser}
+                    placeholder="Ej. 123456789"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-slate-700">Nombre Completo</label>
+                  <input
+                    type="text"
+                    value={formData.full_name}
+                    onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none"
+                    required
+                    placeholder="Ej. Juan Pérez"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-slate-700">Correo Electrónico</label>
+                  <input
+                    type="email"
+                    value={formData.email}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none"
+                    placeholder="juan.perez@udes.edu.co"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-slate-700">Rol del Sistema</label>
+                  <select
+                    value={formData.role}
+                    onChange={(e) => setFormData({ ...formData, role: e.target.value as UserRole })}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none appearance-none cursor-pointer"
+                    required
+                  >
+                    {roles && roles.length > 0 ? (
+                      roles.map((r) => (
+                        <option key={r.key} value={r.key}>{r.label}</option>
+                      ))
+                    ) : (
+                      <>
+                        <option value="employee">Colaborador</option>
+                        <option value="office_manager">Jefe de Oficina</option>
+                        <option value="admin">Administrador</option>
+                      </>
+                    )}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-slate-700">Campus</label>
+                  <select
+                    value={formData.campus}
+                    onChange={(e) => setFormData({ ...formData, campus: e.target.value })}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none appearance-none cursor-pointer"
+                  >
+                    <option value="">Sin asignar</option>
+                    <option value="Valledupar">Valledupar</option>
+                    <option value="Bogota">Bogota</option>
+                    <option value="Cúcuta">Cúcuta</option>
+                    <option value="Bucaramanga">Bucaramanga</option>
+                    <option value="Arauca">Arauca</option>
+                    <option value="Todas">Todas</option>
+                  </select>
+                </div>
+
+                {/* Offices Selection */}
+                <div className="space-y-2 md:col-span-2">
+                  <label className="block text-sm font-semibold text-slate-700">Oficinas Asignadas</label>
+                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+                    <div className="flex gap-2">
+                      <div className="relative flex-1">
+                        <input
+                          type="text"
+                          value={officeQuery}
+                          onChange={(e) => setOfficeQuery(e.target.value)}
+                          placeholder="Buscar oficina para agregar..."
+                          className="w-full px-4 py-2 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none text-sm"
+                        />
+                        {officeQuery && (
+                          <div className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-xl shadow-xl max-h-48 overflow-auto">
+                            {offices
+                              .filter((o) => o.name.toLowerCase().includes(officeQuery.toLowerCase()))
+                              .slice(0, 20)
+                              .map((o) => (
+                                <button
+                                  type="button"
+                                  key={o.id}
+                                  onClick={() => { setSelectedOfficeId(o.id); setOfficeQuery(o.name); }}
+                                  className={`w-full text-left px-4 py-2 hover:bg-blue-50 text-sm ${selectedOfficeId === o.id ? 'bg-blue-50 text-blue-700' : 'text-slate-700'}`}
+                                >
+                                  {o.name}
+                                </button>
+                              ))}
+                            {offices.filter((o) => o.name.toLowerCase().includes(officeQuery.toLowerCase())).length === 0 && (
+                              <div className="px-4 py-2 text-sm text-slate-500">Sin resultados</div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!selectedOfficeId) return;
+                          if (!formData.office_ids.includes(selectedOfficeId)) {
+                            setFormData({ ...formData, office_ids: [...formData.office_ids, selectedOfficeId] });
+                          }
+                          setOfficeQuery('');
+                          setSelectedOfficeId('');
+                        }}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm transition-colors"
+                      >
+                        Agregar
+                      </button>
+                    </div>
+
+                    {formData.office_ids.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {formData.office_ids.map((id) => {
+                          const o = offices.find((x) => x.id === id);
+                          if (!o) return null;
+                          return (
+                            <span key={id} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 text-sm shadow-sm">
+                              {o.name}
+                              <button
+                                type="button"
+                                onClick={() => setFormData({ ...formData, office_ids: formData.office_ids.filter((x) => x !== id) })}
+                                className="text-slate-400 hover:text-red-500 transition-colors"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-400 italic">No hay oficinas asignadas.</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Managers Selection */}
+                <div className="space-y-2 md:col-span-2">
+                  <label className="block text-sm font-semibold text-slate-700">Jefes Inmediatos</label>
+                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+                    <div className="flex gap-2">
+                      <div className="relative flex-1">
+                        <input
+                          type="text"
+                          value={managerQuery}
+                          onChange={(e) => setManagerQuery(e.target.value)}
+                          placeholder="Buscar jefe para agregar..."
+                          className="w-full px-4 py-2 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none text-sm"
+                        />
+                        {managerQuery && (
+                          <div className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-xl shadow-xl max-h-48 overflow-auto">
+                            {(managerCandidates.length > 0 ? managerCandidates : getFallbackManagerCandidates())
+                              .filter((m) => m.full_name.toLowerCase().includes(managerQuery.toLowerCase()))
+                              .slice(0, 20)
+                              .map((m) => (
+                                <button
+                                  type="button"
+                                  key={m.id}
+                                  onClick={() => { setSelectedManagerId(m.id); setManagerQuery(m.full_name); }}
+                                  className={`w-full text-left px-4 py-2 hover:bg-blue-50 text-sm ${selectedManagerId === m.id ? 'bg-blue-50 text-blue-700' : 'text-slate-700'}`}
+                                >
+                                  {m.full_name}
+                                </button>
+                              ))}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!selectedManagerId) return;
+                          if (!formData.manager_ids.includes(selectedManagerId)) {
+                            setFormData({ ...formData, manager_ids: [...formData.manager_ids, selectedManagerId] });
+                          }
+                          setSelectedManagerId('');
+                          setManagerQuery('');
+                        }}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm transition-colors"
+                      >
+                        Agregar
+                      </button>
+                    </div>
+
+                    {formData.manager_ids.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {formData.manager_ids.map((mid) => {
+                          const m = (managerCandidates.length > 0 ? managerCandidates : getFallbackManagerCandidates()).find((x) => x.id === mid) || (users.find((u) => u.id === mid) as any);
+                          if (!m) return null;
+                          return (
+                            <span key={mid} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-green-50 border border-green-100 text-green-700 text-sm shadow-sm">
+                              {m.full_name}
+                              <button
+                                type="button"
+                                onClick={() => setFormData({ ...formData, manager_ids: formData.manager_ids.filter((x) => x !== mid) })}
+                                className="text-green-400 hover:text-red-500 transition-colors"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-400 italic">No hay jefes asignados.</p>
+                    )}
+                  </div>
+                </div>
+
+              </div>
+
+              <div className="flex gap-3 pt-6 border-t border-slate-100">
+                <button
+                  type="submit"
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-blue-600/20 transition-all flex items-center justify-center gap-2"
+                >
+                  <Save className="w-5 h-5" />
+                  {editingUser ? 'Actualizar Colaborador' : 'Guardar Colaborador'}
+                </button>
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-6 py-3 rounded-xl font-bold transition-colors"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Import Modal */}
+      {showImport && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg animate-in zoom-in-95 duration-200 border border-slate-100 p-8">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-bold text-slate-800">Importar Usuarios</h3>
+              <button
+                onClick={() => { setShowImport(false); setImportFile(null); }}
+                className="p-2 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-6">
+              <div className="p-6 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50 text-center hover:border-blue-400 transition-colors">
+                <Upload className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                <label className="block text-sm font-medium text-slate-700 mb-2 cursor-pointer">
+                  <span className="text-blue-600 hover:underline">Selecciona un archivo Excel</span>
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls"
+                    onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+                    className="hidden"
+                  />
+                </label>
+                <p className="text-xs text-slate-400">
+                  {importFile ? importFile.name : 'Formatos soportados: .xlsx, .xls'}
+                </p>
+              </div>
+
+              <div className="bg-blue-50 rounded-xl p-4 flex items-start gap-3">
+                <div className="bg-blue-100 p-2 rounded-lg text-blue-600">
+                  <Download className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-blue-900">Plantilla Requerida</h4>
+                  <p className="text-xs text-blue-700 mt-1 mb-2">
+                    El archivo debe tener las columnas: Nombre Completo, No. de Cedula, Correo, Rol, Oficina, Jefe Inmediato, Campus
+                  </p>
+                  <a href="/plantilla_usuarios.xlsx" download className="text-xs font-bold text-blue-600 hover:text-blue-800 underline">
+                    Descargar plantilla de ejemplo
+                  </a>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={handleImport}
+                  disabled={!importFile}
+                  className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-green-600/20 transition-all"
+                >
+                  Importar Datos
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
