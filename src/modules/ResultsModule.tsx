@@ -35,12 +35,22 @@ export function ResultsModule() {
   const [viewMode, setViewMode] = useState<'individual' | 'office' | 'campus' | 'university'>('individual');
   const [selectedResultForAnalysis, setSelectedResultForAnalysis] = useState<ResultWithDetails | null>(null);
 
+  const [allOffices, setAllOffices] = useState<Office[]>([]);
+  const [groupedByParent, setGroupedByParent] = useState<Record<string, { parent: Office; results: ResultWithDetails[]; subOffices: Record<string, ResultWithDetails[]> }>>({});
+  const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
+
   useEffect(() => {
     loadResults();
   }, [user]);
 
   const loadResults = async () => {
     try {
+      setLoading(true);
+      // Fetch all offices for hierarchy
+      const { data: officesData } = await supabase.from('offices').select('*');
+      setAllOffices(officesData || []);
+      const officeMap = new Map((officesData || []).map(o => [o.id, o]));
+
       // load existing evaluation results
       const { data: resultsData, error } = await supabase.from('evaluation_results').select('*');
       if (error) throw error;
@@ -123,12 +133,10 @@ export function ResultsModule() {
 
           let office = null;
           if (targetOfficeId) {
-            const officeRes = await supabase
-              .from('offices')
-              .select('*')
-              .eq('id', targetOfficeId)
-              .single();
-            office = officeRes.data;
+            // Use the map we fetched earlier instead of individual queries if possible, 
+            // but for now let's stick to the existing logic or use the map if consistent.
+            // The existing logic fetches it individually. To be safe and consistent with existing code structure:
+            office = officeMap.get(targetOfficeId) || null;
           }
 
           return {
@@ -169,12 +177,7 @@ export function ResultsModule() {
 
           let office = null;
           if (targetOfficeId) {
-            const officeRes = await supabase
-              .from('offices')
-              .select('*')
-              .eq('id', targetOfficeId)
-              .single();
-            office = officeRes.data;
+            office = officeMap.get(targetOfficeId) || null;
           }
 
           // fetch sections, questions, and responses to compute partial averages for in-progress evaluations
@@ -258,6 +261,7 @@ export function ResultsModule() {
 
       setResults(filteredResults as ResultWithDetails[]);
 
+      // Group by Office (Standard)
       const grouped: Record<string, ResultWithDetails[]> = {};
       filteredResults.forEach((result) => {
         const officeId = result.office?.id || 'sin-oficina';
@@ -266,8 +270,43 @@ export function ResultsModule() {
         }
         grouped[officeId].push(result);
       });
-
       setGroupedByOffice(grouped);
+
+      // Group by Parent (Hierarchy)
+      const groupedParent: Record<string, { parent: Office; results: ResultWithDetails[]; subOffices: Record<string, ResultWithDetails[]> }> = {};
+
+      filteredResults.forEach((result) => {
+        const office = result.office;
+        if (!office) return; // Skip if no office
+
+        // Determine Parent
+        let parentId = office.parent_id;
+        let parentOffice = parentId ? officeMap.get(parentId) : office;
+
+        // Fallback if parent not found in map (shouldn't happen if integrity is good)
+        if (!parentOffice) parentOffice = office;
+        parentId = parentOffice.id;
+
+        if (!groupedParent[parentId]) {
+          groupedParent[parentId] = {
+            parent: parentOffice,
+            results: [],
+            subOffices: {}
+          };
+        }
+
+        // Add to total results for this parent group
+        groupedParent[parentId].results.push(result);
+
+        // Add to sub-office bucket
+        const subOfficeId = office.id;
+        if (!groupedParent[parentId].subOffices[subOfficeId]) {
+          groupedParent[parentId].subOffices[subOfficeId] = [];
+        }
+        groupedParent[parentId].subOffices[subOfficeId].push(result);
+      });
+      setGroupedByParent(groupedParent);
+
 
       const groupedCampus: Record<string, ResultWithDetails[]> = {};
       filteredResults.forEach((result) => {
@@ -293,6 +332,16 @@ export function ResultsModule() {
       newExpanded.add(officeId);
     }
     setExpandedOffices(newExpanded);
+  };
+
+  const toggleParentExpand = (parentId: string) => {
+    const newExpanded = new Set(expandedParents);
+    if (newExpanded.has(parentId)) {
+      newExpanded.delete(parentId);
+    } else {
+      newExpanded.add(parentId);
+    }
+    setExpandedParents(newExpanded);
   };
 
   const toggleCampusExpand = (campus: string) => {
@@ -444,49 +493,135 @@ export function ResultsModule() {
 
       {viewMode === 'office' && user?.role !== 'employee' ? (
         <div className="space-y-4">
-          {Object.entries(groupedByOffice).map(([officeId, officeResults]) => {
-            const officeName = officeResults[0]?.office?.name || 'Sin Oficina';
-            const average = Number(calculateOfficeAverage(officeResults));
-            const isExpanded = expandedOffices.has(officeId);
+          {user?.role === 'admin' ? (
+            // Admin View: Hierarchical (Grouped by Parent)
+            Object.entries(groupedByParent).map(([parentId, group]) => {
+              const parentName = group.parent.name;
+              const average = Number(calculateOfficeAverage(group.results));
+              const isExpanded = expandedParents.has(parentId);
+              const subOfficesCount = Object.keys(group.subOffices).length;
 
-            return (
-              <div key={officeId} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-                <button
-                  onClick={() => toggleOfficeExpand(officeId)}
-                  className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
-                >
-                  <div className="flex items-center gap-4">
-                    <Building2 className="w-6 h-6 text-blue-600" />
-                    <div className="text-left">
-                      <h3 className="font-semibold text-gray-900">{officeName}</h3>
-                      <p className="text-sm text-gray-600">
-                        {officeResults.length} evaluación{officeResults.length !== 1 ? 'es' : ''}
-                      </p>
+              return (
+                <div key={parentId} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                  <button
+                    onClick={() => toggleParentExpand(parentId)}
+                    className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                  >
+                    <div className="flex items-center gap-4">
+                      <Building2 className="w-6 h-6 text-blue-600" />
+                      <div className="text-left">
+                        <h3 className="font-semibold text-gray-900">{parentName}</h3>
+                        <p className="text-sm text-gray-600">
+                          {group.results.length} evaluaciones · {subOfficesCount} dependencias
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <div className="text-right">
-                      <p className="text-sm text-gray-600">Promedio</p>
-                      <p className={`text-2xl font-bold ${getScoreColor(average)}`}>
-                        {average}
-                      </p>
+                    <div className="flex items-center gap-4">
+                      <div className="text-right">
+                        <p className="text-sm text-gray-600">Promedio Global</p>
+                        <p className={`text-2xl font-bold ${getScoreColor(average)}`}>
+                          {average}
+                        </p>
+                      </div>
+                      {isExpanded ? (
+                        <ChevronDown className="w-5 h-5 text-gray-400" />
+                      ) : (
+                        <ChevronRight className="w-5 h-5 text-gray-400" />
+                      )}
                     </div>
-                    {isExpanded ? (
-                      <ChevronDown className="w-5 h-5 text-gray-400" />
-                    ) : (
-                      <ChevronRight className="w-5 h-5 text-gray-400" />
-                    )}
-                  </div>
-                </button>
+                  </button>
 
-                {isExpanded && (
-                  <div className="border-t border-gray-200 p-6 bg-gray-50">
-                    <OfficeAnalysis officeName={officeName} results={officeResults} />
-                  </div>
-                )}
-              </div>
-            );
-          })}
+                  {isExpanded && (
+                    <div className="border-t border-gray-200 bg-gray-50">
+                      {/* List of Sub-offices */}
+                      <div className="divide-y divide-gray-200">
+                        {Object.entries(group.subOffices).map(([subOfficeId, subResults]) => {
+                          const subOfficeName = subResults[0]?.office?.name || 'Sin Nombre';
+                          const subAverage = Number(calculateOfficeAverage(subResults));
+                          const isSubExpanded = expandedOffices.has(subOfficeId);
+
+                          return (
+                            <div key={subOfficeId} className="bg-white">
+                              <button
+                                onClick={() => toggleOfficeExpand(subOfficeId)}
+                                className="w-full px-6 py-3 flex items-center justify-between hover:bg-blue-50/50 transition-colors pl-12"
+                              >
+                                <div className="flex items-center gap-3">
+                                  <div className="w-2 h-2 rounded-full bg-blue-400"></div>
+                                  <div className="text-left">
+                                    <h4 className="font-medium text-gray-800">{subOfficeName}</h4>
+                                    <p className="text-xs text-gray-500">{subResults.length} evaluaciones</p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-4">
+                                  <span className={`font-bold ${getScoreColor(subAverage)}`}>{subAverage}</span>
+                                  {isSubExpanded ? (
+                                    <ChevronDown className="w-4 h-4 text-gray-400" />
+                                  ) : (
+                                    <ChevronRight className="w-4 h-4 text-gray-400" />
+                                  )}
+                                </div>
+                              </button>
+                              {isSubExpanded && (
+                                <div className="border-t border-gray-100 p-4 bg-gray-50 pl-12">
+                                  <OfficeAnalysis officeName={subOfficeName} results={subResults} />
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          ) : (
+            // Non-Admin View: Flat List (Existing behavior)
+            Object.entries(groupedByOffice).map(([officeId, officeResults]) => {
+              const officeName = officeResults[0]?.office?.name || 'Sin Oficina';
+              const average = Number(calculateOfficeAverage(officeResults));
+              const isExpanded = expandedOffices.has(officeId);
+
+              return (
+                <div key={officeId} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                  <button
+                    onClick={() => toggleOfficeExpand(officeId)}
+                    className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                  >
+                    <div className="flex items-center gap-4">
+                      <Building2 className="w-6 h-6 text-blue-600" />
+                      <div className="text-left">
+                        <h3 className="font-semibold text-gray-900">{officeName}</h3>
+                        <p className="text-sm text-gray-600">
+                          {officeResults.length} evaluación{officeResults.length !== 1 ? 'es' : ''}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <div className="text-right">
+                        <p className="text-sm text-gray-600">Promedio</p>
+                        <p className={`text-2xl font-bold ${getScoreColor(average)}`}>
+                          {average}
+                        </p>
+                      </div>
+                      {isExpanded ? (
+                        <ChevronDown className="w-5 h-5 text-gray-400" />
+                      ) : (
+                        <ChevronRight className="w-5 h-5 text-gray-400" />
+                      )}
+                    </div>
+                  </button>
+
+                  {isExpanded && (
+                    <div className="border-t border-gray-200 p-6 bg-gray-50">
+                      <OfficeAnalysis officeName={officeName} results={officeResults} />
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
         </div>
       ) : null}
 
