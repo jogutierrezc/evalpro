@@ -24,7 +24,7 @@ interface Props {
     results: ResultWithDetails[];
 }
 
-export default function OfficeAnalysis({ officeName, results }: Props) {
+export default function OfficeAnalysis({ officeName: _officeName, results }: Props) {
 
     const analysis = useMemo(() => {
         // Filter results that have scores
