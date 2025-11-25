@@ -630,75 +630,74 @@ export default function CampusAnalysis({ campusName, results, organizationAverag
                     </div>
                 </div>
             </div>
-        </div>
-
-            {/* PRISMA SYSTEM SECTION */ }
-    <div className="bg-slate-900 rounded-3xl p-8 text-white relative overflow-hidden shadow-2xl">
-        <div className="absolute top-0 left-0 p-12 opacity-5">
-            <ClipboardList className="w-64 h-64" />
-        </div>
-
-        <div className="relative z-10">
-            <div className="flex items-center gap-3 mb-8">
-                <div className="bg-emerald-500/20 p-3 rounded-xl backdrop-blur-sm border border-emerald-500/30">
-                    <Lightbulb className="w-8 h-8 text-emerald-400" />
+            {/* PRISMA SYSTEM SECTION */}
+            <div className="bg-white rounded-3xl p-8 shadow-2xl border border-slate-100 relative overflow-hidden">
+                <div className="absolute top-0 left-0 opacity-5 pointer-events-none">
+                    <img src="/prisma.png" alt="Prisma Logo" className="w-96 h-96 object-contain -ml-20 -mt-20" />
                 </div>
-                <div>
-                    <h2 className="text-2xl font-bold">Sistema PRISMA: Inteligencia del Talento</h2>
-                    <p className="text-slate-400 text-sm">Plan de acción estratégico para el Campus</p>
+
+                <div className="relative z-10">
+                    <div className="flex items-center gap-3 mb-8">
+                        <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-100">
+                            <Lightbulb className="w-8 h-8 text-emerald-600" />
+                        </div>
+                        <div>
+                            <h2 className="text-2xl font-bold text-slate-800">Sistema PRISMA: Inteligencia del Talento</h2>
+                            <p className="text-slate-500 text-sm">Plan de acción estratégico para el Campus</p>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        {/* Short Term */}
+                        <div className="bg-slate-50 rounded-2xl p-6 border border-slate-200 hover:shadow-md transition-all">
+                            <div className="flex items-center gap-2 mb-4 text-emerald-600">
+                                <CheckCircle2 className="w-5 h-5" />
+                                <h3 className="font-bold text-sm uppercase tracking-wider">Corto Plazo (1-3 Meses)</h3>
+                            </div>
+                            <ul className="space-y-3">
+                                {prismaPlan.shortTerm.map((action, idx) => (
+                                    <li key={idx} className="flex items-start gap-3 text-sm text-slate-600">
+                                        <ArrowRight className="w-4 h-4 mt-0.5 text-emerald-500 shrink-0" />
+                                        <span>{action}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+
+                        {/* Medium Term */}
+                        <div className="bg-slate-50 rounded-2xl p-6 border border-slate-200 hover:shadow-md transition-all">
+                            <div className="flex items-center gap-2 mb-4 text-blue-600">
+                                <CheckCircle2 className="w-5 h-5" />
+                                <h3 className="font-bold text-sm uppercase tracking-wider">Mediano Plazo (3-6 Meses)</h3>
+                            </div>
+                            <ul className="space-y-3">
+                                {prismaPlan.mediumTerm.map((action, idx) => (
+                                    <li key={idx} className="flex items-start gap-3 text-sm text-slate-600">
+                                        <ArrowRight className="w-4 h-4 mt-0.5 text-blue-500 shrink-0" />
+                                        <span>{action}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+
+                        {/* Long Term */}
+                        <div className="bg-slate-50 rounded-2xl p-6 border border-slate-200 hover:shadow-md transition-all">
+                            <div className="flex items-center gap-2 mb-4 text-purple-600">
+                                <CheckCircle2 className="w-5 h-5" />
+                                <h3 className="font-bold text-sm uppercase tracking-wider">Largo Plazo (+6 Meses)</h3>
+                            </div>
+                            <ul className="space-y-3">
+                                {prismaPlan.longTerm.map((action, idx) => (
+                                    <li key={idx} className="flex items-start gap-3 text-sm text-slate-600">
+                                        <ArrowRight className="w-4 h-4 mt-0.5 text-purple-500 shrink-0" />
+                                        <span>{action}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    </div>
                 </div>
             </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {/* Short Term */}
-                <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-6 border border-white/10 hover:bg-white/10 transition-colors">
-                    <div className="flex items-center gap-2 mb-4 text-emerald-400">
-                        <CheckCircle2 className="w-5 h-5" />
-                        <h3 className="font-bold text-sm uppercase tracking-wider">Corto Plazo (1-3 Meses)</h3>
-                    </div>
-                    <ul className="space-y-3">
-                        {prismaPlan.shortTerm.map((action, idx) => (
-                            <li key={idx} className="flex items-start gap-3 text-sm text-slate-300">
-                                <ArrowRight className="w-4 h-4 mt-0.5 text-emerald-500/50 shrink-0" />
-                                <span>{action}</span>
-                            </li>
-                        ))}
-                    </ul>
-                </div>
-
-                {/* Medium Term */}
-                <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-6 border border-white/10 hover:bg-white/10 transition-colors">
-                    <div className="flex items-center gap-2 mb-4 text-blue-400">
-                        <CheckCircle2 className="w-5 h-5" />
-                        <h3 className="font-bold text-sm uppercase tracking-wider">Mediano Plazo (3-6 Meses)</h3>
-                    </div>
-                    <ul className="space-y-3">
-                        {prismaPlan.mediumTerm.map((action, idx) => (
-                            <li key={idx} className="flex items-start gap-3 text-sm text-slate-300">
-                                <ArrowRight className="w-4 h-4 mt-0.5 text-blue-500/50 shrink-0" />
-                                <span>{action}</span>
-                            </li>
-                        ))}
-                    </ul>
-                </div>
-
-                {/* Long Term */}
-                <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-6 border border-white/10 hover:bg-white/10 transition-colors">
-                    <div className="flex items-center gap-2 mb-4 text-purple-400">
-                        <CheckCircle2 className="w-5 h-5" />
-                        <h3 className="font-bold text-sm uppercase tracking-wider">Largo Plazo (+6 Meses)</h3>
-                    </div>
-                    <ul className="space-y-3">
-                        {prismaPlan.longTerm.map((action, idx) => (
-                            <li key={idx} className="flex items-start gap-3 text-sm text-slate-300">
-                                <ArrowRight className="w-4 h-4 mt-0.5 text-purple-500/50 shrink-0" />
-                                <span>{action}</span>
-                            </li>
-                        ))}
-                    </ul>
-                </div>
-            </div>
         </div>
-    </div>
     );
 }
