@@ -6,6 +6,7 @@ import { Building2, BarChart3, ChevronRight, ChevronDown } from 'lucide-react';
 import SectionAnalysis from './SectionAnalysis';
 import OfficeAnalysis from './OfficeAnalysis';
 import CampusAnalysis from './CampusAnalysis';
+import UniversityAnalysis from './UniversityAnalysis';
 
 export interface ResultWithDetails extends EvaluationResult {
   evaluation?: Evaluation;
@@ -31,7 +32,7 @@ export function ResultsModule() {
   const [expandedOffices, setExpandedOffices] = useState<Set<string>>(new Set());
   const [expandedCampuses, setExpandedCampuses] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState<'individual' | 'office' | 'campus'>('individual');
+  const [viewMode, setViewMode] = useState<'individual' | 'office' | 'campus' | 'university'>('individual');
   const [selectedResultForAnalysis, setSelectedResultForAnalysis] = useState<ResultWithDetails | null>(null);
 
   useEffect(() => {
@@ -369,8 +370,23 @@ export function ResultsModule() {
           >
             Vista por Campus
           </button>
+          {user?.role === 'admin' && (
+            <button
+              onClick={() => setViewMode('university')}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors ${viewMode === 'university'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+            >
+              Vista General
+            </button>
+          )}
         </div>
       )}
+
+      {viewMode === 'university' && user?.role === 'admin' ? (
+        <UniversityAnalysis results={results} />
+      ) : null}
 
       {viewMode === 'campus' && user?.role !== 'employee' ? (
         <div className="space-y-4">
