@@ -18,8 +18,7 @@ import {
 
 interface RadarDataPoint {
     sectionName: string;
-    avg?: number;
-    [key: string]: string | number | undefined;
+    avg?: number | null;
 }
 
 // --- COMPARISON RADAR CHART (Campus vs Global) ---
@@ -108,7 +107,7 @@ const ComparisonRadarChart = ({ data, campusName, globalScore }: { data: RadarDa
                 {/* Global Average Polygon (Gray) */}
                 <g>
                     <polygon
-                        points={data.map((d, i) => {
+                        points={data.map((_, i) => {
                             const coords = getCoordinates(globalScore, i);
                             return `${coords.x},${coords.y} `;
                         }).join(" ")}

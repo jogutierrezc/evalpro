@@ -7,14 +7,10 @@ import {
     Target,
     Zap,
     CheckCircle2,
-    Lightbulb,
     ArrowRight,
     Activity,
     BarChart3,
     Link,
-    PieChart,
-    DollarSign,
-    TrendingUp,
     AlertTriangle
 } from 'lucide-react';
 
@@ -22,11 +18,17 @@ interface Props {
     results: ResultWithDetails[];
 }
 
+interface RadarDataPoint {
+    sectionName: string;
+    UniversityAvg: number;
+    [key: string]: string | number;
+}
+
 // Helper to normalize text
 const normalize = (text: string) => text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
 // --- MULTI-SERIES RADAR CHART ---
-const MultiRadarChart = ({ data, campuses, colors }: { data: any[], campuses: string[], colors: string[] }) => {
+const MultiRadarChart = ({ data, campuses, colors }: { data: RadarDataPoint[], campuses: string[], colors: string[] }) => {
     const size = 400;
     const center = size / 2;
     const radius = (size / 2) - 60;
@@ -111,7 +113,7 @@ const MultiRadarChart = ({ data, campuses, colors }: { data: any[], campuses: st
                 {/* Data Polygons */}
                 {campuses.map((campus, idx) => {
                     const points = data.map((d, i) => {
-                        const val = d[campus] || 0;
+                        const val = (d[campus] as number) || 0;
                         const coords = getCoordinates(val, i);
                         return `${coords.x},${coords.y} `;
                     }).join(" ");
@@ -129,7 +131,7 @@ const MultiRadarChart = ({ data, campuses, colors }: { data: any[], campuses: st
                             />
                             {/* Points */}
                             {data.map((d, i) => {
-                                const val = d[campus] || 0;
+                                const val = (d[campus] as number) || 0;
                                 const coords = getCoordinates(val, i);
                                 return (
                                     <circle
@@ -240,8 +242,8 @@ export default function UniversityAnalysis({ results }: Props) {
         }).sort((a, b) => b.avg - a.avg);
 
         // --- 3. Radar Data Preparation ---
-        const radarData = Array.from(allSectionNames).map(sectionName => {
-            const row: any = { sectionName };
+        const radarData: RadarDataPoint[] = Array.from(allSectionNames).map(sectionName => {
+            const row: RadarDataPoint = { sectionName, UniversityAvg: 0 };
             campuses.forEach(c => {
                 row[c.name] = c.sectionAvgs[sectionName] || 0;
             });
