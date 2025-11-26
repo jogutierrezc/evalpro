@@ -7,7 +7,8 @@ import {
   Settings,
   LogOut,
   Menu,
-  X
+  X,
+  BookOpen
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -27,6 +28,7 @@ export function Layout({ children, activeModule, onModuleChange }: LayoutProps) 
     { id: 'results', label: 'Resultados', icon: BarChart3, roles: ['admin', 'office_manager', 'employee'] },
     { id: 'reports', label: 'Informes', icon: FileText, roles: ['admin'] },
     { id: 'admin', label: 'Administración', icon: Settings, roles: ['admin'] },
+    { id: 'guide', label: 'Ayuda', icon: BookOpen, roles: ['admin', 'office_manager', 'employee'] },
   ];
 
   const filteredMenuItems = menuItems.filter(item => {
@@ -75,8 +77,8 @@ export function Layout({ children, activeModule, onModuleChange }: LayoutProps) 
                     key={item.id}
                     onClick={() => onModuleChange(item.id)}
                     className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${activeModule === item.id
-                        ? 'bg-blue-50 text-blue-700'
-                        : 'text-gray-600 hover:bg-gray-50'
+                      ? 'bg-blue-50 text-blue-700'
+                      : 'text-gray-600 hover:bg-gray-50'
                       }`}
                   >
                     <Icon className="w-5 h-5" />
@@ -124,8 +126,8 @@ export function Layout({ children, activeModule, onModuleChange }: LayoutProps) 
                       setMobileMenuOpen(false);
                     }}
                     className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg font-medium transition-colors ${activeModule === item.id
-                        ? 'bg-blue-50 text-blue-700'
-                        : 'text-gray-600 hover:bg-gray-50'
+                      ? 'bg-blue-50 text-blue-700'
+                      : 'text-gray-600 hover:bg-gray-50'
                       }`}
                   >
                     <Icon className="w-5 h-5" />

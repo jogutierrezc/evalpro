@@ -9,6 +9,7 @@ import EvaluationsManagement from './modules/admin/EvaluationsManagement';
 import { ResultsModule } from './modules/ResultsModule';
 
 import { ReportsManagement } from './modules/admin/ReportsManagement';
+import { UserGuideModule } from './modules/UserGuideModule';
 
 function AppContent() {
   const { loading, user } = useAuth();
@@ -43,6 +44,7 @@ function AppContent() {
       )}
       {activeModule === 'results' && <ResultsModule />}
       {activeModule === 'reports' && user.role === 'admin' && <ReportsManagement />}
+      {activeModule === 'guide' && <UserGuideModule />}
       {activeModule === 'admin' && user.role === 'admin' && <AdminModule />}
     </Layout>
   );
