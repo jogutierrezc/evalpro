@@ -43,6 +43,19 @@ const ComparisonRadarChart = ({ data, campusName, globalScore }: { data: RadarDa
     return (
         <div className="relative flex flex-col items-center">
             <svg width={size} height={size} className="overflow-visible">
+                {/* Global Average Polygon (Gray Background) */}
+                <g>
+                    <polygon
+                        points={data.map((_, i) => {
+                            const coords = getCoordinates(globalScore, i);
+                            return `${coords.x},${coords.y} `;
+                        }).join(" ")}
+                        fill="#f1f5f9"
+                        stroke="#cbd5e1"
+                        strokeWidth="1"
+                    />
+                </g>
+
                 {/* Background levels */}
                 {[...Array(levels)].map((_, level) => {
                     const levelRadius = (radius / levels) * (level + 1);
@@ -106,20 +119,6 @@ const ComparisonRadarChart = ({ data, campusName, globalScore }: { data: RadarDa
                     );
                 })}
 
-                {/* Global Average Polygon (Gray) */}
-                <g>
-                    <polygon
-                        points={data.map((_, i) => {
-                            const coords = getCoordinates(globalScore, i);
-                            return `${coords.x},${coords.y} `;
-                        }).join(" ")}
-                        fill="none"
-                        stroke="#94a3b8"
-                        strokeWidth="2"
-                        strokeDasharray="4 4"
-                    />
-                </g>
-
                 {/* Campus Polygon (Blue) */}
                 <g>
                     <polygon
@@ -153,7 +152,7 @@ const ComparisonRadarChart = ({ data, campusName, globalScore }: { data: RadarDa
                     <span className="w-3 h-3 rounded-full bg-blue-500"></span> {campusName}
                 </div>
                 <div className="flex items-center gap-2 text-xs text-slate-500">
-                    <span className="w-3 h-3 rounded-full border border-slate-400 border-dashed"></span> Promedio Global ({globalScore.toFixed(1)})
+                    <span className="w-3 h-3 rounded-full bg-slate-100 border border-slate-300"></span> Promedio Global ({globalScore.toFixed(1)})
                 </div>
             </div>
         </div>

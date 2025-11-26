@@ -31,7 +31,7 @@ export interface SectionSummaryRow {
 }
 
 // --- RADAR CHART COMPONENT ---
-export const RadarChart = ({ data, size = 300 }: { data: SectionSummaryRow[]; size?: number }) => {
+export const RadarChart = ({ data, size = 300, comparisonScore }: { data: SectionSummaryRow[]; size?: number; comparisonScore?: number }) => {
   const center = size / 2;
   const radius = (size / 2) - 40;
   const levels = 5;
@@ -54,6 +54,21 @@ export const RadarChart = ({ data, size = 300 }: { data: SectionSummaryRow[]; si
   return (
     <div className="relative flex justify-center items-center py-4">
       <svg width={size} height={size} className="overflow-visible">
+        {/* Comparison Polygon (Gray Background) */}
+        {comparisonScore !== undefined && (
+          <g>
+            <polygon
+              points={data.map((_, i) => {
+                const coords = getCoordinates(comparisonScore, i);
+                return `${coords.x},${coords.y} `;
+              }).join(" ")}
+              fill="#f1f5f9"
+              stroke="#cbd5e1"
+              strokeWidth="1"
+            />
+          </g>
+        )}
+
         {/* Background levels */}
         {[...Array(levels)].map((_, level) => {
           const levelRadius = (radius / levels) * (level + 1);
