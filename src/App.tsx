@@ -8,6 +8,8 @@ import { EvaluationsModule } from './modules/EvaluationsModule';
 import EvaluationsManagement from './modules/admin/EvaluationsManagement';
 import { ResultsModule } from './modules/ResultsModule';
 
+import { ReportsManagement } from './modules/admin/ReportsManagement';
+
 function AppContent() {
   const { loading, user } = useAuth();
   const [activeModule, setActiveModule] = useState('dashboard');
@@ -40,6 +42,7 @@ function AppContent() {
         })())
       )}
       {activeModule === 'results' && <ResultsModule />}
+      {activeModule === 'reports' && user.role === 'admin' && <ReportsManagement />}
       {activeModule === 'admin' && user.role === 'admin' && <AdminModule />}
     </Layout>
   );

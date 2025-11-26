@@ -91,7 +91,7 @@ export function ReportsManagement() {
               id,
               question_text,
               weight,
-              section:evaluation_sections(name)
+              section:evaluation_sections(title)
             )
           )
         `)
@@ -118,7 +118,7 @@ export function ReportsManagement() {
                         text: r.question?.question_text,
                         weight: r.question?.weight,
                         score: Number(r.response_value),
-                        section: r.question?.section?.name
+                        section: r.question?.section?.title
                     }))
                 });
                 setGenerated(true);
