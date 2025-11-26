@@ -1,7 +1,33 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
-import { FileText, Printer, Building2, User } from 'lucide-react';
+import {
+    BarChart,
+    Bar,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Tooltip,
+    ResponsiveContainer,
+    ReferenceLine,
+    Cell
+} from 'recharts';
+import {
+    User,
+    ClipboardCheck,
+    TrendingUp,
+    Users,
+    Award,
+    AlertCircle,
+    CheckCircle2,
+    BrainCircuit,
+    FileText,
+    Target,
+    Building2,
+    Printer,
+    Search
+} from 'lucide-react';
 
+// --- Types ---
 interface Office {
     id: string;
     name: string;
@@ -14,12 +40,206 @@ interface UserProfile {
     identification: string;
 }
 
-interface EvaluationResult {
+interface SectionData {
     id: string;
-    avgScore: number;
-    sectionsSummary: any[];
+    title: string;
+    score: number;
+    weight: number;
     questions: any[];
 }
+
+interface ReportData {
+    meta: {
+        title: string;
+        subject: string;
+        date: string;
+        evaluator: string;
+        analyst: string;
+        role: string;
+    };
+    executive: {
+        profile: string;
+        weightedScore: number;
+        rawScore: number;
+        summary: string;
+    };
+    factors: {
+        id: string;
+        title: string;
+        score: number;
+        level: string;
+        strengths: string;
+        weakness: string;
+        icon: any;
+    }[];
+    recommendations: {
+        id: string;
+        goal: string;
+        action: string;
+        psychFocus: string;
+    }[];
+}
+
+// --- AI Simulation Logic ---
+const getProfile = (score: number) => {
+    if (score >= 4.5) return { name: "Líder de Proceso Excepcional", color: "text-green-600" };
+    if (score >= 4.0) return { name: "Ejecutor Consistente", color: "text-blue-600" };
+    if (score >= 3.5) return { name: "Perfil en Desarrollo", color: "text-amber-600" };
+    return { name: "Requiere Intervención", color: "text-red-600" };
+};
+
+const getLevel = (score: number) => {
+    if (score >= 4.7) return "Excepcional";
+    if (score >= 4.0) return "Alto";
+    if (score >= 3.0) return "En Desarrollo";
+    return "Crítico";
+};
+
+const generateAnalysis = (sections: SectionData[], subjectName: string) => {
+    // 1. Executive Summary
+    const weightedScore = sections.reduce((acc, s) => acc + (s.score * (s.weight / 100)), 0);
+    const rawScore = sections.reduce((acc, s) => acc + s.score, 0) / sections.length;
+    const profile = getProfile(weightedScore);
+
+    let summary = `El/La colaborador(a) ${subjectName} obtiene un perfil de "${profile.name}" con un desempeño general de ${weightedScore.toFixed(2)}. `;
+
+    if (weightedScore >= 4.0) {
+        summary += "Este perfil se caracteriza por una sólida orientación a la norma, la ética y los resultados. Demuestra un alto nivel de compromiso institucional y competencias técnicas bien consolidadas. ";
+    } else {
+        summary += "Este perfil indica que, si bien existen fortalezas operativas, hay áreas críticas que requieren atención inmediata para alinear el desempeño con los estándares institucionales. ";
+    }
+
+    const lowSections = sections.filter(s => s.score < 4.0).sort((a, b) => a.score - b.score);
+    if (lowSections.length > 0) {
+        summary += `El análisis identifica áreas de vulnerabilidad crítica en ${lowSections.map(s => s.title).join(", ")}.`;
+    } else {
+        summary += "No se detectan brechas críticas significativas, sugiriendo un potencial de alto liderazgo.";
+    }
+
+    // 2. Factors Analysis (Simulated Variations)
+    const factors = sections.map((s, idx) => {
+        let strengths = "";
+        let weakness = "";
+
+        // Simulation of "AI" text generation based on score and keywords
+        const titleLower = s.title.toLowerCase();
+
+        if (titleLower.includes("integridad") || titleLower.includes("ética")) {
+            if (s.score >= 4.5) {
+                strengths = "Ética profesional inquebrantable, transparencia total y alineación profunda con los valores institucionales.";
+                weakness = "Puede tender a la rigidez normativa en situaciones que requieren flexibilidad adaptativa.";
+            } else if (s.score >= 3.5) {
+                strengths = "Cumplimiento adecuado de normas y procedimientos básicos.";
+                weakness = "Ocasionalmente prioriza la rapidez sobre el protocolo formal.";
+            } else {
+                strengths = "Reconoce la existencia de normas básicas.";
+                weakness = "Riesgo significativo de incumplimiento normativo y falta de transparencia procedimental.";
+            }
+        } else if (titleLower.includes("liderazgo") || titleLower.includes("relaciones")) {
+            if (s.score >= 4.5) {
+                strengths = "Capacidad innata para inspirar, delegar efectivamente y mantener un clima laboral positivo.";
+                weakness = "Podría sobreproteger al equipo, asumiendo cargas que deberían ser delegadas.";
+            } else if (s.score >= 3.5) {
+                strengths = "Mantiene relaciones cordiales y colabora cuando se le solicita.";
+                weakness = "Estilo de liderazgo reactivo más que proactivo; comunicación mejorable en situaciones de estrés.";
+            } else {
+                strengths = "Interactúa funcionalmente con pares inmediatos.";
+                weakness = "Dificultad severa en gestión de conflictos y comunicación asertiva. Tendencia al aislamiento.";
+            }
+        } else if (titleLower.includes("resultados") || titleLower.includes("calidad")) {
+            if (s.score >= 4.5) {
+                strengths = "Ejecución impecable, orientación a la excelencia y ciclo de mejora continua activo.";
+                weakness = "Puede frustrarse con compañeros que no mantienen su mismo ritmo de ejecución.";
+            } else if (s.score >= 3.5) {
+                strengths = "Cumple con los objetivos asignados en tiempo y forma.";
+                weakness = "Falta de autoevaluación crítica; depende de la supervisión externa para corregir errores.";
+            } else {
+                strengths = "Logra completar tareas simples bajo supervisión.";
+                weakness = "Incumplimiento recurrente de plazos y estándares de calidad. Requiere supervisión constante.";
+            }
+        } else {
+            // Generic fallback
+            if (s.score >= 4.0) {
+                strengths = "Desempeño sólido y consistente en esta competencia.";
+                weakness = "Oportunidades menores de refinamiento en procesos complejos.";
+            } else {
+                strengths = "Muestra disposición para aprender.";
+                weakness = "Brechas de competencia que afectan la autonomía operativa.";
+            }
+        }
+
+        return {
+            id: s.id,
+            title: s.title,
+            score: s.score,
+            level: getLevel(s.score),
+            strengths,
+            weakness,
+            icon: getIconForSection(s.title)
+        };
+    });
+
+    // 3. Recommendations (Simulated)
+    const recommendations = [];
+    const sortedFactors = [...factors].sort((a, b) => a.score - b.score); // Lowest first
+
+    // Add recommendation for lowest score
+    if (sortedFactors[0]) {
+        recommendations.push({
+            id: "R.1",
+            goal: `Mejorar ${sortedFactors[0].title}`,
+            action: "Plan de Choque Específico",
+            psychFocus: `Implementar mentoría directa para abordar las brechas en ${sortedFactors[0].title}. Se requiere un enfoque conductual para modificar hábitos arraigados.`
+        });
+    }
+
+    // Add recommendation for second lowest
+    if (sortedFactors[1] && sortedFactors[1].score < 4.0) {
+        recommendations.push({
+            id: "R.2",
+            goal: "Desarrollo de Competencias",
+            action: "Capacitación Focalizada",
+            psychFocus: `Taller práctico sobre ${sortedFactors[1].title} con énfasis en casos de estudio reales de la institución.`
+        });
+    }
+
+    // Add recommendation for highest score (Leverage strength)
+    const bestFactor = [...factors].sort((a, b) => b.score - a.score)[0];
+    if (bestFactor) {
+        recommendations.push({
+            id: "R.3",
+            goal: "Potenciar Fortalezas",
+            action: "Rol de Mentoría",
+            psychFocus: `Aprovechar su alto desempeño en ${bestFactor.title} para que actúe como referente o mentor de personal junior, reforzando su sentido de pertenencia.`
+        });
+    }
+
+    // Generic cultural fit
+    recommendations.push({
+        id: "R.4",
+        goal: "Alineación Cultural",
+        action: "Feedback Continuo",
+        psychFocus: "Establecer sesiones mensuales de retroalimentación bidireccional para asegurar que la motivación se mantenga alineada con los objetivos estratégicos."
+    });
+
+    return {
+        summary,
+        factors,
+        recommendations,
+        weightedScore,
+        rawScore,
+        profile: profile.name
+    };
+};
+
+const getIconForSection = (title: string) => {
+    const t = title.toLowerCase();
+    if (t.includes('integridad') || t.includes('ética')) return <ClipboardCheck className="w-6 h-6" />;
+    if (t.includes('liderazgo') || t.includes('relaciones')) return <Users className="w-6 h-6" />;
+    if (t.includes('resultados') || t.includes('calidad')) return <TrendingUp className="w-6 h-6" />;
+    if (t.includes('institucional')) return <Building2 className="w-6 h-6" />;
+    return <Award className="w-6 h-6" />;
+};
 
 export function ReportsManagement() {
     const [offices, setOffices] = useState<Office[]>([]);
@@ -27,8 +247,9 @@ export function ReportsManagement() {
     const [users, setUsers] = useState<UserProfile[]>([]);
     const [selectedUser, setSelectedUser] = useState<string>('');
     const [loading, setLoading] = useState(false);
-    const [reportData, setReportData] = useState<EvaluationResult | null>(null);
+    const [reportData, setReportData] = useState<ReportData | null>(null);
     const [generated, setGenerated] = useState(false);
+    const componentRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         loadOffices();
@@ -54,9 +275,6 @@ export function ReportsManagement() {
 
     const loadUsers = async (officeId: string) => {
         try {
-            // Fetch users in the office. We might want to filter by role if needed.
-            // The user said "personas evaluadas que tengan el rol evaluado".
-            // We'll fetch all users in the office for now.
             const { data, error } = await supabase
                 .from('users')
                 .select('id, full_name, role, identification')
@@ -75,15 +293,12 @@ export function ReportsManagement() {
         setLoading(true);
         setGenerated(false);
         try {
-            // Fetch the latest completed evaluation for the user
-            // We are looking for "Evaluación del Lider al Equipo" specifically.
-            // We'll try to find a template that matches that name or just take the latest one.
-
             const { data: evaluations, error } = await supabase
                 .from('evaluations')
                 .select(`
           id,
           created_at,
+          evaluator_id,
           template:evaluation_templates(name),
           responses:evaluation_responses(
             response_value,
@@ -91,7 +306,7 @@ export function ReportsManagement() {
               id,
               question_text,
               weight,
-              section:evaluation_sections(title)
+              section:evaluation_sections(id, title)
             )
           )
         `)
@@ -105,21 +320,69 @@ export function ReportsManagement() {
             if (evaluations && evaluations.length > 0) {
                 const evalData = evaluations[0];
 
-                // Process data to calculate averages
+                // Fetch Evaluator Name
+                const { data: evaluatorData } = await supabase
+                    .from('users')
+                    .select('full_name')
+                    .eq('id', evalData.evaluator_id)
+                    .single();
+
+                // Process Sections
                 const responses = evalData.responses || [];
-                const scores = responses.map((r: any) => Number(r.response_value) || 0);
-                const avgScore = scores.length > 0 ? scores.reduce((a: number, b: number) => a + b, 0) / scores.length : 0;
+                const sectionsMap = new Map<string, SectionData>();
+
+                responses.forEach((r: any) => {
+                    const sectionId = r.question?.section?.id || 'unknown';
+                    const sectionTitle = r.question?.section?.title || 'General';
+
+                    if (!sectionsMap.has(sectionId)) {
+                        sectionsMap.set(sectionId, {
+                            id: sectionId,
+                            title: sectionTitle,
+                            score: 0,
+                            weight: 0, // We'll calculate average score, weight is implicit for now
+                            questions: []
+                        });
+                    }
+
+                    const section = sectionsMap.get(sectionId)!;
+                    section.questions.push({
+                        score: Number(r.response_value) || 0,
+                        weight: r.question?.weight || 1
+                    });
+                });
+
+                // Calculate Section Scores
+                const sections: SectionData[] = Array.from(sectionsMap.values()).map(s => {
+                    const totalScore = s.questions.reduce((sum, q) => sum + q.score, 0);
+                    const avgScore = totalScore / s.questions.length;
+                    return {
+                        ...s,
+                        score: Math.round(avgScore * 100) / 100,
+                        weight: 100 / sectionsMap.size // Distribute weight equally for now, or fetch from DB if available
+                    };
+                });
+
+                const subject = users.find(u => u.id === selectedUser);
+                const analysis = generateAnalysis(sections, subject?.full_name || 'Colaborador');
 
                 setReportData({
-                    id: evalData.id,
-                    avgScore,
-                    sectionsSummary: [], // We can populate this if needed
-                    questions: responses.map((r: any) => ({
-                        text: r.question?.question_text,
-                        weight: r.question?.weight,
-                        score: Number(r.response_value),
-                        section: r.question?.section?.title
-                    }))
+                    meta: {
+                        title: "INFORME PSICOLÓGICO DE DESEMPEÑO PRISMA",
+                        subject: subject?.full_name || "Desconocido",
+                        date: new Date(evalData.created_at).toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' }),
+                        evaluator: evaluatorData?.full_name || "Sistema PRISMA",
+                        analyst: "Dra. I.A. Psicológica Gemini",
+                        role: subject?.role || "Evaluación Individual"
+                    },
+                    executive: {
+                        profile: analysis.profile,
+                        weightedScore: Number(analysis.weightedScore.toFixed(2)),
+                        rawScore: Number(analysis.rawScore.toFixed(2)),
+                        summary: analysis.summary
+                    },
+                    factors: analysis.factors,
+                    recommendations: analysis.recommendations
                 });
                 setGenerated(true);
             } else {
@@ -134,16 +397,21 @@ export function ReportsManagement() {
         }
     };
 
-    // Helper to determine state based on score
-    const getState = (score: number) => {
-        if (score >= 4.5) return 'A';
-        if (score >= 3.5) return 'B';
-        return 'C';
+    const handlePrint = () => {
+        window.print();
     };
+
+    const chartData = reportData?.factors.map(f => ({
+        category: f.title.length > 10 ? f.title.substring(0, 10) + '...' : f.title,
+        score: f.score,
+        fullMark: 5,
+        color: f.score >= 4.0 ? '#1e3a8a' : '#d97706'
+    })) || [];
 
     return (
         <div className="space-y-6">
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+            {/* Control Panel - Hidden on Print */}
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 print:hidden">
                 <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
                     <FileText className="w-5 h-5 text-blue-600" />
                     Generador de Informes Técnicos
@@ -192,186 +460,242 @@ export function ReportsManagement() {
                         </div>
                     </div>
 
-                    <button
-                        onClick={generateReport}
-                        disabled={!selectedUser || loading}
-                        className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-medium"
-                    >
-                        {loading ? 'Generando...' : 'Generar Informe Técnico'}
-                    </button>
+                    <div className="flex gap-2">
+                        <button
+                            onClick={generateReport}
+                            disabled={!selectedUser || loading}
+                            className="flex-1 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-medium"
+                        >
+                            {loading ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div> : <Search className="w-4 h-4" />}
+                            Generar
+                        </button>
+                        {generated && (
+                            <button
+                                onClick={handlePrint}
+                                className="px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-900 flex items-center justify-center gap-2"
+                            >
+                                <Printer className="w-4 h-4" />
+                            </button>
+                        )}
+                    </div>
                 </div>
             </div>
 
+            {/* Report View */}
             {generated && reportData && (
-                <div className="bg-white p-8 rounded-xl shadow-lg border border-gray-200 animate-in fade-in slide-in-from-bottom-4 duration-500 print:shadow-none print:border-none">
+                <div ref={componentRef} className="min-h-screen bg-slate-50 text-slate-800 font-sans selection:bg-amber-100 print:bg-white">
 
-                    {/* Header Reporte */}
-                    <div className="border-b border-gray-200 pb-6 mb-8 flex justify-between items-start">
-                        <div>
-                            <h1 className="text-2xl font-bold text-gray-900">Informe Técnico de Vinculación y Desempeño</h1>
-                            <p className="text-gray-500 mt-1">Sistema PRISMA - Análisis de Factores Críticos</p>
+                    {/* Header / Banner */}
+                    <header className="bg-slate-900 text-white pt-10 pb-24 px-6 md:px-12 relative overflow-hidden shadow-lg print:shadow-none print:pt-6 print:pb-12">
+                        {/* Logos for Print */}
+                        <div className="absolute top-6 left-6 z-30 hidden print:block">
+                            <img src="https://udes.edu.co/images/logo/logo-con-acreditada-color.png" alt="UDES Logo" className="h-16 object-contain bg-white/90 p-2 rounded" />
                         </div>
-                        <div className="text-right">
-                            <div className="text-sm text-gray-500">Fecha de Generación</div>
-                            <div className="font-medium">{new Date().toLocaleDateString()}</div>
-                            <div className="mt-2 inline-block px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-bold border border-blue-100">
-                                {users.find(u => u.id === selectedUser)?.full_name}
+                        <div className="absolute top-6 right-6 z-30 hidden print:block">
+                            <img src="/prisma.png" alt="PRISMA Logo" className="h-12 object-contain bg-white/90 p-1 rounded" />
+                        </div>
+
+                        <div className="absolute top-0 right-0 p-10 opacity-10 print:hidden">
+                            <BrainCircuit size={300} />
+                        </div>
+                        <div className="max-w-5xl mx-auto relative z-10 print:mt-16">
+                            <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
+                                <div>
+                                    <div className="flex items-center gap-3 mb-2 text-amber-500 font-semibold tracking-wider text-sm uppercase">
+                                        <FileText size={16} />
+                                        {reportData.meta.title}
+                                    </div>
+                                    <h1 className="text-3xl md:text-5xl font-bold mb-2">{reportData.meta.subject}</h1>
+                                    <p className="text-slate-400 text-lg">{reportData.meta.role} | {reportData.meta.date}</p>
+                                </div>
+                                <div className="text-right hidden md:block print:block">
+                                    <p className="text-slate-400 text-sm">Evaluadora</p>
+                                    <p className="font-medium">{reportData.meta.evaluator}</p>
+                                    <p className="text-xs text-amber-500 mt-1">{reportData.meta.analyst}</p>
+                                </div>
                             </div>
                         </div>
-                    </div>
+                    </header>
 
-                    {/* 1. Análisis de Factores */}
-                    <section className="mb-10">
-                        <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2 border-l-4 border-blue-500 pl-3">
-                            1. Análisis de Factores de Vinculación y Contratación 🤝
-                        </h3>
-                        <div className="bg-slate-50 p-6 rounded-lg text-sm text-slate-700 leading-relaxed space-y-4">
-                            <p>
-                                El instrumento de evaluación se centra en competencias transversales y comportamientos éticos/profesionales, lo cual es altamente relevante para la vinculación y contratación, pues permite validar la adecuación del personal al ambiente laboral y la cultura organizacional.
+                    <main className="max-w-5xl mx-auto px-6 -mt-16 relative z-20 pb-20 print:mt-0 print:px-8">
+
+                        {/* Executive Summary Cards */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10 print:gap-4">
+                            <div className="bg-white rounded-lg shadow-md p-6 border-t-4 border-amber-500 print:shadow-none print:border">
+                                <h3 className="text-slate-500 text-sm font-semibold uppercase mb-2">Puntaje Ponderado</h3>
+                                <div className="flex items-end gap-2">
+                                    <span className="text-5xl font-bold text-slate-900">{reportData.executive.weightedScore}</span>
+                                    <span className="text-lg text-slate-400 mb-1">/ 5.0</span>
+                                </div>
+                                <p className="text-xs text-slate-400 mt-2">Escala PRISMA Global</p>
+                            </div>
+
+                            <div className="bg-white rounded-lg shadow-md p-6 border-t-4 border-slate-700 print:shadow-none print:border">
+                                <h3 className="text-slate-500 text-sm font-semibold uppercase mb-2">Perfil Obtenido</h3>
+                                <div className="flex items-center gap-2 mt-2">
+                                    <Award className="text-amber-500 w-8 h-8" />
+                                    <span className="text-xl font-bold text-slate-800 leading-tight">
+                                        {reportData.executive.profile}
+                                    </span>
+                                </div>
+                                <p className="text-xs text-slate-400 mt-3">Nivel de desempeño destacado</p>
+                            </div>
+
+                            <div className="bg-white rounded-lg shadow-md p-6 border-t-4 border-slate-300 md:col-span-1 print:shadow-none print:border">
+                                <h3 className="text-slate-500 text-sm font-semibold uppercase mb-2">Cumplimiento Bruto</h3>
+                                <div className="flex items-end gap-2">
+                                    <span className="text-4xl font-bold text-slate-700">{reportData.executive.rawScore}</span>
+                                    <span className="text-sm text-slate-400 mb-1">Promedio Simple</span>
+                                </div>
+                                <p className="text-xs text-slate-400 mt-2">Basado en respuestas directas</p>
+                            </div>
+                        </div>
+
+                        {/* Introduction Summary */}
+                        <section className="bg-white rounded-lg shadow-sm p-8 mb-10 border-l-4 border-slate-900 print:shadow-none print:border print:p-4">
+                            <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
+                                <User className="text-amber-600" size={24} />
+                                Resumen Ejecutivo
+                            </h2>
+                            <p className="text-slate-600 leading-relaxed text-lg text-justify">
+                                {reportData.executive.summary}
                             </p>
+                        </section>
 
-                            <div>
-                                <strong className="block text-slate-900 mb-1">Validez de Contenido:</strong>
-                                Las preguntas miden directamente si el empleado aplica las normas, políticas y principios institucionales (Integridad: 0.3, Institucional: 0.3) y si gestiona adecuadamente sus responsabilidades (Compromiso con la calidad: 0.4). Esto sugiere que la institución busca personal que no solo tenga el conocimiento técnico, sino que también demuestre un fuerte ajuste cultural (Culture Fit).
+                        {/* Charts Section */}
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-12 print:grid-cols-1 print:gap-6">
+                            {/* Chart */}
+                            <div className="lg:col-span-2 bg-white p-6 rounded-lg shadow-sm print:shadow-none print:border">
+                                <h3 className="text-lg font-bold text-slate-800 mb-6">Métricas de Factores Clave</h3>
+                                <div className="h-64 w-full">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart data={chartData} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                                            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
+                                            <XAxis type="number" domain={[0, 5]} hide />
+                                            <YAxis type="category" dataKey="category" tick={{ fill: '#475569', fontSize: 12 }} width={100} />
+                                            <Tooltip
+                                                cursor={{ fill: '#f1f5f9' }}
+                                                contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                                            />
+                                            <ReferenceLine x={3} stroke="#ef4444" strokeDasharray="3 3" />
+                                            <Bar dataKey="score" radius={[0, 4, 4, 0]} barSize={30}>
+                                                {chartData.map((entry, index) => (
+                                                    <Cell key={`cell-${index}`} fill={entry.color} />
+                                                ))}
+                                            </Bar>
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
+                                <div className="flex justify-center gap-6 mt-4 text-xs text-slate-500">
+                                    <span className="flex items-center gap-1"><div className="w-3 h-3 bg-blue-900 rounded-sm"></div> Fortaleza</span>
+                                    <span className="flex items-center gap-1"><div className="w-3 h-3 bg-amber-600 rounded-sm"></div> Área de Oportunidad</span>
+                                </div>
                             </div>
 
-                            <div>
-                                <strong className="block text-slate-900 mb-1">Factores de Contratación Críticos (Alto Peso):</strong>
-                                Las preguntas con mayor peso porcentual (0.5% y 0.6%) deberían ser ejes de la entrevista y evaluación inicial, ya que reflejan las prioridades organizacionales:
-                                <ul className="list-disc list-inside mt-2 space-y-1 ml-2">
-                                    <li><strong>Cumplimiento de Lineamientos Institucionales (0.6%):</strong> Horario, uso de uniforme, EPP. Este es el comportamiento más valorado por el instrumento.</li>
-                                    <li><strong>Recepción y Gestión de Sugerencias/Quejas (0.5%):</strong> Refleja la capacidad de servicio al cliente interno/externo y la adaptabilidad/resolución de conflictos.</li>
-                                    <li><strong>Planeación, Ejecución y Verificación de Actividades (0.5%):</strong> Indicador clave de la autonomía, calidad y ciclo de mejora continua.</li>
-                                    <li><strong>Apertura a diferentes puntos de vista (0.5%):</strong> Mide la colaboración y la innovación.</li>
-                                </ul>
+                            {/* Key Insight Box */}
+                            <div className="bg-slate-800 text-slate-100 p-6 rounded-lg shadow-md flex flex-col justify-center print:bg-slate-100 print:text-slate-900 print:border print:shadow-none">
+                                <h4 className="text-amber-500 font-bold uppercase tracking-wider text-sm mb-4 print:text-amber-700">Diagnóstico IA</h4>
+                                <p className="italic text-slate-300 mb-4 print:text-slate-700">
+                                    "{reportData.executive.weightedScore >= 4 ? 'Alto alineamiento cultural y operativo.' : 'Brechas significativas entre potencial y ejecución.'}"
+                                </p>
+                                <div className="mt-auto pt-4 border-t border-slate-700 print:border-slate-300">
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-sm text-slate-400 print:text-slate-600">Potencial de Liderazgo</span>
+                                        <span className="text-amber-500 font-bold print:text-amber-700">{reportData.executive.weightedScore >= 4 ? 'Alto' : 'Medio/Bajo'}</span>
+                                    </div>
+                                </div>
                             </div>
-
-                            <div className="bg-blue-100/50 p-4 rounded border border-blue-200">
-                                <strong className="text-blue-800">Recomendación de Vinculación:</strong> El proceso de selección debe incluir pruebas situacionales y entrevistas por competencias que validen los resultados en las categorías de Compromiso con la Calidad (Planeación, Precisión) y Liderazgo (Gestión de Quejas), ya que estas tienen el mayor peso en la evaluación posterior.
-                            </div>
-                        </div>
-                    </section>
-
-                    {/* 2. Simulación y Variaciones */}
-                    <section className="mb-10">
-                        <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2 border-l-4 border-indigo-500 pl-3">
-                            2. Simulación y Variaciones de la Evaluación Individual 📊
-                        </h3>
-                        <p className="text-sm text-gray-600 mb-4">
-                            Para el análisis individual, se simularon 50 escenarios con variaciones de +/- 0.5 puntos en la calificación (1-5) para cada pregunta, manteniendo las ponderaciones fijas. Se identifican tres estados simulados de desempeño:
-                        </p>
-
-                        <div className="overflow-x-auto mb-6">
-                            <table className="w-full text-sm text-left border-collapse">
-                                <thead>
-                                    <tr className="bg-gray-100 border-b border-gray-200">
-                                        <th className="p-3 font-bold text-gray-700">Estado Simul.</th>
-                                        <th className="p-3 font-bold text-gray-700">Calificación Promedio (1-5)</th>
-                                        <th className="p-3 font-bold text-gray-700">Perfil Dominante</th>
-                                        <th className="p-3 font-bold text-gray-700">Ponderación (%)</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr className={`border-b border-gray-100 ${getState(reportData.avgScore) === 'A' ? 'bg-green-50' : ''}`}>
-                                        <td className="p-3 font-bold text-green-700">A</td>
-                                        <td className="p-3">4.5 - 5.0</td>
-                                        <td className="p-3">Ejecutor Estándar</td>
-                                        <td className="p-3">40%</td>
-                                    </tr>
-                                    <tr className={`border-b border-gray-100 ${getState(reportData.avgScore) === 'B' ? 'bg-yellow-50' : ''}`}>
-                                        <td className="p-3 font-bold text-yellow-600">B</td>
-                                        <td className="p-3">3.5 - 4.4</td>
-                                        <td className="p-3">Requiere Desarrollo</td>
-                                        <td className="p-3">35%</td>
-                                    </tr>
-                                    <tr className={`border-b border-gray-100 ${getState(reportData.avgScore) === 'C' ? 'bg-red-50' : ''}`}>
-                                        <td className="p-3 font-bold text-red-600">C</td>
-                                        <td className="p-3">1.0 - 3.4</td>
-                                        <td className="p-3">Riesgo/Necesita Intervención</td>
-                                        <td className="p-3">25%</td>
-                                    </tr>
-                                </tbody>
-                            </table>
                         </div>
 
-                        <div className="bg-white border border-gray-200 p-5 rounded-lg shadow-sm">
-                            <h4 className="font-bold text-gray-800 mb-2">Estado Actual del Colaborador: <span className={`text-xl ml-2 ${getState(reportData.avgScore) === 'A' ? 'text-green-600' : getState(reportData.avgScore) === 'B' ? 'text-yellow-600' : 'text-red-600'}`}>Estado {getState(reportData.avgScore)} ({reportData.avgScore.toFixed(2)})</span></h4>
-                            <p className="text-sm text-gray-600">
-                                {getState(reportData.avgScore) === 'A' && "El colaborador cumple consistentemente con las expectativas, destacándose en las categorías de Integridad y Liderazgo."}
-                                {getState(reportData.avgScore) === 'B' && "Muestra fortalezas, pero una clara necesidad de desarrollo en las áreas de Orientación a los resultados y Compromiso con la Calidad."}
-                                {getState(reportData.avgScore) === 'C' && "Presenta un riesgo significativo, con puntuaciones bajas, especialmente en preguntas con alta ponderación como Cumplimiento de Lineamientos."}
-                            </p>
-                        </div>
-                    </section>
-
-                    {/* 3. Acciones Sugeridas */}
-                    <section className="mb-10">
-                        <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2 border-l-4 border-emerald-500 pl-3">
-                            3. Acciones Sugeridas y Recomendaciones 💡
-                        </h3>
-                        <p className="text-sm text-gray-600 mb-6">Las acciones se segmentan según el factor de evaluación y el estado de desempeño simulado.</p>
-
-                        <div className="space-y-6">
-                            {/* 3.1 Recomendaciones por Factor */}
-                            <div>
-                                <h4 className="font-bold text-gray-800 mb-3">3.1. Recomendaciones por Factor</h4>
-                                <div className="grid gap-4">
-                                    {[
-                                        { factor: 'Integridad', focus: 'Ética y Cumplimiento', action: 'Para Estado C: Reforzar inducción y realizar un taller de reinducción ética con énfasis en el código de conducta y el impacto de la transparencia.' },
-                                        { factor: 'Institucional', focus: 'Adecuación al Cargo', action: 'Para Estado B: Crear planes de capacitación cruzada. Para Estado A: Reconocimiento formal por el uso eficiente de recursos.' },
-                                        { factor: 'Compromiso con Calidad', focus: 'Gestión de la Productividad', action: 'Para Estado B y C: Implementar metodología de planificación (OKRs o SMART) y seguimiento semanal.' },
-                                        { factor: 'Liderazgo', focus: 'Relaciones Interpersonales', action: 'Para Estado B: Coaching en comunicación asertiva. Fomentar la proactividad mediante delegación controlada.' },
-                                        { factor: 'Orientación a Resultados', focus: 'Cultura de Mejora Continua', action: 'Para todos: Programa de Cultura de Reporte. Para Estado C: Objetivos semanales específicos.' }
-                                    ].map((item, idx) => (
-                                        <div key={idx} className="bg-gray-50 p-4 rounded border border-gray-100">
-                                            <div className="flex justify-between mb-1">
-                                                <span className="font-bold text-gray-800">{item.factor}</span>
-                                                <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">{item.focus}</span>
-                                            </div>
-                                            <p className="text-sm text-gray-600">{item.action}</p>
+                        {/* Detailed Breakdown */}
+                        <h2 className="text-2xl font-bold text-slate-900 mb-6 border-b pb-2 border-slate-200">Análisis Detallado por Factores</h2>
+                        <div className="space-y-6 mb-12 print:break-inside-avoid">
+                            {reportData.factors.map((factor) => (
+                                <div key={factor.id} className="bg-white border border-slate-100 rounded-lg p-6 shadow-sm hover:shadow-md transition-shadow print:shadow-none print:border-slate-200 print:break-inside-avoid">
+                                    <div className="flex flex-col md:flex-row gap-4 md:items-start">
+                                        <div className={`p-3 rounded-full flex-shrink-0 ${factor.score >= 4 ? 'bg-blue-50 text-blue-900' : 'bg-amber-50 text-amber-600'}`}>
+                                            {factor.icon}
                                         </div>
-                                    ))}
+                                        <div className="flex-grow">
+                                            <div className="flex justify-between items-center mb-2">
+                                                <h3 className="text-lg font-bold text-slate-800">{factor.title}</h3>
+                                                <span className={`px-3 py-1 rounded-full text-xs font-bold ${factor.score >= 4.5 ? 'bg-green-100 text-green-800' :
+                                                        factor.score >= 4 ? 'bg-blue-100 text-blue-800' :
+                                                            'bg-amber-100 text-amber-800'
+                                                    }`}>
+                                                    {factor.score} / 5.0
+                                                </span>
+                                            </div>
+
+                                            {/* Progress Bar */}
+                                            <div className="w-full bg-slate-100 rounded-full h-2 mb-4 print:hidden">
+                                                <div
+                                                    className={`h-2 rounded-full ${factor.score >= 4 ? 'bg-slate-900' : 'bg-amber-500'}`}
+                                                    style={{ width: `${(factor.score / 5) * 100}%` }}
+                                                ></div>
+                                            </div>
+
+                                            <div className="grid md:grid-cols-2 gap-6">
+                                                <div>
+                                                    <h4 className="text-xs font-bold text-slate-500 uppercase mb-1 flex items-center gap-1">
+                                                        <CheckCircle2 size={14} className="text-green-600" /> Fortalezas
+                                                    </h4>
+                                                    <p className="text-sm text-slate-600 text-justify">{factor.strengths}</p>
+                                                </div>
+                                                <div>
+                                                    <h4 className="text-xs font-bold text-slate-500 uppercase mb-1 flex items-center gap-1">
+                                                        <AlertCircle size={14} className="text-amber-600" /> Vulnerabilidad
+                                                    </h4>
+                                                    <p className="text-sm text-slate-600 text-justify">{factor.weakness}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
+                            ))}
+                        </div>
+
+                        {/* Strategic Recommendations */}
+                        <section className="print:break-before-page">
+                            <div className="flex items-center gap-3 mb-6">
+                                <Target className="text-amber-600" size={28} />
+                                <h2 className="text-2xl font-bold text-slate-900">Recomendaciones Estratégicas (IA)</h2>
                             </div>
 
-                            {/* 3.2 Intervención Psicológica */}
-                            <div>
-                                <h4 className="font-bold text-gray-800 mb-3">3.2. Recomendaciones de Intervención Psicológica</h4>
-                                <div className="grid md:grid-cols-3 gap-4">
-                                    <div className={`p-4 rounded-lg border ${getState(reportData.avgScore) === 'C' ? 'bg-red-50 border-red-200 ring-2 ring-red-400' : 'bg-white border-gray-200 opacity-60'}`}>
-                                        <h5 className="font-bold text-red-700 mb-2">Riesgo (Estado C)</h5>
-                                        <p className="text-xs text-gray-700 mb-2"><strong>Focus:</strong> Cumplimiento de lineamientos (0.6%)</p>
-                                        <p className="text-xs text-gray-600"><strong>Acción:</strong> Entrevista de Sondeo de Causas. Evaluar motivación extrínseca y percepción de la norma. Plan de Acompañamiento Psicosocial si es actitudinal.</p>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                {reportData.recommendations.map((rec) => (
+                                    <div key={rec.id} className="bg-white p-6 rounded-lg border-l-4 border-amber-500 shadow-sm flex flex-col h-full print:shadow-none print:border">
+                                        <div className="flex justify-between items-start mb-3">
+                                            <span className="text-slate-300 font-bold text-xl">{rec.id}</span>
+                                            <span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs font-semibold">{rec.goal}</span>
+                                        </div>
+                                        <h3 className="font-bold text-lg text-slate-800 mb-2">{rec.action}</h3>
+                                        <p className="text-slate-600 text-sm leading-relaxed flex-grow text-justify">
+                                            {rec.psychFocus}
+                                        </p>
                                     </div>
-                                    <div className={`p-4 rounded-lg border ${getState(reportData.avgScore) === 'B' ? 'bg-yellow-50 border-yellow-200 ring-2 ring-yellow-400' : 'bg-white border-gray-200 opacity-60'}`}>
-                                        <h5 className="font-bold text-yellow-700 mb-2">Desarrollo (Estado B)</h5>
-                                        <p className="text-xs text-gray-700 mb-2"><strong>Focus:</strong> Iniciativa y mejora (0.4%)</p>
-                                        <p className="text-xs text-gray-600"><strong>Acción:</strong> Taller de "Empoderamiento y Pensamiento Crítico". Trasladar de ejecutor a solucionador de problemas.</p>
-                                    </div>
-                                    <div className={`p-4 rounded-lg border ${getState(reportData.avgScore) === 'A' ? 'bg-green-50 border-green-200 ring-2 ring-green-400' : 'bg-white border-gray-200 opacity-60'}`}>
-                                        <h5 className="font-bold text-green-700 mb-2">Excelencia (Estado A)</h5>
-                                        <p className="text-xs text-gray-700 mb-2"><strong>Focus:</strong> Colaboración y ambiente (0.4%)</p>
-                                        <p className="text-xs text-gray-600"><strong>Acción:</strong> Programa de Mentores Internos. Capacitar y acompañar al personal de Estados B y C.</p>
-                                    </div>
-                                </div>
+                                ))}
+                            </div>
+                        </section>
+
+                        {/* Conclusion Footer */}
+                        <div className="mt-12 bg-slate-900 text-slate-300 p-8 rounded-lg text-center print:bg-white print:text-slate-800 print:border-t-2 print:border-slate-900">
+                            <h3 className="text-white font-bold text-lg mb-2 print:text-slate-900">Conclusión PRISMA</h3>
+                            <p className="max-w-3xl mx-auto leading-relaxed">
+                                El/La colaborador(a) {reportData.meta.subject} es un activo valioso para la institución. El mayor retorno de inversión se obtendrá fortaleciendo sus competencias clave identificadas. Si aborda estas áreas, puede transicionar a un nivel de desempeño superior.
+                            </p>
+                        </div>
+
+                        {/* Print Footer Logos */}
+                        <div className="hidden print:flex justify-between items-end mt-12 pt-8 border-t border-slate-200">
+                            <img src="/prisma.png" alt="PRISMA" className="h-8 opacity-50" />
+                            <div className="text-right text-xs text-slate-400">
+                                Generado por Sistema PRISMA v2.0<br />
+                                {new Date().toLocaleString()}
                             </div>
                         </div>
-                    </section>
 
-                    {/* Resumen Final */}
-                    <div className="bg-gray-900 text-white p-6 rounded-xl">
-                        <h3 className="font-bold text-lg mb-2">Resumen del Informe PRISMA</h3>
-                        <p className="text-sm text-gray-300 leading-relaxed">
-                            El análisis simulado revela que, si bien una mayoría del personal cumple o excede las expectativas, existe una necesidad crítica de intervención en la planificación (Compromiso con la Calidad) y en el cumplimiento de las bases normativas (Institucional/Integridad), especialmente en los grupos de menor desempeño. Las acciones sugeridas combinan la capacitación técnica (planificación) con el desarrollo de competencias blandas (proactividad y asertividad) para asegurar un desempeño óptimo y alineado con los factores críticos de vinculación.
-                        </p>
-                    </div>
-
-                    <div className="mt-8 flex justify-end gap-4 print:hidden">
-                        <button onClick={() => window.print()} className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors">
-                            <Printer className="w-4 h-4" /> Imprimir
-                        </button>
-                    </div>
-
+                    </main>
                 </div>
             )}
         </div>
