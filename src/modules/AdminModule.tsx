@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Building2, Users, FileEdit, Layers, Slash, Clock } from 'lucide-react';
+import { Building2, Users, FileEdit, Layers, Slash, Clock, FileText } from 'lucide-react';
 import { OfficesManagement } from './admin/OfficesManagement';
 import { UsersManagement } from './admin/UsersManagement';
 import { TemplatesManagement } from './admin/TemplatesManagement';
@@ -8,7 +8,9 @@ import RolesManagement from './admin/RolesManagement';
 import EvaluationPeriodsManagement from './admin/EvaluationPeriodsManagement';
 import EvaluationsManagement from './admin/EvaluationsManagement';
 
-type AdminTab = 'offices' | 'users' | 'evaluations' | 'templates' | 'form_types' | 'roles' | 'periods';
+import { ReportsManagement } from './admin/ReportsManagement';
+
+type AdminTab = 'offices' | 'users' | 'evaluations' | 'templates' | 'form_types' | 'roles' | 'periods' | 'reports';
 
 export function AdminModule() {
   const [activeTab, setActiveTab] = useState<AdminTab>('offices');
@@ -17,6 +19,7 @@ export function AdminModule() {
     { id: 'offices' as AdminTab, label: 'Oficinas', icon: Building2 },
     { id: 'users' as AdminTab, label: 'Personal', icon: Users },
     { id: 'evaluations' as AdminTab, label: 'Evaluaciones', icon: FileEdit },
+    { id: 'reports' as AdminTab, label: 'Informes', icon: FileText },
     { id: 'templates' as AdminTab, label: 'Formularios', icon: FileEdit },
     { id: 'form_types' as AdminTab, label: 'Tipos de Formulario', icon: Layers },
     { id: 'roles' as AdminTab, label: 'Roles', icon: Slash },
@@ -32,18 +35,17 @@ export function AdminModule() {
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="border-b border-gray-200">
-          <nav className="flex -mb-px">
+          <nav className="flex -mb-px overflow-x-auto">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               return (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center gap-2 px-6 py-4 border-b-2 font-medium transition-colors ${
-                    activeTab === tab.id
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }`}
+                  className={`flex items-center gap-2 px-6 py-4 border-b-2 font-medium transition-colors whitespace-nowrap ${activeTab === tab.id
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
                 >
                   <Icon className="w-5 h-5" />
                   {tab.label}
@@ -57,6 +59,7 @@ export function AdminModule() {
           {activeTab === 'offices' && <OfficesManagement />}
           {activeTab === 'users' && <UsersManagement />}
           {activeTab === 'evaluations' && <EvaluationsManagement />}
+          {activeTab === 'reports' && <ReportsManagement />}
           {/* 'collaborators' tab removed — personnel is managed via UsersManagement */}
           {activeTab === 'templates' && <TemplatesManagement />}
           {activeTab === 'form_types' && <FormTypesManagement />}
