@@ -203,19 +203,8 @@ export function DashboardModule() {
             canSelfEval = rels.some((r: any) => normalizeStr(r.evaluated_role_key) === userRoleNorm);
           }
 
-          // Fallback Self-Eval (Form Type Roles)
-          if (!canSelfEval) {
-            const { data: ft } = await supabase.from('form_types').select('roles, role_ids').eq('key', tplTypeKey).single();
-            if (ft) {
-              if (userRoleId && ft.role_ids && Array.isArray(ft.role_ids)) {
-                if (ft.role_ids.includes(userRoleId)) canSelfEval = true;
-              }
-              if (!canSelfEval && ft.roles && Array.isArray(ft.roles)) {
-                const normalizedFtRoles = ft.roles.map((r: any) => normalizeStr(r));
-                if (normalizedFtRoles.includes(userRoleNorm)) canSelfEval = true;
-              }
-            }
-          }
+          // Fallback Self-Eval (Form Type Roles) - REMOVED to prevent incorrect self-evals
+          // if (!canSelfEval) { ... }
           selfMap[tpl.id] = canSelfEval;
 
           // 3. Determine Candidates (Evaluated)
