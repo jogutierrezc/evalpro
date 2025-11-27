@@ -19,6 +19,14 @@ export interface EvaluacionInput {
         orientacionResultados: number;
         calidadTrabajo: number;
     };
+    comparativeScores?: {
+        integridad: number;
+        trabajoEquipo: number;
+        institucional: number;
+        comunicacion: number;
+        orientacionResultados: number;
+        calidadTrabajo: number;
+    };
 }
 
 export interface FactorAnalisis {

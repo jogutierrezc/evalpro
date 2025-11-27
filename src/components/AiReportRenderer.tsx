@@ -1,8 +1,12 @@
 
+import { useState } from 'react';
 import {
     FileText, Award, Brain, BarChart3, TrendingUp, Target,
     CheckCircle, AlertTriangle, Printer
 } from 'lucide-react';
+import {
+    ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Legend
+} from 'recharts';
 import { FactorAnalisis, InformeGenerado, EvaluacionInput } from '../lib/ai-report-logic';
 
 const ProgressBar = ({ value, color }: { value: number; color: string }) => (
@@ -55,7 +59,17 @@ interface AiReportRendererProps {
 }
 
 export function AiReportRenderer({ inputData, informe, onPrint }: AiReportRendererProps) {
+    const [showRadar, setShowRadar] = useState(false);
     const handlePrint = onPrint || (() => window.print());
+
+    const radarData = [
+        { subject: 'Integridad', A: inputData.puntajes.integridad, B: inputData.comparativeScores?.integridad || 0, fullMark: 5 },
+        { subject: 'Equipo', A: inputData.puntajes.trabajoEquipo, B: inputData.comparativeScores?.trabajoEquipo || 0, fullMark: 5 },
+        { subject: 'Institucional', A: inputData.puntajes.institucional, B: inputData.comparativeScores?.institucional || 0, fullMark: 5 },
+        { subject: 'Comunicación', A: inputData.puntajes.comunicacion, B: inputData.comparativeScores?.comunicacion || 0, fullMark: 5 },
+        { subject: 'Resultados', A: inputData.puntajes.orientacionResultados, B: inputData.comparativeScores?.orientacionResultados || 0, fullMark: 5 },
+        { subject: 'Calidad', A: inputData.puntajes.calidadTrabajo, B: inputData.comparativeScores?.calidadTrabajo || 0, fullMark: 5 },
+    ];
 
     return (
         <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-20 print:bg-white">
@@ -64,19 +78,23 @@ export function AiReportRenderer({ inputData, informe, onPrint }: AiReportRender
             <header className="bg-slate-900 text-white pt-16 pb-24 px-6 md:px-12 relative overflow-hidden print:pt-8 print:pb-12">
                 <div className="absolute top-0 right-0 w-64 h-64 bg-blue-600 rounded-full blur-3xl opacity-20 -mr-20 -mt-20 print:hidden"></div>
                 <div className="max-w-5xl mx-auto relative z-10">
-                    <div className="flex items-center gap-2 text-amber-400 font-bold text-sm tracking-wider uppercase mb-4">
-                        <FileText className="w-4 h-4" /> Informe Confidencial de Desempeño
-                    </div>
-                    <h1 className="text-4xl md:text-5xl font-extrabold mb-2">{inputData.evaluado.nombre}</h1>
-                    <p className="text-slate-400 text-lg flex items-center gap-4">
-                        <span>{inputData.evaluado.rol}</span>
-                        <span className="w-1 h-1 bg-slate-600 rounded-full"></span>
-                        <span>{inputData.evaluado.fecha}</span>
-                    </p>
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                        <div>
+                            <div className="flex items-center gap-2 text-amber-400 font-bold text-sm tracking-wider uppercase mb-4">
+                                <FileText className="w-4 h-4" /> Informe Confidencial de Desempeño
+                            </div>
+                            <h1 className="text-4xl md:text-5xl font-extrabold mb-2">{inputData.evaluado.nombre}</h1>
+                            <p className="text-slate-400 text-lg flex items-center gap-4">
+                                <span>{inputData.evaluado.rol}</span>
+                                <span className="w-1 h-1 bg-slate-600 rounded-full"></span>
+                                <span>{inputData.evaluado.fecha}</span>
+                            </p>
+                        </div>
 
-                    <div className="absolute top-10 right-10 hidden md:block text-right print:block">
-                        <div className="text-slate-500 text-xs uppercase tracking-widest mb-1">Evaluado por</div>
-                        <div className="font-semibold text-slate-300">Sistema Neural de Análisis Psicológico</div>
+                        <div className="text-left md:text-right print:block bg-slate-800/50 p-4 rounded-lg md:bg-transparent md:p-0">
+                            <div className="text-slate-500 text-xs uppercase tracking-widest mb-1">Evaluado por</div>
+                            <div className="font-semibold text-slate-300">Sistema Neural de Análisis Psicológico</div>
+                        </div>
                     </div>
                 </div>
             </header>
@@ -130,10 +148,43 @@ export function AiReportRenderer({ inputData, informe, onPrint }: AiReportRender
                     <div className="flex items-center justify-between mb-6">
                         <h2 className="text-2xl font-bold text-slate-900">Análisis Detallado por Factores</h2>
                         {/* Hidden on print */}
-                        <button className="text-slate-500 hover:text-blue-600 text-sm font-medium flex items-center gap-1 transition-colors print:hidden">
-                            <BarChart3 className="w-4 h-4" /> Ver Gráfica Radar
+                        <button
+                            onClick={() => setShowRadar(!showRadar)}
+                            className="text-slate-500 hover:text-blue-600 text-sm font-medium flex items-center gap-1 transition-colors print:hidden"
+                        >
+                            <BarChart3 className="w-4 h-4" /> {showRadar ? 'Ocultar Gráfica' : 'Ver Gráfica Radar'}
                         </button>
                     </div>
+
+                    {showRadar && (
+                        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 mb-8 animate-in fade-in slide-in-from-top-4 duration-500">
+                            <h3 className="text-lg font-bold text-slate-800 mb-4 text-center">Comparativa: Autoevaluación vs. Promedio Institucional</h3>
+                            <div className="h-[400px] w-full">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <RadarChart cx="50%" cy="50%" outerRadius="80%" data={radarData}>
+                                        <PolarGrid />
+                                        <PolarAngleAxis dataKey="subject" />
+                                        <PolarRadiusAxis angle={30} domain={[0, 5]} />
+                                        <Radar
+                                            name={inputData.evaluado.nombre}
+                                            dataKey="A"
+                                            stroke="#2563eb"
+                                            fill="#3b82f6"
+                                            fillOpacity={0.6}
+                                        />
+                                        <Radar
+                                            name="Promedio Institucional"
+                                            dataKey="B"
+                                            stroke="#94a3b8"
+                                            fill="#cbd5e1"
+                                            fillOpacity={0.4}
+                                        />
+                                        <Legend />
+                                    </RadarChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+                    )}
 
                     <div className="space-y-4">
                         {informe.factores.map((factor) => (

@@ -19,6 +19,8 @@ export function SelfEvaluationReport() {
     const loadEvaluationData = async () => {
         try {
             setLoading(true);
+
+            // 1. Fetch User Evaluation
             const { data: evaluations, error } = await supabase
                 .from('evaluations')
                 .select(`
@@ -40,26 +42,40 @@ export function SelfEvaluationReport() {
 
             if (error) throw error;
 
+            // 2. Fetch Comparative Data (All completed evaluations)
+            const { data: allEvaluations } = await supabase
+                .from('evaluations')
+                .select(`
+                    responses:evaluation_responses(
+                        response_value,
+                        question:evaluation_questions(
+                            section:evaluation_sections(title)
+                        )
+                    )
+                `)
+                .eq('status', 'completed');
+
             if (evaluations && evaluations.length > 0) {
                 const evalData = evaluations[0];
-                const responses = evalData.responses || [];
 
-                // Aggregate scores by section
+                // Helper to map section titles to keys
+                const mapSectionToKey = (title: string) => {
+                    const lowerTitle = title.toLowerCase();
+                    if (lowerTitle.includes('integridad') || lowerTitle.includes('ética')) return 'integridad';
+                    if (lowerTitle.includes('equipo') || lowerTitle.includes('colaboración')) return 'trabajoEquipo';
+                    if (lowerTitle.includes('institucional')) return 'institucional';
+                    if (lowerTitle.includes('resultados') || lowerTitle.includes('innovación')) return 'orientacionResultados';
+                    if (lowerTitle.includes('liderazgo')) return 'liderazgo';
+                    if (lowerTitle.includes('calidad')) return 'calidadTrabajo';
+                    if (lowerTitle.includes('comunicación')) return 'comunicacion';
+                    return 'general';
+                };
+
+                // Process User Scores
                 const sectionScores: Record<string, { total: number; count: number }> = {};
-
-                responses.forEach((r: any) => {
-                    const sectionTitle = r.question?.section?.title || 'General';
-                    let key = 'general';
-                    const lowerTitle = sectionTitle.toLowerCase();
-                    if (lowerTitle.includes('integridad') || lowerTitle.includes('ética')) key = 'integridad';
-                    else if (lowerTitle.includes('equipo') || lowerTitle.includes('colaboración')) key = 'trabajoEquipo';
-                    else if (lowerTitle.includes('institucional')) key = 'institucional';
-                    else if (lowerTitle.includes('resultados') || lowerTitle.includes('innovación')) key = 'orientacionResultados';
-                    else if (lowerTitle.includes('liderazgo')) key = 'liderazgo';
-                    else if (lowerTitle.includes('calidad')) key = 'calidadTrabajo';
-                    else if (lowerTitle.includes('comunicación')) key = 'comunicacion';
-                    else key = sectionTitle;
-
+                evalData.responses?.forEach((r: any) => {
+                    const title = r.question?.section?.title || 'General';
+                    const key = mapSectionToKey(title);
                     if (!sectionScores[key]) sectionScores[key] = { total: 0, count: 0 };
                     sectionScores[key].total += Number(r.response_value) || 0;
                     sectionScores[key].count += 1;
@@ -70,14 +86,42 @@ export function SelfEvaluationReport() {
                     puntajes[key] = Number((val.total / val.count).toFixed(1));
                 });
 
+                // Process Comparative Scores
+                const compScores: Record<string, { total: number; count: number }> = {};
+                if (allEvaluations) {
+                    allEvaluations.forEach(ev => {
+                        ev.responses?.forEach((r: any) => {
+                            const title = r.question?.section?.title || 'General';
+                            const key = mapSectionToKey(title);
+                            if (!compScores[key]) compScores[key] = { total: 0, count: 0 };
+                            compScores[key].total += Number(r.response_value) || 0;
+                            compScores[key].count += 1;
+                        });
+                    });
+                }
+
+                const comparativePuntajes: any = {};
+                Object.entries(compScores).forEach(([key, val]) => {
+                    comparativePuntajes[key] = Number((val.total / val.count).toFixed(1));
+                });
+
                 // Ensure all required keys exist with defaults
                 const finalPuntajes = {
                     integridad: puntajes.integridad || 0,
                     trabajoEquipo: puntajes.trabajoEquipo || 0,
                     institucional: puntajes.institucional || 0,
-                    comunicacion: puntajes.comunicacion || puntajes.liderazgo || 0, // Fallback
+                    comunicacion: puntajes.comunicacion || puntajes.liderazgo || 0,
                     orientacionResultados: puntajes.orientacionResultados || 0,
                     calidadTrabajo: puntajes.calidadTrabajo || 0
+                };
+
+                const finalComparativePuntajes = {
+                    integridad: comparativePuntajes.integridad || 0,
+                    trabajoEquipo: comparativePuntajes.trabajoEquipo || 0,
+                    institucional: comparativePuntajes.institucional || 0,
+                    comunicacion: comparativePuntajes.comunicacion || comparativePuntajes.liderazgo || 0,
+                    orientacionResultados: comparativePuntajes.orientacionResultados || 0,
+                    calidadTrabajo: comparativePuntajes.calidadTrabajo || 0
                 };
 
                 setInputData({
@@ -86,7 +130,8 @@ export function SelfEvaluationReport() {
                         rol: user!.role || 'Analista',
                         fecha: new Date(evalData.created_at).toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })
                     },
-                    puntajes: finalPuntajes
+                    puntajes: finalPuntajes,
+                    comparativeScores: finalComparativePuntajes
                 });
             } else {
                 setInputData(null);
