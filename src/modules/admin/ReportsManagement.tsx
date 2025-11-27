@@ -30,7 +30,7 @@ import {
     Sparkles,
     Shield // Added Shield
 } from 'lucide-react';
-import { generarInformeIA, EvaluacionInput, InformeGenerado } from '../../lib/ai-report-logic';
+import { generarInformeIA, EvaluacionInput, InformeGenerado, TipoExamenVaf } from '../../lib/ai-report-logic';
 import { AiReportRenderer } from '../../components/AiReportRenderer';
 
 // --- Types ---
@@ -456,13 +456,29 @@ export function ReportsManagement() {
                         puntajes[key] = Number((val.total / val.count).toFixed(1));
                     });
 
+                    // Determine specific VAF type based on template name
+                    let tipoInforme: TipoExamenVaf = 'AUTOEVALUACION';
+
+                    if (reportType === 'vaf') {
+                        const tName = templateName.toLowerCase();
+                        if (tName.includes('lider') && tName.includes('colaborador')) {
+                            tipoInforme = 'LIDERAZGO_TACTICO';
+                        } else if (tName.includes('lider')) {
+                            tipoInforme = 'LIDER_ESTRATEGICO';
+                        } else {
+                            tipoInforme = 'EQUIPO_OPERATIVO';
+                        }
+                    } else if (reportType === 'ai-self') {
+                        tipoInforme = 'AUTOEVALUACION';
+                    }
+
                     const input: EvaluacionInput = {
                         evaluado: {
                             nombre: subject?.full_name || 'Colaborador',
                             rol: subject?.role || 'Analista',
                             fecha: new Date(evalData.created_at).toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })
                         },
-                        tipoInforme: reportType === 'vaf' ? 'vaf' : 'autoevaluacion',
+                        tipoInforme: tipoInforme,
                         puntajes: puntajes
                     };
 

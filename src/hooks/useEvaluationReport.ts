@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
-import { EvaluacionInput } from '../lib/ai-report-logic';
+import { EvaluacionInput, TipoExamenVaf } from '../lib/ai-report-logic';
 
 interface UseEvaluationReportProps {
     evaluationId?: string;
@@ -126,22 +126,30 @@ export function useEvaluationReport({ evaluationId, userId }: UseEvaluationRepor
             });
 
             // Determine Report Type
-            let tipoInforme: 'autoevaluacion' | 'lider_a_colaborador' | 'otro' = 'otro';
+            let tipoInforme: TipoExamenVaf = 'AUTOEVALUACION';
             const template = (evaluationData as any).template;
             const tName = (template?.name || '').toLowerCase();
             const tType = (template?.type || '').toLowerCase();
 
-            if (tType === 'self' || tName.includes('autoevaluación') || tName.includes('autoevaluacion')) {
-                tipoInforme = 'autoevaluacion';
+            if (tName.includes('vaf')) {
+                if (tName.includes('lider') && tName.includes('colaborador')) {
+                    tipoInforme = 'LIDERAZGO_TACTICO';
+                } else if (tName.includes('lider')) {
+                    tipoInforme = 'LIDER_ESTRATEGICO';
+                } else {
+                    tipoInforme = 'EQUIPO_OPERATIVO';
+                }
+            } else if (tType === 'self' || tName.includes('autoevaluación') || tName.includes('autoevaluacion')) {
+                tipoInforme = 'AUTOEVALUACION';
             } else if (tType === 'manager_to_employee' || tName.includes('líder') || tName.includes('lider') || tName.includes('evaluador')) {
-                tipoInforme = 'lider_a_colaborador';
+                tipoInforme = 'LIDERAZGO_TACTICO';
             }
 
             const evaluadoUser = (evaluationData as any).evaluated;
             const evaluatorUser = (evaluationData as any).evaluator;
 
             let evaluadorNombre = 'Sistema Neural de Análisis Prisma UDES';
-            if (tipoInforme === 'lider_a_colaborador') {
+            if (tipoInforme === 'LIDERAZGO_TACTICO') {
                 evaluadorNombre = evaluatorUser?.full_name || 'Líder Evaluador';
             }
 

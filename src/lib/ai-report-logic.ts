@@ -1,8 +1,13 @@
-import { Shield, Users, Building, MessageSquare, Target, Award, Briefcase, Lightbulb, FileCheck, ClipboardList, TrendingUp, Archive, AlertTriangle } from 'lucide-react';
+import {
+    Shield, Users, Building, MessageSquare, Target, Award,
+    Briefcase, Lightbulb, FileCheck, TrendingUp, Archive, AlertTriangle,
+    Brain, HeartHandshake, Scale
+} from 'lucide-react';
 
 // --- 1. Definición de Tipos de Datos ---
 
-export type RangoDesempeno = 'CRITICO' | 'VULNERABLE' | 'COMPETENTE' | 'DESTACADO' | 'MODELO';
+export type TipoExamenVaf = 'LIDER_ESTRATEGICO' | 'EQUIPO_OPERATIVO' | 'LIDERAZGO_TACTICO' | 'AUTOEVALUACION';
+export type RangoDesempeno = 'CRITICO' | 'ALERTA' | 'SATISFACTORIO' | 'SOBRESALIENTE' | 'REFERENTE';
 
 export interface EvaluacionInput {
     evaluado: {
@@ -10,11 +15,10 @@ export interface EvaluacionInput {
         rol: string;
         fecha: string;
     };
-    tipoInforme?: 'autoevaluacion' | 'lider_a_colaborador' | 'vaf' | 'otro';
-    evaluadorNombre?: string;
-    // Ahora soportamos claves dinámicas basadas en las secciones reales de la evaluación
+    // Mapeamos tus 4 imágenes a estos tipos
+    tipoInforme: TipoExamenVaf;
     puntajes: Record<string, number>;
-    comparativeScores?: Record<string, number>;
+    comparativeScores?: Record<string, number>; // Added to keep compatibility with existing calls if needed, though not used in logic
 }
 
 export interface FactorAnalisis {
@@ -24,319 +28,247 @@ export interface FactorAnalisis {
     rango: RangoDesempeno;
     color: string;
     icono: any;
-    fortaleza: string;
-    vulnerabilidad: string;
-    analisisAmpliado: string; // Nuevo campo para texto detallado
-}
-
-export interface Recomendacion {
-    id: string;
-    titulo: string;
-    tipo: 'Estrategia' | 'Cultura' | 'Liderazgo' | 'Operativo';
-    descripcion: string;
+    analisisPsicoTecnico: string; // Fusión de psicología y calidad
+    accionSugerida: string;
 }
 
 export interface InformeGenerado {
     meta: {
         puntajeGlobal: number;
         nivelGlobal: string;
-        arquetipo: {
-            nombre: string;
-            descripcion: string;
-            icono: string;
-        };
+        perfilPsicometrico: string; // Nuevo: Resumen del perfil
     };
     resumenEjecutivo: string;
     factores: FactorAnalisis[];
     diagnosticoIA: string;
-    recomendaciones: Recomendacion[];
+    // recomendaciones: any[]; // Removed as per new logic, but might need to handle UI compatibility
 }
 
-// --- 2. Base de Conocimiento (Matriz de Variaciones) ---
+// --- 2. Motor de Juicio Experto (Knowledge Base Contextual) ---
 
-export const KNOWLEDGE_BASE = {
-    arquetipos: [
-        {
-            trigger: (scores: Record<string, number>) => (scores['integridad'] || 0) >= 4.8 && (scores['trabajoEquipo'] || 0) >= 4.8,
-            nombre: "Estabilizador Institucional",
-            descripcion: "Columna vertebral moral y operativa. Garantiza la cohesión y el cumplimiento normativo.",
-            icono: "🏛️"
-        },
-        {
-            trigger: (scores: Record<string, number>) => (scores['orientacionResultados'] || 0) >= 4.8 && (scores['comunicacion'] || 0) >= 4.5,
-            nombre: "Impulsor Estratégico",
-            descripcion: "Agente de cambio enfocado en metas agresivas y movilización de equipos.",
-            icono: "🚀"
-        },
-        {
-            trigger: (scores: Record<string, number>) => (scores['calidadTrabajo'] || 0) >= 4.8 && (scores['trabajoEquipo'] || 0) < 4.0,
-            nombre: "Especialista Técnico",
-            descripcion: "Alto desempeño individual con oportunidades en la integración colaborativa.",
-            icono: "⚙️"
-        },
-        {
-            trigger: (scores: Record<string, number>) => true, // Fallback
-            nombre: "Ejecutor Consistente",
-            descripcion: "Perfil equilibrado que cumple con los estándares esperados de la organización.",
-            icono: "📋"
-        }
-    ],
-    textosPorDimension: {
-        integridad: {
+/* Estructura:
+   Tipo de Examen -> Keywords de Sección -> Rangos de Puntaje -> Interpretación
+*/
+
+interface CriterioEvaluacion {
+    icono: any;
+    pesoPsicologico: string; // Qué significa conductualmente
+    pesoTecnico: string; // Qué significa para la norma VAF
+    rangos: {
+        min: number;
+        max: number;
+        juicio: string; // El texto "humano/experto"
+        accion: string;
+    }[];
+}
+
+const BASE_CONOCIMIENTO_EXPERTO: Record<TipoExamenVaf, Record<string, CriterioEvaluacion>> = {
+
+    // IMAGEN 1: LIDER VAF (Enfoque: Visión, Integridad, Resultados Macro)
+    'LIDER_ESTRATEGICO': {
+        'integridad': {
             icono: Shield,
-            keywords: ['integridad', 'ética', 'etica', 'valores', 'honestidad', 'moral'],
-            MODELO: { f: "Referente moral absoluto; transparencia incuestionable.", v: "Posible rigidez ante situaciones de 'zona gris' que requieran flexibilidad." },
-            DESTACADO: { f: "Alineación sólida con valores corporativos.", v: "Ocasionalmente puede dudar en reportar faltas menores de compañeros." },
-            COMPETENTE: { f: "Cumple las normas básicas sin incidentes.", v: "Requiere supervisión en manejo de información confidencial compleja." },
-            CRITICO: { f: "Reconoce la normativa básica.", v: "Riesgos éticos detectados; requiere plan de intervención inmediato." },
-            VULNERABLE: { f: "Conoce las normas.", v: "Riesgo de desviaciones normativas." }
+            pesoPsicologico: "Coherencia entre valores y acciones.",
+            pesoTecnico: "Alineación con Política de Calidad y Ética Institucional.",
+            rangos: [
+                { min: 0, max: 3.5, juicio: "Se percibe una disonancia cognitiva entre el rol esperado y la conducta ética observada. Riesgo reputacional alto.", accion: "Intervención inmediata por Comité de Ética." },
+                { min: 3.6, max: 4.5, juicio: "Conducta adecuada, aunque en situaciones de presión podría flexibilizar estándares.", accion: "Refuerzo de cultura de transparencia." },
+                { min: 4.6, max: 5.0, juicio: "Ejerce un liderazgo moral incuestionable, actuando como el 'Superyó' de la organización.", accion: "Mentoring de valores a nuevos líderes." }
+            ]
         },
-        trabajoEquipo: {
-            icono: Users,
-            keywords: ['equipo', 'colaboración', 'colaboracion', 'interpersonal', 'relaciones', 'compañerismo'],
-            MODELO: { f: "Agente de cohesión; reduce la fricción grupal instintivamente.", v: "Tendencia a asumir carga ajena para evitar conflictos." },
-            DESTACADO: { f: "Colaborador activo y empático.", v: "Puede mejorar en la delegación asertiva hacia pares." },
-            COMPETENTE: { f: "Participa cuando se le solicita.", v: "Preferencia por el trabajo silo/individual sobre el colectivo." },
-            CRITICO: { f: "Requiere integración urgente.", v: "Genera fricción o resistencia pasiva en dinámicas grupales." },
-            VULNERABLE: { f: "Interacción limitada.", v: "Dificultad para integrarse y colaborar proactivamente." }
+        'liderazgo': {
+            icono: Brain,
+            pesoPsicologico: "Capacidad de influencia y contención emocional del equipo.",
+            pesoTecnico: "Sección 5.1 ISO 9001 - Liderazgo y Compromiso.",
+            rangos: [
+                { min: 0, max: 3.5, juicio: "Estilo de liderazgo ausente o laissez-faire. El equipo percibe falta de dirección, generando ansiedad operativa.", accion: "Programa de desarrollo de habilidades directivas." },
+                { min: 3.6, max: 4.2, juicio: "Liderazgo transaccional. Funciona por objetivos pero falta conexión inspiracional.", accion: "Talleres de liderazgo transformacional." },
+                { min: 4.3, max: 5.0, juicio: "Liderazgo transformacional. Logra movilizar la voluntad del equipo hacia la visión VAF.", accion: "Delegación estratégica de proyectos." }
+            ]
         },
-        institucional: {
-            icono: Building,
-            keywords: ['institucional', 'compromiso', 'pertenencia', 'identidad', 'cultura'],
-            MODELO: { f: "Embajador de la marca y cultura institucional.", v: "Puede sobre-identificarse y perder objetividad crítica." },
-            DESTACADO: { f: "Alto sentido de pertenencia y lealtad.", v: "Podría participar más en iniciativas transversales." },
-            COMPETENTE: { f: "Respeta la institución y sus símbolos.", v: "Participación pasiva en eventos institucionales." },
-            CRITICO: { f: "Conoce la misión institucional.", v: "Desconexión con los valores y objetivos de la organización." },
-            VULNERABLE: { f: "Cumplimiento básico de protocolos.", v: "Falta de alineación con la visión estratégica." }
-        },
-        comunicacion: {
-            icono: MessageSquare,
-            keywords: ['comunicación', 'comunicacion', 'asertividad', 'expresión', 'expresion', 'escucha'],
-            MODELO: { f: "Comunicador persuasivo e inspirador.", v: "Debe cuidar no monopolizar la palabra en reuniones." },
-            DESTACADO: { f: "Claro, asertivo y escucha activamente.", v: "En ocasiones puede ser demasiado directo." },
-            COMPETENTE: { f: "Se expresa correctamente.", v: "Le cuesta adaptar su mensaje a diferentes audiencias." },
-            CRITICO: { f: "Se comunica cuando es estrictamente necesario.", v: "Barreras comunicativas que generan malentendidos." },
-            VULNERABLE: { f: "Transmite información básica.", v: "Dificultad para expresar ideas complejas o dar feedback." }
-        },
-        liderazgo: {
-            icono: Lightbulb,
-            keywords: ['liderazgo', 'dirección', 'direccion', 'gestión de personas', 'mando'],
-            MODELO: { f: "Líder inspirador que desarrolla nuevos talentos.", v: "Puede ser percibido como demasiado exigente o idealista." },
-            DESTACADO: { f: "Gestiona equipos con eficacia y equidad.", v: "Oportunidad de delegar decisiones más estratégicas." },
-            COMPETENTE: { f: "Mantiene el orden y el cumplimiento de objetivos.", v: "Estilo de liderazgo transaccional, falta visión transformacional." },
-            CRITICO: { f: "Asume el rol formalmente.", v: "Desconexión con el equipo; pérdida de autoridad moral." },
-            VULNERABLE: { f: "Intenta guiar al equipo.", v: "Dificultad para motivar o resolver conflictos." }
-        },
-        orientacionResultados: {
+        // Mapeo genérico para otras secciones de Imagen 1
+        'default': {
             icono: Target,
-            keywords: ['resultados', 'logro', 'objetivos', 'metas', 'desempeño', 'innovacion', 'innovación', 'proactividad'],
-            MODELO: { f: "Visión láser en objetivos; supera expectativas consistentemente.", v: "Riesgo de 'burnout' o de atropellar procesos por llegar a la meta." },
-            DESTACADO: { f: "Cumple metas con calidad superior.", v: "Enfoque en el 'cómo' (proceso) puede retrasar el 'qué' (resultado final)." },
-            COMPETENTE: { f: "Ejecuta lo asignado correctamente.", v: "Reactivo; espera instrucciones en lugar de proponer mejoras." },
-            CRITICO: { f: "Intenta cumplir con las tareas.", v: "Pierde el foco fácilmente; productividad por debajo del estándar." },
-            VULNERABLE: { f: "Cumple parcialmente.", v: "Requiere seguimiento constante para asegurar entregables." }
-        },
-        calidadTrabajo: {
-            icono: Award,
-            keywords: ['calidad', 'excelencia', 'técnica', 'tecnica', 'rigor', 'detalle', 'profesionalismo', 'conocimiento'],
-            MODELO: { f: "Excelencia técnica y atención al detalle impecable.", v: "Puede caer en perfeccionismo paralizante." },
-            DESTACADO: { f: "Entregables de alta calidad y confiabilidad.", v: "Toma más tiempo del necesario en revisiones menores." },
-            COMPETENTE: { f: "Trabajo funcional y sin errores graves.", v: "Falta de profundidad en análisis o acabados." },
-            CRITICO: { f: "Entrega lo solicitado.", v: "Errores frecuentes que requieren reprocesos." },
-            VULNERABLE: { f: "Cumple con los requisitos mínimos.", v: "Descuido en detalles y presentación final." }
+            pesoPsicologico: "Eficacia personal.",
+            pesoTecnico: "Cumplimiento de objetivos.",
+            rangos: [
+                { min: 0, max: 3.9, juicio: "Desempeño por debajo del umbral estratégico.", accion: "Plan de mejora." },
+                { min: 4.0, max: 5.0, juicio: "Alineación estratégica sólida.", accion: "Mantener consistencia." }
+            ]
         }
-    }
-};
+    },
 
-// --- 2.1 Base de Conocimiento VAF (Específica) ---
-export const KNOWLEDGE_BASE_VAF = {
-    textosPorDimension: {
-        salidasNoConformes: {
-            icono: AlertTriangle, // Usar un icono apropiado si existe, o uno genérico
-            keywords: ['salidas no conformes', 'errores', 'kawak', 'no conforme', 'conforme'],
-            MODELO: { f: "Gestión preventiva de riesgos (Sección 9.1.7). Se anticipa a errores.", v: "Ninguna detectada." },
-            DESTACADO: { f: "Identifica y reporta salidas no conformes oportunamente.", v: "Podría mejorar en el análisis de causa raíz." },
-            COMPETENTE: { f: "Registra errores en Kawak cuando se le solicita.", v: "Gestión reactiva de salidas no conformes." },
-            CRITICO: { f: "Reconoce errores evidentes.", v: "No reporta en Kawak; oculta errores (Incumplimiento VAF-PR-001-UDES)." },
-            VULNERABLE: { f: "Conoce el procedimiento.", v: "Falta de registro sistemático." }
-        },
-        cumplimientoRequisitos: {
-            icono: FileCheck,
-            keywords: ['requisitos', 'satisfacción', 'cliente', 'normativa', 'cumplimiento'],
-            MODELO: { f: "Asegura requisitos del cliente (Sección 8.2.1) y actualiza documentación.", v: "Exceso de celo puede ralentizar entregas." },
-            DESTACADO: { f: "Verifica calidad antes de entrega (Sección 9.1.2.3).", v: "Ocasionalmente usa versiones anteriores de guías." },
-            COMPETENTE: { f: "Cumple requisitos básicos del servicio.", v: "Atención al cliente reactiva." },
-            CRITICO: { f: "Intenta cumplir.", v: "Uso de documentos obsoletos; quejas de usuarios." },
-            VULNERABLE: { f: "Conoce los requisitos.", v: "Errores en entregables finales." }
-        },
-        liderazgoVaf: {
-            icono: Users,
-            keywords: ['liderazgo', 'indicadores', 'metas', 'clima', 'armonía', 'aporte'],
-            MODELO: { f: "Promueve la armonía y el trabajo en equipo (Sección 7.3).", v: "Puede asumir demasiada carga del equipo." },
-            DESTACADO: { f: "Comprende su aporte a la estructura (Sección 6.1).", v: "Podría proponer más mejoras al clima laboral." },
-            COMPETENTE: { f: "Conoce sus indicadores.", v: "Participación pasiva en la mejora del clima." },
-            CRITICO: { f: "Asiste al trabajo.", v: "Genera fricción; desconoce impacto en metas del área." },
-            VULNERABLE: { f: "Cumple horario.", v: "Falta de alineación con objetivos de calidad." }
-        },
-        gestionDocumental: {
+    // IMAGEN 2: EQUIPO VAF (Enfoque: Operativo, Normativo, Ejecución)
+    'EQUIPO_OPERATIVO': {
+        'gestion documental': {
             icono: Archive,
-            keywords: ['documental', 'archivos', 'formatos', 'versión vigente', 'organiza'],
-            MODELO: { f: "Trazabilidad documental impecable (Sección 8.4.5).", v: "Ninguna significativa." },
-            DESTACADO: { f: "Usa documentos vigentes del Listado Maestro.", v: "Algún archivo físico desordenado." },
-            COMPETENTE: { f: "Mantiene archivos organizados.", v: "A veces guarda copias locales obsoletas." },
-            CRITICO: { f: "Sabe dónde están los archivos.", v: "Pérdida de información; uso de formatos viejos." },
-            VULNERABLE: { f: "Intenta organizar.", v: "Dificultad para recuperar información histórica." }
+            pesoPsicologico: "Orden mental, disciplina y atención al detalle.",
+            pesoTecnico: "Sección 8.4.5 - Control de Información Documentada.",
+            rangos: [
+                { min: 0, max: 2.9, juicio: "Caos operativo. La desorganización refleja falta de estructura mental y riesgo crítico de pérdida de trazabilidad.", accion: "Auditoría documental y re-inducción obligatoria." },
+                { min: 3.0, max: 3.9, juicio: "Cumplimiento parcial. Existe la intención pero falta rigor en el uso de versiones vigentes (Kawak).", accion: "Revisión mensual de carpetas." },
+                { min: 4.0, max: 4.7, juicio: "Disciplina operativa notable. Mantiene el orden y facilita el acceso a la información.", accion: "Reconocimiento público." },
+                { min: 4.8, max: 5.0, juicio: "Mentalidad sistemática. No solo organiza, sino que optimiza el flujo documental.", accion: "Nombrar gestor documental del área." }
+            ]
         },
-        planeacionMejora: {
+        'salidas no conformes': {
+            icono: AlertTriangle,
+            pesoPsicologico: "Honestidad, capacidad de reconocer errores y resiliencia.",
+            pesoTecnico: "Sección 9.1.7 - Control de Salidas No Conformes.",
+            rangos: [
+                { min: 0, max: 3.0, juicio: "Negación del error. Posible ocultamiento de fallas por miedo o negligencia. Crítico para la calidad.", accion: "Sesión de feedback correctivo urgente." },
+                { min: 3.1, max: 4.0, juicio: "Detección reactiva. Reconoce el error solo cuando es evidente, falta proactividad preventiva.", accion: "Capacitación en gestión de riesgos." },
+                { min: 4.1, max: 5.0, juicio: "Madurez profesional. Ve el error como oportunidad de mejora y lo gestiona preventivamente.", accion: "Liderar análisis de causa raíz." }
+            ]
+        },
+        'cumplimiento': { // Matches 'Cumplimiento de requisitos'
+            icono: FileCheck,
+            pesoPsicologico: "Responsabilidad y compromiso con el otro (Cliente).",
+            pesoTecnico: "Sección 8.2 - Requisitos para productos y servicios.",
+            rangos: [
+                { min: 0, max: 3.5, juicio: "Incumplimiento de la promesa de valor. Genera insatisfacción y desconfianza en el usuario.", accion: "Supervisión directa de entregables." },
+                { min: 3.6, max: 5.0, juicio: "Orientación al servicio sólida. El cliente percibe confiabilidad.", accion: "Continuar buenas prácticas." }
+            ]
+        },
+        'default': {
+            icono: Briefcase,
+            pesoPsicologico: "Desempeño funcional.",
+            pesoTecnico: "Ejecución de procesos.",
+            rangos: [{ min: 0, max: 5, juicio: "Evaluación operativa estándar.", accion: "Seguimiento periódico." }]
+        }
+    },
+
+    // IMAGEN 3: LIDER A EQUIPO (Enfoque: Supervisión, Mejora, Compromiso)
+    'LIDERAZGO_TACTICO': {
+        'mejora': { // Matches 'Orientación a la mejora' y 'Mejora'
             icono: TrendingUp,
-            keywords: ['planeación', 'mejora', 'riesgos', 'phva', 'oportunidades'],
-            MODELO: { f: "Participa activamente en mejora continua (Sección 11.2).", v: "Riesgo de proponer cambios sin validar impacto." },
-            DESTACADO: { f: "Cumple cronograma anual (Sección 9.1.1).", v: "Podría ser más proactivo identificando riesgos." },
-            COMPETENTE: { f: "Ejecuta actividades planeadas.", v: "Poca propuesta de valor agregado." },
-            CRITICO: { f: "Sigue instrucciones.", v: "Incumplimiento de cronograma; reactivo ante riesgos." },
-            VULNERABLE: { f: "Conoce el plan.", v: "Retrasos frecuentes en ejecución." }
+            pesoPsicologico: "Mentalidad de crecimiento (Growth Mindset) vs Mentalidad fija.",
+            pesoTecnico: "Sección 11.2 - Mejora Continua ISO 9001.",
+            rangos: [
+                { min: 0, max: 3.5, juicio: "Resistencia al cambio. Se aferra a métodos antiguos ('siempre se ha hecho así').", accion: "Desafiar status quo con pequeños proyectos." },
+                { min: 3.6, max: 4.5, juicio: "Adaptabilidad funcional. Acepta cambios pero rara vez los propone.", accion: "Incentivar la propuesta de 1 mejora al mes." },
+                { min: 4.6, max: 5.0, juicio: "Agente de cambio nato. Inquietud intelectual positiva que impulsa la eficiencia del área.", accion: "Liderar comité de innovación." }
+            ]
+        },
+        'compromiso': { // Matches 'Compromiso del líder...'
+            icono: HeartHandshake,
+            pesoPsicologico: "Identificación con la causa (Engagement).",
+            pesoTecnico: "Adherencia a políticas SGC.",
+            rangos: [
+                { min: 0, max: 3.8, juicio: "Desapego institucional. Cumple por obligación, no por convicción.", accion: "Entrevista de realineación." },
+                { min: 3.9, max: 5.0, juicio: "Role model. Transmite los valores de calidad con su ejemplo diario.", accion: "Mentoring." }
+            ]
+        },
+        'default': {
+            icono: Users,
+            pesoPsicologico: "Dinámica de equipo.",
+            pesoTecnico: "Gestión de recursos.",
+            rangos: [{ min: 0, max: 5, juicio: "Gestión táctica evaluada.", accion: "Revisar indicadores." }]
+        }
+    },
+
+    // IMAGEN 4: AUTOEVALUACION (Enfoque: Introspección, Honestidad, Soft Skills)
+    'AUTOEVALUACION': {
+        'default': {
+            icono: Scale,
+            pesoPsicologico: "Autopercepción y autoestima profesional.",
+            pesoTecnico: "Competencias blandas.",
+            rangos: [
+                { min: 0, max: 3.0, juicio: "Autocrítica severa o desempeño real bajo. Indica inseguridad o desmotivación.", accion: "Validar con evaluación del líder." },
+                { min: 3.1, max: 4.5, juicio: "Autopercepción equilibrada. Reconoce fortalezas y áreas de mejora con realismo.", accion: "Plan de desarrollo personal (PDI)." },
+                { min: 4.6, max: 5.0, juicio: "Posible efecto Dunning-Kruger (sobreestimación) o excelencia real. Requiere contraste con KPI objetivos.", accion: "Contrastar con métricas duras." }
+            ]
         }
     }
 };
 
-// --- 3. Motor de Análisis (Funciones Helper) ---
+// --- 3. Funciones Helper de Análisis ---
 
-export const determinarRango = (score: number): RangoDesempeno => {
-    if (score >= 4.5) return 'MODELO'; // Ajustado para VAF (90-100%)
-    if (score >= 3.5) return 'DESTACADO'; // Ajustado (70-89%)
-    if (score >= 3.0) return 'COMPETENTE';
-    if (score >= 2.0) return 'VULNERABLE';
-    return 'CRITICO';
+const normalizarTexto = (texto: string) => texto.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+const encontrarCriterio = (tipo: TipoExamenVaf, seccion: string): CriterioEvaluacion => {
+    const kb = BASE_CONOCIMIENTO_EXPERTO[tipo];
+    const seccionNorm = normalizarTexto(seccion);
+
+    // Búsqueda por palabras clave en las claves del objeto
+    const keyEncontrada = Object.keys(kb).find(key => seccionNorm.includes(key));
+
+    return keyEncontrada ? kb[keyEncontrada] : kb['default'];
 };
 
-export const getColorPorRango = (rango: RangoDesempeno): string => {
-    switch (rango) {
-        case 'MODELO': return 'bg-blue-600'; // Azul fuerte
-        case 'DESTACADO': return 'bg-blue-500'; // Azul estándar
-        case 'COMPETENTE': return 'bg-yellow-500'; // Amarillo/Naranja
-        case 'VULNERABLE': return 'bg-orange-500';
-        case 'CRITICO': return 'bg-red-600';
-        default: return 'bg-gray-400';
-    }
+const interpretarPuntaje = (criterio: CriterioEvaluacion, score: number) => {
+    // Encuentra el rango que corresponde al score
+    const interpretacion = criterio.rangos.find(r => score >= r.min && score <= r.max)
+        || criterio.rangos[criterio.rangos.length - 1]; // Fallback al último
+    return interpretacion;
 };
 
-// Helper para detectar la dimensión basada en el nombre de la sección
-const detectarDimension = (nombreSeccion: string, isVaf: boolean = false): string | null => {
-    const nombreNormalizado = nombreSeccion.toLowerCase();
-    const kb = isVaf ? KNOWLEDGE_BASE_VAF.textosPorDimension : KNOWLEDGE_BASE.textosPorDimension;
-
-    for (const [key, config] of Object.entries(kb)) {
-        if (config.keywords.some(k => nombreNormalizado.includes(k))) {
-            return key;
-        }
-    }
-    return null;
-};
+// --- 4. Función Principal ---
 
 export const generarInformeIA = (input: EvaluacionInput): InformeGenerado => {
-    const p = input.puntajes;
-    const tipo = input.tipoInforme || 'otro';
-    const isVaf = tipo === 'vaf';
+    const { puntajes, tipoInforme, evaluado } = input;
 
-    // 1. Calcular Globales
-    const valores = Object.values(p);
+    // Aseguramos que tenemos un tipo válido, si no, inferimos o usamos default
+    const tipoFinal: TipoExamenVaf = tipoInforme || 'EQUIPO_OPERATIVO';
+
+    const valores = Object.values(puntajes);
     const promedio = valores.length > 0 ? valores.reduce((a, b) => a + b, 0) / valores.length : 0;
 
-    let nivelGlobal = "Estándar";
-    if (isVaf) {
-        if (promedio >= 4.5) nivelGlobal = "Desempeño Sobresaliente";
-        else if (promedio >= 3.5) nivelGlobal = "Desempeño Satisfactorio";
-        else nivelGlobal = "Requiere Mejora";
-    } else {
-        nivelGlobal = promedio >= 4.5 ? "Sobresaliente" : promedio >= 4.0 ? "Avanzado" : "Estándar";
-    }
+    // Generar Factores Analizados
+    const factores: FactorAnalisis[] = Object.entries(puntajes).map(([nombreSeccion, score]) => {
+        const criterio = encontrarCriterio(tipoFinal, nombreSeccion);
+        const interpretacion = interpretarPuntaje(criterio, score);
 
-    // 2. Preparar puntajes canónicos para arquetipos
-    const canonicalScores: Record<string, number> = {};
-    Object.entries(p).forEach(([nombre, score]) => {
-        const dim = detectarDimension(nombre, isVaf);
-        if (dim) {
-            canonicalScores[dim] = score;
-        }
-    });
+        // Determinamos el color/rango visual basado en score
+        let rangoVisual: RangoDesempeno = 'CRITICO';
+        let color = 'bg-red-600';
+        if (score >= 4.6) { rangoVisual = 'REFERENTE'; color = 'bg-indigo-600'; }
+        else if (score >= 4.0) { rangoVisual = 'SOBRESALIENTE'; color = 'bg-green-500'; }
+        else if (score >= 3.0) { rangoVisual = 'SATISFACTORIO'; color = 'bg-yellow-500'; }
+        else { rangoVisual = 'ALERTA'; color = 'bg-orange-500'; }
 
-    // 3. Determinar Arquetipo (Usamos los genéricos por ahora, o podríamos crear específicos VAF)
-    const arquetipo = KNOWLEDGE_BASE.arquetipos.find(a => a.trigger(canonicalScores)) || KNOWLEDGE_BASE.arquetipos[KNOWLEDGE_BASE.arquetipos.length - 1];
-
-    // 4. Generar Análisis por Factor
-    const factores: FactorAnalisis[] = Object.entries(p).map(([nombreSeccion, score]) => {
-        const rango = determinarRango(score);
-        const dimensionKey = detectarDimension(nombreSeccion, isVaf);
-
-        let textos = { f: "Desempeño sólido.", v: "Oportunidades de mejora continua." };
-        let icono = Briefcase; // Icono default
-        let color = getColorPorRango(rango);
-
-        if (dimensionKey) {
-            const kb = isVaf ? KNOWLEDGE_BASE_VAF.textosPorDimension : KNOWLEDGE_BASE.textosPorDimension;
-            // @ts-ignore
-            const config = kb[dimensionKey];
-            icono = config.icono;
-            // @ts-ignore
-            const textosDim = config[rango];
-            if (textosDim) textos = textosDim;
-        } else {
-            if (rango === 'CRITICO' || rango === 'VULNERABLE') {
-                textos = { f: "Muestra disposición al aprendizaje.", v: "Requiere plan de desarrollo urgente en esta área." };
-            }
-        }
-
-        // Construcción del análisis ampliado
-        let analisisAmpliado = "";
-
-        if (isVaf) {
-            // Lógica específica VAF
-            if (rango === 'MODELO') {
-                analisisAmpliado = `El colaborador demuestra un dominio integral del Manual de Calidad SGC-VAF en ${nombreSeccion}. ${textos.f} Participa activamente en la mejora continua.`;
-            } else if (rango === 'DESTACADO' || rango === 'COMPETENTE') {
-                analisisAmpliado = `El colaborador cumple con los requisitos establecidos en el manual para ${nombreSeccion}. ${textos.f} Sin embargo, ${textos.v.toLowerCase()} Se recomienda fortalecer el análisis de causas.`;
-            } else {
-                analisisAmpliado = `Se evidencian brechas en la aplicación del Manual SGC-VAF en ${nombreSeccion}. ${textos.v} Es urgente reforzar la toma de conciencia sobre el impacto en los objetivos de calidad.`;
-            }
-        } else {
-            analisisAmpliado = `En la dimensión de ${nombreSeccion}, se obtuvo un puntaje de ${score.toFixed(1)}, ubicándose en el nivel ${rango}. Esto indica que ${textos.f.toLowerCase()} Sin embargo, ${textos.v.toLowerCase()} Se recomienda mantener el enfoque en las fortalezas mientras se abordan las áreas de oportunidad identificadas.`;
-        }
-
-        // Adaptar nombre si es autoevaluación
-        const nombreFinal = tipo === 'autoevaluacion' ? `${nombreSeccion} (Auto)` : nombreSeccion;
+        // Construcción del Análisis "Psicólogo + Auditor"
+        // Estructura: [Juicio de Valor] + [Contexto Psicológico] + [Contexto Normativo]
+        const analisisPsicoTecnico = `
+            ${interpretacion.juicio}
+            Desde la perspectiva conductual, esto impacta en la ${criterio.pesoPsicologico.toLowerCase()}
+            Normativamente, afecta el cumplimiento de: ${criterio.pesoTecnico}.
+        `.trim();
 
         return {
             id: nombreSeccion,
-            nombre: nombreFinal,
-            score: score,
-            icono: icono,
-            rango: rango,
-            color: color,
-            fortaleza: textos.f,
-            vulnerabilidad: textos.v,
-            analisisAmpliado
+            nombre: nombreSeccion,
+            score,
+            rango: rangoVisual,
+            color,
+            icono: criterio.icono,
+            analisisPsicoTecnico,
+            accionSugerida: interpretacion.accion
         };
     });
 
-    // 5. Generar Recomendaciones Dinámicas
-    const recomendaciones: Recomendacion[] = [];
-    // ... (Mantener lógica existente o adaptar para VAF)
+    // Diagnóstico Global (Estilo Informe Ejecutivo)
+    let perfilPsicometrico = "";
+    if (promedio >= 4.6) perfilPsicometrico = "Perfil de Alto Potencial (High Potential). Alineación cultural y técnica modelo.";
+    else if (promedio >= 4.0) perfilPsicometrico = "Perfil Sólido. Funcional y confiable, con brechas menores gestionables.";
+    else if (promedio >= 3.0) perfilPsicometrico = "Perfil en Desarrollo. Requiere acompañamiento cercano y estructura.";
+    else perfilPsicometrico = "Perfil en Riesgo. Desalineación crítica con la cultura y requisitos VAF.";
 
-    if (recomendaciones.length === 0) {
-       r ecomendaci on es.p ush ({
-        id: "R.1", titulo: "Plan de Mejora Continua", tipo: "Estrategia",
-                   descripcion: "Establecer acciones correctivas para las brechas identificadas y realizar seguimiento en Kawak."
-        });
-    }
-
-// 6. Resumen Narrativo
-    const resumen = `El perfil de ${input.evaluado.nombre} se evalúa bajo los criterios del SGC-VAF. Con un puntaje de ${promedio.toFixed(1)}, demuestra un ${nivelGlobal.toLowerCase()}.`;
+    const resumenEjecutivo = `
+        Informe de evaluación para ${evaluado.nombre} (${evaluado.rol}). 
+        Bajo el protocolo de análisis ${tipoFinal.replace('_', ' ')}, se obtiene un índice global de ${promedio.toFixed(1)}/5.0.
+        ${perfilPsicometrico}
+        Se destacan fortalezas en ${factores.length > 0 ? factores.reduce((a, b) => a.score > b.score ? a : b).nombre : 'General'} y oportunidades latentes en ${factores.length > 0 ? factores.reduce((a, b) => a.score < b.score ? a : b).nombre : 'General'}.
+    `.trim();
 
     return {
-    meta: { puntajeGlobal: Number(promedio.toFixed(1)), nivelGlobal, arquetipo: { nombre: arquetipo.nombre, descripcion: arquetipo.descripcion, icono: arquetipo.icono } },
-    resumenEjecutivo: resumen,
-    factores,
-    diagnosticoIA: isVaf ? "Análisis basado en la Norma ISO 9001:2015 y procedimientos VAF." : "Análisis basado en las competencias evaluadas.",
-       reomendaciones 
-    
-
+        meta: {
+            puntajeGlobal: Number(promedio.toFixed(1)),
+            nivelGlobal: promedio >= 4.0 ? "Conforme" : "No Conforme",
+            perfilPsicometrico
+        },
+        resumenEjecutivo,
+        factores,
+        diagnosticoIA: `Análisis procesado mediante motor de inferencia VAF-ISO9001. Contexto: ${tipoFinal}.`
+    };
+};
