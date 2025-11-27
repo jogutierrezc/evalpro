@@ -142,6 +142,7 @@ export const getColorPorRango = (rango: RangoDesempeno): string => {
 
 export const generarInformeIA = (input: EvaluacionInput): InformeGenerado => {
     const p = input.puntajes;
+    const tipo = input.tipoInforme || 'otro';
 
     // 1. Calcular Globales
     const valores = Object.values(p);
@@ -162,44 +163,90 @@ export const generarInformeIA = (input: EvaluacionInput): InformeGenerado => {
     };
 
     // 3. Generar Análisis por Factor
-    const factores: FactorAnalisis[] = [
-        {
-            id: 'int', nombre: 'Integridad y Ética', score: p.integridad, icono: Shield,
-            rango: determinarRango(p.integridad), color: getColorPorRango(determinarRango(p.integridad)),
-            fortaleza: getText('integridad', p.integridad).f,
-            vulnerabilidad: getText('integridad', p.integridad).v
-        },
-        {
-            id: 'team', nombre: 'Trabajo en Equipo', score: p.trabajoEquipo, icono: Users,
-            rango: determinarRango(p.trabajoEquipo), color: getColorPorRango(determinarRango(p.trabajoEquipo)),
-            fortaleza: getText('trabajoEquipo', p.trabajoEquipo).f,
-            vulnerabilidad: getText('trabajoEquipo', p.trabajoEquipo).v
-        },
-        {
-            id: 'inst', nombre: 'Compromiso Institucional', score: p.institucional, icono: Building,
-            rango: determinarRango(p.institucional), color: getColorPorRango(determinarRango(p.institucional)),
-            fortaleza: "Alineación cultural casi total. Cumplimiento perfecto de horarios y recursos.",
-            vulnerabilidad: "Priorización de operatividad sobre formación teórica (capacitaciones)."
-        },
-        {
-            id: 'com', nombre: 'Comunicación', score: p.comunicacion, icono: MessageSquare,
-            rango: determinarRango(p.comunicacion), color: getColorPorRango(determinarRango(p.comunicacion)),
-            fortaleza: "Etiqueta y comunicación con la comunidad sobresalientes.",
-            vulnerabilidad: "Inseguridad en asertividad directa; prudencia excesiva para no ofender."
-        },
-        {
-            id: 'res', nombre: 'Orientación a Resultados', score: p.orientacionResultados, icono: Target,
-            rango: determinarRango(p.orientacionResultados), color: getColorPorRango(determinarRango(p.orientacionResultados)),
-            fortaleza: getText('orientacionResultados', p.orientacionResultados).f,
-            vulnerabilidad: getText('orientacionResultados', p.orientacionResultados).v
-        },
-        {
-            id: 'cal', nombre: 'Calidad del Trabajo', score: p.calidadTrabajo, icono: Award,
-            rango: determinarRango(p.calidadTrabajo), color: getColorPorRango(determinarRango(p.calidadTrabajo)),
-            fortaleza: "Entrega productos con altos estándares de revisión.",
-            vulnerabilidad: "Puede demorar entregas por revisiones excesivas (perfeccionismo)."
-        }
-    ];
+    let factores: FactorAnalisis[] = [];
+
+    if (tipo === 'lider_a_colaborador') {
+        // Factores específicos para Evaluación Líder a Colaborador
+        factores = [
+            {
+                id: 'int', nombre: 'Integridad y Ética', score: p.integridad, icono: Shield,
+                rango: determinarRango(p.integridad), color: getColorPorRango(determinarRango(p.integridad)),
+                fortaleza: getText('integridad', p.integridad).f,
+                vulnerabilidad: getText('integridad', p.integridad).v
+            },
+            {
+                id: 'team', nombre: 'Trabajo en Equipo', score: p.trabajoEquipo, icono: Users,
+                rango: determinarRango(p.trabajoEquipo), color: getColorPorRango(determinarRango(p.trabajoEquipo)),
+                fortaleza: getText('trabajoEquipo', p.trabajoEquipo).f,
+                vulnerabilidad: getText('trabajoEquipo', p.trabajoEquipo).v
+            },
+            {
+                id: 'inst', nombre: 'Compromiso Institucional', score: p.institucional, icono: Building,
+                rango: determinarRango(p.institucional), color: getColorPorRango(determinarRango(p.institucional)),
+                fortaleza: "Alineación cultural casi total. Cumplimiento perfecto de horarios y recursos.",
+                vulnerabilidad: "Priorización de operatividad sobre formación teórica (capacitaciones)."
+            },
+            {
+                id: 'com', nombre: 'Comunicación', score: p.comunicacion, icono: MessageSquare,
+                rango: determinarRango(p.comunicacion), color: getColorPorRango(determinarRango(p.comunicacion)),
+                fortaleza: "Etiqueta y comunicación con la comunidad sobresalientes.",
+                vulnerabilidad: "Inseguridad en asertividad directa; prudencia excesiva para no ofender."
+            },
+            {
+                id: 'res', nombre: 'Orientación a Resultados', score: p.orientacionResultados, icono: Target,
+                rango: determinarRango(p.orientacionResultados), color: getColorPorRango(determinarRango(p.orientacionResultados)),
+                fortaleza: getText('orientacionResultados', p.orientacionResultados).f,
+                vulnerabilidad: getText('orientacionResultados', p.orientacionResultados).v
+            },
+            {
+                id: 'cal', nombre: 'Calidad del Trabajo', score: p.calidadTrabajo, icono: Award,
+                rango: determinarRango(p.calidadTrabajo), color: getColorPorRango(determinarRango(p.calidadTrabajo)),
+                fortaleza: "Entrega productos con altos estándares de revisión.",
+                vulnerabilidad: "Puede demorar entregas por revisiones excesivas (perfeccionismo)."
+            }
+        ];
+    } else {
+        // Factores para Autoevaluación (o default)
+        // Nota: Ajustar nombres si la autoevaluación tiene dimensiones ligeramente diferentes
+        factores = [
+            {
+                id: 'int', nombre: 'Integridad y Ética (Auto)', score: p.integridad, icono: Shield,
+                rango: determinarRango(p.integridad), color: getColorPorRango(determinarRango(p.integridad)),
+                fortaleza: getText('integridad', p.integridad).f,
+                vulnerabilidad: getText('integridad', p.integridad).v
+            },
+            {
+                id: 'team', nombre: 'Trabajo en Equipo (Auto)', score: p.trabajoEquipo, icono: Users,
+                rango: determinarRango(p.trabajoEquipo), color: getColorPorRango(determinarRango(p.trabajoEquipo)),
+                fortaleza: getText('trabajoEquipo', p.trabajoEquipo).f,
+                vulnerabilidad: getText('trabajoEquipo', p.trabajoEquipo).v
+            },
+            {
+                id: 'inst', nombre: 'Compromiso Institucional (Auto)', score: p.institucional, icono: Building,
+                rango: determinarRango(p.institucional), color: getColorPorRango(determinarRango(p.institucional)),
+                fortaleza: "Identificación personal con la misión institucional.",
+                vulnerabilidad: "Oportunidad de participar más activamente en eventos institucionales."
+            },
+            {
+                id: 'com', nombre: 'Comunicación (Auto)', score: p.comunicacion, icono: MessageSquare,
+                rango: determinarRango(p.comunicacion), color: getColorPorRango(determinarRango(p.comunicacion)),
+                fortaleza: "Claridad en la expresión de ideas propias.",
+                vulnerabilidad: "Escucha activa puede ser fortalecida."
+            },
+            {
+                id: 'res', nombre: 'Orientación a Resultados (Auto)', score: p.orientacionResultados, icono: Target,
+                rango: determinarRango(p.orientacionResultados), color: getColorPorRango(determinarRango(p.orientacionResultados)),
+                fortaleza: getText('orientacionResultados', p.orientacionResultados).f,
+                vulnerabilidad: getText('orientacionResultados', p.orientacionResultados).v
+            },
+            {
+                id: 'cal', nombre: 'Calidad del Trabajo (Auto)', score: p.calidadTrabajo, icono: Award,
+                rango: determinarRango(p.calidadTrabajo), color: getColorPorRango(determinarRango(p.calidadTrabajo)),
+                fortaleza: "Atención al detalle y rigor técnico.",
+                vulnerabilidad: "Gestión del tiempo en tareas complejas."
+            }
+        ];
+    }
 
     // 4. Generar Recomendaciones Dinámicas
     const recomendaciones: Recomendacion[] = [];

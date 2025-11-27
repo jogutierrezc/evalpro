@@ -112,16 +112,22 @@ export function TechnicalReportViewer({ evaluationId: propId }: TechnicalReportV
                 `)
                 .eq('status', 'completed');
 
-            // Helper to map section titles to keys
+            // Helper to map section titles to keys based on report type context
+            // Note: This mapping needs to be robust enough to handle variations in section titles
             const mapSectionToKey = (title: string) => {
                 const lowerTitle = title.toLowerCase();
-                if (lowerTitle.includes('integridad') || lowerTitle.includes('ética')) return 'integridad';
-                if (lowerTitle.includes('equipo') || lowerTitle.includes('colaboración')) return 'trabajoEquipo';
-                if (lowerTitle.includes('institucional')) return 'institucional';
-                if (lowerTitle.includes('resultados') || lowerTitle.includes('innovación')) return 'orientacionResultados';
-                if (lowerTitle.includes('liderazgo')) return 'liderazgo';
-                if (lowerTitle.includes('calidad')) return 'calidadTrabajo';
-                if (lowerTitle.includes('comunicación')) return 'comunicacion';
+
+                // Common mappings
+                if (lowerTitle.includes('integridad') || lowerTitle.includes('ética') || lowerTitle.includes('etica')) return 'integridad';
+                if (lowerTitle.includes('equipo') || lowerTitle.includes('colaboración') || lowerTitle.includes('colaboracion')) return 'trabajoEquipo';
+                if (lowerTitle.includes('institucional') || lowerTitle.includes('compromiso')) return 'institucional';
+                if (lowerTitle.includes('resultados') || lowerTitle.includes('logro') || lowerTitle.includes('innovación') || lowerTitle.includes('innovacion')) return 'orientacionResultados';
+                if (lowerTitle.includes('calidad') || lowerTitle.includes('excelencia') || lowerTitle.includes('técnica') || lowerTitle.includes('tecnica')) return 'calidadTrabajo';
+                if (lowerTitle.includes('comunicación') || lowerTitle.includes('comunicacion') || lowerTitle.includes('asertividad')) return 'comunicacion';
+
+                // Fallback or specific mappings
+                if (lowerTitle.includes('liderazgo')) return 'comunicacion'; // Map leadership to communication or separate if needed
+
                 return 'general';
             };
 
@@ -160,11 +166,12 @@ export function TechnicalReportViewer({ evaluationId: propId }: TechnicalReportV
             });
 
             // Ensure all required keys exist with defaults
+            // We use 0 as default, but logic should handle missing values gracefully
             const finalPuntajes = {
                 integridad: puntajes.integridad || 0,
                 trabajoEquipo: puntajes.trabajoEquipo || 0,
                 institucional: puntajes.institucional || 0,
-                comunicacion: puntajes.comunicacion || puntajes.liderazgo || 0,
+                comunicacion: puntajes.comunicacion || 0,
                 orientacionResultados: puntajes.orientacionResultados || 0,
                 calidadTrabajo: puntajes.calidadTrabajo || 0
             };
@@ -173,7 +180,7 @@ export function TechnicalReportViewer({ evaluationId: propId }: TechnicalReportV
                 integridad: comparativePuntajes.integridad || 0,
                 trabajoEquipo: comparativePuntajes.trabajoEquipo || 0,
                 institucional: comparativePuntajes.institucional || 0,
-                comunicacion: comparativePuntajes.comunicacion || comparativePuntajes.liderazgo || 0,
+                comunicacion: comparativePuntajes.comunicacion || 0,
                 orientacionResultados: comparativePuntajes.orientacionResultados || 0,
                 calidadTrabajo: comparativePuntajes.calidadTrabajo || 0
             };
