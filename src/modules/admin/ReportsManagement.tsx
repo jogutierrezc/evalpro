@@ -27,7 +27,8 @@ import {
     Building2,
     Printer,
     Search,
-    Sparkles
+    Sparkles,
+    Shield // Added Shield
 } from 'lucide-react';
 import { generarInformeIA, EvaluacionInput, InformeGenerado } from '../../lib/ai-report-logic';
 import { AiReportRenderer } from '../../components/AiReportRenderer';
@@ -256,7 +257,7 @@ export function ReportsManagement() {
     const [reportData, setReportData] = useState<ReportData | null>(null);
     const [aiReportData, setAiReportData] = useState<{ input: EvaluacionInput, informe: InformeGenerado } | null>(null);
     const [generated, setGenerated] = useState(false);
-    const [reportType, setReportType] = useState<'technical' | 'ai-self'>('technical');
+    const [reportType, setReportType] = useState<'technical' | 'ai-self' | 'vaf'>('technical');
     const componentRef = useRef<HTMLDivElement>(null);
 
     const loadOffices = async () => {
@@ -358,6 +359,16 @@ export function ReportsManagement() {
                 const evalData = evaluations[0];
                 const responses = evalData.responses || [];
                 const subject = users.find(u => u.id === selectedUser);
+                const templateName = evalData.template?.name || '';
+
+                if (reportType === 'vaf') {
+                    // Check if it's a VAF form
+                    if (!templateName.toLowerCase().includes('vaf')) {
+                        alert('Este informe solo está disponible para evaluaciones VAF (Equipo VAF, Líder VAF).');
+                        setLoading(false);
+                        return;
+                    }
+                }
 
                 if (reportType === 'technical') {
                     // --- TECHNICAL REPORT LOGIC ---
@@ -425,42 +436,25 @@ export function ReportsManagement() {
                     });
 
                 } else {
-                    // --- AI SELF-EVALUATION REPORT LOGIC ---
+                    // --- AI SELF-EVALUATION OR VAF REPORT LOGIC ---
 
-                    // Aggregate scores by section
+                    // Aggregate scores by section (RAW TITLES)
                     const sectionScores: Record<string, { total: number; count: number }> = {};
 
                     responses.forEach((r: any) => {
                         const sectionTitle = r.question?.section?.title || 'General';
-                        let key = 'general';
-                        const lowerTitle = sectionTitle.toLowerCase();
-                        if (lowerTitle.includes('integridad') || lowerTitle.includes('ética')) key = 'integridad';
-                        else if (lowerTitle.includes('equipo') || lowerTitle.includes('colaboración')) key = 'trabajoEquipo';
-                        else if (lowerTitle.includes('institucional')) key = 'institucional';
-                        else if (lowerTitle.includes('resultados') || lowerTitle.includes('innovación')) key = 'orientacionResultados';
-                        else if (lowerTitle.includes('liderazgo')) key = 'liderazgo';
-                        else if (lowerTitle.includes('calidad')) key = 'calidadTrabajo';
-                        else if (lowerTitle.includes('comunicación')) key = 'comunicacion';
-                        else key = sectionTitle;
+                        // Use raw title as key
+                        const key = sectionTitle;
 
                         if (!sectionScores[key]) sectionScores[key] = { total: 0, count: 0 };
                         sectionScores[key].total += Number(r.response_value) || 0;
                         sectionScores[key].count += 1;
                     });
 
-                    const puntajes: any = {};
+                    const puntajes: Record<string, number> = {};
                     Object.entries(sectionScores).forEach(([key, val]) => {
                         puntajes[key] = Number((val.total / val.count).toFixed(1));
                     });
-
-                    const finalPuntajes = {
-                        integridad: puntajes.integridad || 0,
-                        trabajoEquipo: puntajes.trabajoEquipo || 0,
-                        institucional: puntajes.institucional || 0,
-                        comunicacion: puntajes.comunicacion || puntajes.liderazgo || 0, // Fallback
-                        orientacionResultados: puntajes.orientacionResultados || 0,
-                        calidadTrabajo: puntajes.calidadTrabajo || 0
-                    };
 
                     const input: EvaluacionInput = {
                         evaluado: {
@@ -468,7 +462,8 @@ export function ReportsManagement() {
                             rol: subject?.role || 'Analista',
                             fecha: new Date(evalData.created_at).toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })
                         },
-                        puntajes: finalPuntajes
+                        tipoInforme: reportType === 'vaf' ? 'vaf' : 'autoevaluacion',
+                        puntajes: puntajes
                     };
 
                     const informe = generarInformeIA(input);
@@ -524,8 +519,17 @@ export function ReportsManagement() {
                                 className={`flex-1 py-1.5 px-3 rounded-md text-sm font-medium transition-all flex items-center justify-center gap-1 ${reportType === 'ai-self' ? 'bg-white text-amber-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                             >
                                 <Sparkles className="w-3 h-3" />
-                                IA Autoevaluación
+                                IA Auto
                             </button>
+                            {user?.role === 'admin' && (
+                                <button
+                                    onClick={() => { setReportType('vaf'); setGenerated(false); }}
+                                    className={`flex-1 py-1.5 px-3 rounded-md text-sm font-medium transition-all flex items-center justify-center gap-1 ${reportType === 'vaf' ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                                >
+                                    <Shield className="w-3 h-3" />
+                                    VAF
+                                </button>
+                            )}
                         </div>
                     </div>
 
@@ -800,24 +804,12 @@ export function ReportsManagement() {
                                         El/La colaborador(a) {reportData.meta.subject} es un activo valioso para la institución. El mayor retorno de inversión se obtendrá fortaleciendo sus competencias clave identificadas. Si aborda estas áreas, puede transicionar a un nivel de desempeño superior.
                                     </p>
                                 </div>
-
-                                {/* Print Footer Logos */}
-                                <div className="hidden print:flex justify-between items-end mt-12 pt-8 border-t border-slate-200">
-                                    <img src="/prisma.png" alt="PRISMA" className="h-8 opacity-50" />
-                                    <div className="text-right text-xs text-slate-400">
-                                        Generado por Sistema PRISMA v2.0<br />
-                                        {new Date().toLocaleString()}
-                                    </div>
-                                </div>
-
                             </main>
                         </div>
                     )}
 
-                    {reportType === 'ai-self' && aiReportData && (
-                        <div ref={componentRef}>
-                            <AiReportRenderer inputData={aiReportData.input} informe={aiReportData.informe} onPrint={handlePrint} />
-                        </div>
+                    {(reportType === 'ai-self' || reportType === 'vaf') && aiReportData && (
+                        <AiReportRenderer inputData={aiReportData.input} informe={aiReportData.informe} />
                     )}
                 </>
             )}
