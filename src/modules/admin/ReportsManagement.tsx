@@ -337,6 +337,7 @@ export function ReportsManagement() {
           id,
           created_at,
           evaluator_id,
+          template_id,
           template:evaluation_templates(name),
           responses:evaluation_responses(
             response_value,
@@ -360,10 +361,14 @@ export function ReportsManagement() {
                 const responses = evalData.responses || [];
                 const subject = users.find(u => u.id === selectedUser);
                 const templateName = evalData.template?.name || '';
+                const templateId = evalData.template_id;
 
                 if (reportType === 'vaf') {
-                    // Check if it's a VAF form
-                    if (!templateName.toLowerCase().includes('vaf')) {
+                    // Check if it's a VAF form by Name OR by specific ID
+                    const vafIds = ['38d7fa88-bf39-457d-bdc2-3fbff363ce52', '4fb9f1a6-86ad-4fb5-8c52-4a33477a5143'];
+                    const isVaf = templateName.toLowerCase().includes('vaf') || vafIds.includes(templateId);
+
+                    if (!isVaf) {
                         alert('Este informe solo está disponible para evaluaciones VAF (Equipo VAF, Líder VAF).');
                         setLoading(false);
                         return;
