@@ -11,6 +11,8 @@ export interface EvaluacionInput {
         rol: string;
         fecha: string;
     };
+    tipoInforme?: 'autoevaluacion' | 'lider_a_colaborador' | 'otro';
+    evaluadorNombre?: string;
     puntajes: {
         integridad: number;
         trabajoEquipo: number;

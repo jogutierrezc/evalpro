@@ -81,7 +81,10 @@ export function AiReportRenderer({ inputData, informe, onPrint }: AiReportRender
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
                         <div>
                             <div className="flex items-center gap-2 text-amber-400 font-bold text-sm tracking-wider uppercase mb-4">
-                                <FileText className="w-4 h-4" /> Informe Confidencial de Desempeño
+                                <FileText className="w-4 h-4" />
+                                {inputData.tipoInforme === 'lider_a_colaborador'
+                                    ? 'Informe de Análisis de Desempeño de Evaluación de Lider a Colaborador'
+                                    : 'Informe de Análisis de Autoevaluación del Personal UDES'}
                             </div>
                             <h1 className="text-4xl md:text-5xl font-extrabold mb-2">{inputData.evaluado.nombre}</h1>
                             <p className="text-slate-400 text-lg flex items-center gap-4">
@@ -92,8 +95,15 @@ export function AiReportRenderer({ inputData, informe, onPrint }: AiReportRender
                         </div>
 
                         <div className="text-left md:text-right print:block bg-slate-800/50 p-4 rounded-lg md:bg-transparent md:p-0">
-                            <div className="text-slate-500 text-xs uppercase tracking-widest mb-1">Evaluado por</div>
-                            <div className="font-semibold text-slate-300">Sistema Neural de Análisis Prisma UDES</div>
+                            <div className="text-slate-500 text-xs uppercase tracking-widest mb-1">
+                                {inputData.tipoInforme === 'lider_a_colaborador' ? 'Evaluadora' : 'Evaluado por'}
+                            </div>
+                            <div className="font-semibold text-slate-300 uppercase">
+                                {inputData.evaluadorNombre || 'Sistema Neural de Análisis Prisma UDES'}
+                            </div>
+                            {inputData.tipoInforme === 'lider_a_colaborador' && (
+                                <div className="text-amber-500 text-xs mt-1">Dra. I.A. Psicológica Gemini</div>
+                            )}
                         </div>
                     </div>
                 </div>

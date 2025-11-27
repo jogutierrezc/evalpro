@@ -82,6 +82,8 @@ export function TechnicalReportViewer({ evaluationId: propId }: TechnicalReportV
                     id,
                     created_at,
                     evaluated:users!evaluated_id(full_name, role),
+                    evaluator:users!evaluator_id(full_name, role),
+                    template:evaluation_templates(name, type),
                     responses:evaluation_responses(
                         response_value,
                         question:evaluation_questions(
@@ -177,6 +179,25 @@ export function TechnicalReportViewer({ evaluationId: propId }: TechnicalReportV
             };
 
             const evaluadoUser = (evaluation as any).evaluated; // users table join
+            const evaluatorUser = (evaluation as any).evaluator;
+            const template = (evaluation as any).template;
+
+            // Determine Report Type
+            let tipoInforme: 'autoevaluacion' | 'lider_a_colaborador' | 'otro' = 'otro';
+            const tName = (template?.name || '').toLowerCase();
+            const tType = (template?.type || '').toLowerCase();
+
+            if (tType === 'self' || tName.includes('autoevaluación') || tName.includes('autoevaluacion')) {
+                tipoInforme = 'autoevaluacion';
+            } else if (tType === 'manager_to_employee' || tName.includes('líder') || tName.includes('lider')) {
+                tipoInforme = 'lider_a_colaborador';
+            }
+
+            // Determine Evaluator Name to Display
+            let evaluadorNombre = 'Sistema Neural de Análisis Prisma UDES';
+            if (tipoInforme === 'lider_a_colaborador') {
+                evaluadorNombre = evaluatorUser?.full_name || 'Líder Evaluador';
+            }
 
             setInputData({
                 evaluado: {
@@ -184,6 +205,8 @@ export function TechnicalReportViewer({ evaluationId: propId }: TechnicalReportV
                     rol: evaluadoUser?.role || 'Analista',
                     fecha: new Date(evaluation.created_at).toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })
                 },
+                tipoInforme,
+                evaluadorNombre,
                 puntajes: finalPuntajes,
                 comparativeScores: finalComparativePuntajes
             });

@@ -173,7 +173,8 @@ export function SelfEvaluationReport() {
                         fecha: new Date(evalData.created_at).toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })
                     },
                     puntajes: finalPuntajes,
-                    comparativeScores: finalComparativePuntajes
+                    comparativeScores: finalComparativePuntajes,
+                    tipoInforme: 'autoevaluacion'
                 });
             } else {
                 setInputData(null);
