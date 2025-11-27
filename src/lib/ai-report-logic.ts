@@ -186,14 +186,24 @@ const BASE_CONOCIMIENTO_EXPERTO: Record<TipoExamenVaf, Record<string, CriterioEv
 
 const normalizarTexto = (texto: string) => texto.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
+const DEFAULT_CRITERIO: CriterioEvaluacion = {
+    icono: Briefcase,
+    pesoPsicologico: "Desempeño general.",
+    pesoTecnico: "Cumplimiento de tareas.",
+    rangos: [{ min: 0, max: 5, juicio: "Evaluación estándar.", accion: "Seguimiento." }]
+};
+
 const encontrarCriterio = (tipo: TipoExamenVaf, seccion: string): CriterioEvaluacion => {
-    const kb = BASE_CONOCIMIENTO_EXPERTO[tipo];
+    const kb = BASE_CONOCIMIENTO_EXPERTO[tipo] || BASE_CONOCIMIENTO_EXPERTO['EQUIPO_OPERATIVO'];
+    if (!kb) return DEFAULT_CRITERIO;
+
     const seccionNorm = normalizarTexto(seccion);
 
     // Búsqueda por palabras clave en las claves del objeto
     const keyEncontrada = Object.keys(kb).find(key => seccionNorm.includes(key));
 
-    return keyEncontrada ? kb[keyEncontrada] : kb['default'];
+    const criterio = keyEncontrada ? kb[keyEncontrada] : kb['default'];
+    return criterio || DEFAULT_CRITERIO;
 };
 
 const interpretarPuntaje = (criterio: CriterioEvaluacion, score: number) => {
@@ -202,6 +212,7 @@ const interpretarPuntaje = (criterio: CriterioEvaluacion, score: number) => {
         || criterio.rangos[criterio.rangos.length - 1]; // Fallback al último
     return interpretacion;
 };
+
 
 // --- 4. Función Principal ---
 
