@@ -93,7 +93,7 @@ export function AiReportRenderer({ inputData, informe, onPrint }: AiReportRender
 
                         <div className="text-left md:text-right print:block bg-slate-800/50 p-4 rounded-lg md:bg-transparent md:p-0">
                             <div className="text-slate-500 text-xs uppercase tracking-widest mb-1">Evaluado por</div>
-                            <div className="font-semibold text-slate-300">Sistema Neural de Análisis Psicológico</div>
+                            <div className="font-semibold text-slate-300">Sistema Neural de Análisis Prisma UDES</div>
                         </div>
                     </div>
                 </div>
