@@ -1,0 +1,207 @@
+
+import {
+    FileText, Award, Brain, BarChart3, TrendingUp, Target,
+    CheckCircle, AlertTriangle, Printer
+} from 'lucide-react';
+import { FactorAnalisis, InformeGenerado, EvaluacionInput } from '../lib/ai-report-logic';
+
+const ProgressBar = ({ value, color }: { value: number; color: string }) => (
+    <div className="h-3 w-full bg-slate-100 rounded-full overflow-hidden mt-2 print:hidden">
+        <div
+            className={`h-full ${color} transition-all duration-1000 ease-out`}
+            style={{ width: `${(value / 5) * 100}%` }}
+        />
+    </div>
+);
+
+const CardFactor = ({ factor }: { factor: FactorAnalisis }) => (
+    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow mb-4 print:break-inside-avoid print:shadow-none print:border">
+        <div className="flex justify-between items-center mb-4">
+            <div className="flex items-center gap-3">
+                <div className={`p-2 rounded-lg ${factor.color} bg-opacity-10 text-slate-700`}>
+                    <factor.icono className="w-6 h-6" />
+                </div>
+                <h3 className="font-bold text-slate-800 text-lg">{factor.nombre}</h3>
+            </div>
+            <span className={`px-3 py-1 rounded-full text-sm font-bold ${factor.color.replace('bg-', 'text-')} bg-opacity-10`}>
+                {factor.score.toFixed(1)} / 5.0
+            </span>
+        </div>
+
+        <ProgressBar value={factor.score} color={factor.color} />
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+            <div className="bg-green-50 p-4 rounded-lg border border-green-100">
+                <div className="flex items-center gap-2 mb-2 text-green-700 font-bold text-sm uppercase tracking-wide">
+                    <CheckCircle className="w-4 h-4" /> Fortalezas
+                </div>
+                <p className="text-slate-600 text-sm leading-relaxed">{factor.fortaleza}</p>
+            </div>
+
+            <div className="bg-orange-50 p-4 rounded-lg border border-orange-100">
+                <div className="flex items-center gap-2 mb-2 text-orange-700 font-bold text-sm uppercase tracking-wide">
+                    <AlertTriangle className="w-4 h-4" /> Vulnerabilidad
+                </div>
+                <p className="text-slate-600 text-sm leading-relaxed">{factor.vulnerabilidad}</p>
+            </div>
+        </div>
+    </div>
+);
+
+interface AiReportRendererProps {
+    inputData: EvaluacionInput;
+    informe: InformeGenerado;
+    onPrint?: () => void;
+}
+
+export function AiReportRenderer({ inputData, informe, onPrint }: AiReportRendererProps) {
+    const handlePrint = onPrint || (() => window.print());
+
+    return (
+        <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-20 print:bg-white">
+
+            {/* --- HEADER DEL INFORME --- */}
+            <header className="bg-slate-900 text-white pt-16 pb-24 px-6 md:px-12 relative overflow-hidden print:pt-8 print:pb-12">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-blue-600 rounded-full blur-3xl opacity-20 -mr-20 -mt-20 print:hidden"></div>
+                <div className="max-w-5xl mx-auto relative z-10">
+                    <div className="flex items-center gap-2 text-amber-400 font-bold text-sm tracking-wider uppercase mb-4">
+                        <FileText className="w-4 h-4" /> Informe Confidencial de Desempeño
+                    </div>
+                    <h1 className="text-4xl md:text-5xl font-extrabold mb-2">{inputData.evaluado.nombre}</h1>
+                    <p className="text-slate-400 text-lg flex items-center gap-4">
+                        <span>{inputData.evaluado.rol}</span>
+                        <span className="w-1 h-1 bg-slate-600 rounded-full"></span>
+                        <span>{inputData.evaluado.fecha}</span>
+                    </p>
+
+                    <div className="absolute top-10 right-10 hidden md:block text-right print:block">
+                        <div className="text-slate-500 text-xs uppercase tracking-widest mb-1">Evaluado por</div>
+                        <div className="font-semibold text-slate-300">Sistema Neural de Análisis Psicológico</div>
+                    </div>
+                </div>
+            </header>
+
+            <main className="max-w-5xl mx-auto px-4 md:px-8 -mt-16 relative z-20 print:mt-0">
+
+                {/* --- TARJETAS KPI --- */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10 print:break-inside-avoid">
+
+                    {/* KPI 1: Puntaje Global */}
+                    <div className="bg-white p-6 rounded-xl shadow-lg border border-slate-100 flex flex-col justify-between print:shadow-none print:border">
+                        <div>
+                            <div className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-2">Puntaje Ponderado</div>
+                            <div className="flex items-baseline gap-2">
+                                <span className="text-5xl font-extrabold text-slate-900">{informe.meta.puntajeGlobal}</span>
+                                <span className="text-slate-400 font-medium">/ 5.0</span>
+                            </div>
+                        </div>
+                        <div className="mt-4 inline-flex items-center gap-2 px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-sm font-bold w-fit">
+                            <Award className="w-4 h-4" /> {informe.meta.nivelGlobal}
+                        </div>
+                    </div>
+
+                    {/* KPI 2: Arquetipo */}
+                    <div className="bg-white p-6 rounded-xl shadow-lg border border-slate-100 md:col-span-2 flex items-center gap-6 print:shadow-none print:border">
+                        <div className="text-6xl bg-slate-50 w-24 h-24 flex items-center justify-center rounded-2xl shadow-inner">
+                            {informe.meta.arquetipo.icono}
+                        </div>
+                        <div>
+                            <div className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Perfil Psicolaboral Obtenido</div>
+                            <h2 className="text-2xl font-bold text-slate-900 mb-2">{informe.meta.arquetipo.nombre}</h2>
+                            <p className="text-slate-600 text-sm leading-relaxed">{informe.meta.arquetipo.descripcion}</p>
+                        </div>
+                    </div>
+
+                </div>
+
+                {/* --- RESUMEN EJECUTIVO --- */}
+                <section className="bg-white p-8 rounded-xl shadow-sm border border-slate-100 mb-10 print:break-inside-avoid print:shadow-none print:border">
+                    <h3 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
+                        <Brain className="w-5 h-5 text-blue-600" />
+                        Resumen Ejecutivo IA
+                    </h3>
+                    <p className="text-slate-700 text-lg leading-relaxed border-l-4 border-blue-500 pl-6 italic">
+                        "{informe.resumenEjecutivo}"
+                    </p>
+                </section>
+
+                {/* --- DETALLE DE FACTORES --- */}
+                <section className="mb-12">
+                    <div className="flex items-center justify-between mb-6">
+                        <h2 className="text-2xl font-bold text-slate-900">Análisis Detallado por Factores</h2>
+                        {/* Hidden on print */}
+                        <button className="text-slate-500 hover:text-blue-600 text-sm font-medium flex items-center gap-1 transition-colors print:hidden">
+                            <BarChart3 className="w-4 h-4" /> Ver Gráfica Radar
+                        </button>
+                    </div>
+
+                    <div className="space-y-4">
+                        {informe.factores.map((factor) => (
+                            <CardFactor key={factor.id} factor={factor} />
+                        ))}
+                    </div>
+                </section>
+
+                {/* --- DIAGNÓSTICO Y RECOMENDACIONES --- */}
+                <section className="grid grid-cols-1 lg:grid-cols-3 gap-8 print:break-before-page">
+
+                    {/* Columna Izquierda: Diagnóstico Oscuro */}
+                    <div className="bg-slate-900 text-white p-8 rounded-xl shadow-xl flex flex-col justify-center print:bg-slate-800 print:text-white">
+                        <div className="text-amber-400 font-bold text-sm tracking-wider uppercase mb-6 flex items-center gap-2">
+                            <TrendingUp className="w-4 h-4" /> Diagnóstico Sintético
+                        </div>
+                        <p className="text-2xl font-serif italic leading-normal text-slate-200">
+                            "{informe.diagnosticoIA}"
+                        </p>
+                        <div className="mt-8 pt-6 border-t border-slate-700">
+                            <p className="text-sm text-slate-500 uppercase tracking-widest">Acción Prioritaria</p>
+                            <p className="text-white font-semibold mt-1">Plan de Desarrollo en Innovación</p>
+                        </div>
+                    </div>
+
+                    {/* Columna Derecha: Recomendaciones */}
+                    <div className="lg:col-span-2">
+                        <h2 className="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-2">
+                            <Target className="w-6 h-6 text-amber-500" />
+                            Recomendaciones Estratégicas
+                        </h2>
+
+                        <div className="grid gap-4">
+                            {informe.recomendaciones.map((rec) => (
+                                <div key={rec.id} className="bg-white p-6 rounded-xl border-l-4 border-amber-400 shadow-sm hover:shadow-md transition-shadow print:shadow-none print:border">
+                                    <div className="flex justify-between items-start mb-3">
+                                        <h4 className="font-bold text-slate-800 text-lg">{rec.id} | {rec.titulo}</h4>
+                                        <span className="bg-amber-100 text-amber-800 text-xs font-bold px-2 py-1 rounded-md uppercase tracking-wide">
+                                            {rec.tipo}
+                                        </span>
+                                    </div>
+                                    <p className="text-slate-600">{rec.descripcion}</p>
+                                </div>
+                            ))}
+
+                            {/* Fallback si no hay recomendaciones críticas */}
+                            {informe.recomendaciones.length === 0 && (
+                                <div className="bg-green-50 p-6 rounded-xl border border-green-200 text-center">
+                                    <p className="text-green-800 font-medium">No se detectaron brechas críticas que requieran intervención inmediata. Se sugiere mantener el plan de carrera actual.</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                </section>
+
+                {/* --- FOOTER --- */}
+                <div className="mt-20 pt-10 border-t border-slate-200 text-center text-slate-500 text-sm print:break-inside-avoid">
+                    <p>© 2025 Sistema de Evaluación de Desempeño PRISMA. Documento Confidencial.</p>
+                    <button
+                        onClick={handlePrint}
+                        className="mt-4 inline-flex items-center gap-2 text-slate-400 hover:text-slate-800 transition-colors print:hidden"
+                    >
+                        <Printer className="w-4 h-4" /> Imprimir Informe PDF
+                    </button>
+                </div>
+
+            </main>
+        </div>
+    );
+}

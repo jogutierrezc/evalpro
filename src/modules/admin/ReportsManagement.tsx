@@ -24,8 +24,11 @@ import {
     Target,
     Building2,
     Printer,
-    Search
+    Search,
+    Sparkles
 } from 'lucide-react';
+import { generarInformeIA, EvaluacionInput, InformeGenerado } from '../../lib/ai-report-logic';
+import { AiReportRenderer } from '../../components/AiReportRenderer';
 
 // --- Types ---
 interface Office {
@@ -248,7 +251,9 @@ export function ReportsManagement() {
     const [selectedUser, setSelectedUser] = useState<string>('');
     const [loading, setLoading] = useState(false);
     const [reportData, setReportData] = useState<ReportData | null>(null);
+    const [aiReportData, setAiReportData] = useState<{ input: EvaluacionInput, informe: InformeGenerado } | null>(null);
     const [generated, setGenerated] = useState(false);
+    const [reportType, setReportType] = useState<'technical' | 'ai-self'>('technical');
     const componentRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -292,6 +297,9 @@ export function ReportsManagement() {
         if (!selectedUser) return;
         setLoading(true);
         setGenerated(false);
+        setReportData(null);
+        setAiReportData(null);
+
         try {
             const { data: evaluations, error } = await supabase
                 .from('evaluations')
@@ -319,75 +327,130 @@ export function ReportsManagement() {
 
             if (evaluations && evaluations.length > 0) {
                 const evalData = evaluations[0];
-
-                // Fetch Evaluator Name
-                const { data: evaluatorData } = await supabase
-                    .from('users')
-                    .select('full_name')
-                    .eq('id', evalData.evaluator_id)
-                    .single();
-
-                // Process Sections
                 const responses = evalData.responses || [];
-                const sectionsMap = new Map<string, SectionData>();
-
-                responses.forEach((r: any) => {
-                    const sectionId = r.question?.section?.id || 'unknown';
-                    const sectionTitle = r.question?.section?.title || 'General';
-
-                    if (!sectionsMap.has(sectionId)) {
-                        sectionsMap.set(sectionId, {
-                            id: sectionId,
-                            title: sectionTitle,
-                            score: 0,
-                            weight: 0, // We'll calculate average score, weight is implicit for now
-                            questions: []
-                        });
-                    }
-
-                    const section = sectionsMap.get(sectionId)!;
-                    section.questions.push({
-                        score: Number(r.response_value) || 0,
-                        weight: r.question?.weight || 1
-                    });
-                });
-
-                // Calculate Section Scores
-                const sections: SectionData[] = Array.from(sectionsMap.values()).map(s => {
-                    const totalScore = s.questions.reduce((sum, q) => sum + q.score, 0);
-                    const avgScore = totalScore / s.questions.length;
-                    return {
-                        ...s,
-                        score: Math.round(avgScore * 100) / 100,
-                        weight: 100 / sectionsMap.size // Distribute weight equally for now, or fetch from DB if available
-                    };
-                });
-
                 const subject = users.find(u => u.id === selectedUser);
-                const analysis = generateAnalysis(sections, subject?.full_name || 'Colaborador');
 
-                setReportData({
-                    meta: {
-                        title: "INFORME DE DESEMPEÑO INDIVIDUAL PRISMA UDES",
-                        subject: subject?.full_name || "Desconocido",
-                        date: new Date(evalData.created_at).toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' }),
-                        evaluator: evaluatorData?.full_name || "Sistema PRISMA",
-                        analyst: "Dra. I.A. Psicológica Gemini",
-                        role: subject?.role || "Evaluación Individual"
-                    },
-                    executive: {
-                        profile: analysis.profile,
-                        weightedScore: Number(analysis.weightedScore.toFixed(2)),
-                        rawScore: Number(analysis.rawScore.toFixed(2)),
-                        summary: analysis.summary
-                    },
-                    factors: analysis.factors,
-                    recommendations: analysis.recommendations
-                });
+                if (reportType === 'technical') {
+                    // --- TECHNICAL REPORT LOGIC ---
+                    // Fetch Evaluator Name
+                    const { data: evaluatorData } = await supabase
+                        .from('users')
+                        .select('full_name')
+                        .eq('id', evalData.evaluator_id)
+                        .single();
+
+                    // Process Sections
+                    const sectionsMap = new Map<string, SectionData>();
+
+                    responses.forEach((r: any) => {
+                        const sectionId = r.question?.section?.id || 'unknown';
+                        const sectionTitle = r.question?.section?.title || 'General';
+
+                        if (!sectionsMap.has(sectionId)) {
+                            sectionsMap.set(sectionId, {
+                                id: sectionId,
+                                title: sectionTitle,
+                                score: 0,
+                                weight: 0, // We'll calculate average score, weight is implicit for now
+                                questions: []
+                            });
+                        }
+
+                        const section = sectionsMap.get(sectionId)!;
+                        section.questions.push({
+                            score: Number(r.response_value) || 0,
+                            weight: r.question?.weight || 1
+                        });
+                    });
+
+                    // Calculate Section Scores
+                    const sections: SectionData[] = Array.from(sectionsMap.values()).map(s => {
+                        const totalScore = s.questions.reduce((sum, q) => sum + q.score, 0);
+                        const avgScore = totalScore / s.questions.length;
+                        return {
+                            ...s,
+                            score: Math.round(avgScore * 100) / 100,
+                            weight: 100 / sectionsMap.size // Distribute weight equally for now, or fetch from DB if available
+                        };
+                    });
+
+                    const analysis = generateAnalysis(sections, subject?.full_name || 'Colaborador');
+
+                    setReportData({
+                        meta: {
+                            title: "INFORME DE DESEMPEÑO INDIVIDUAL PRISMA UDES",
+                            subject: subject?.full_name || "Desconocido",
+                            date: new Date(evalData.created_at).toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' }),
+                            evaluator: evaluatorData?.full_name || "Sistema PRISMA",
+                            analyst: "Dra. I.A. Psicológica Gemini",
+                            role: subject?.role || "Evaluación Individual"
+                        },
+                        executive: {
+                            profile: analysis.profile,
+                            weightedScore: Number(analysis.weightedScore.toFixed(2)),
+                            rawScore: Number(analysis.rawScore.toFixed(2)),
+                            summary: analysis.summary
+                        },
+                        factors: analysis.factors,
+                        recommendations: analysis.recommendations
+                    });
+
+                } else {
+                    // --- AI SELF-EVALUATION REPORT LOGIC ---
+
+                    // Aggregate scores by section
+                    const sectionScores: Record<string, { total: number; count: number }> = {};
+
+                    responses.forEach((r: any) => {
+                        const sectionTitle = r.question?.section?.title || 'General';
+                        let key = 'general';
+                        const lowerTitle = sectionTitle.toLowerCase();
+                        if (lowerTitle.includes('integridad') || lowerTitle.includes('ética')) key = 'integridad';
+                        else if (lowerTitle.includes('equipo') || lowerTitle.includes('colaboración')) key = 'trabajoEquipo';
+                        else if (lowerTitle.includes('institucional')) key = 'institucional';
+                        else if (lowerTitle.includes('resultados') || lowerTitle.includes('innovación')) key = 'orientacionResultados';
+                        else if (lowerTitle.includes('liderazgo')) key = 'liderazgo';
+                        else if (lowerTitle.includes('calidad')) key = 'calidadTrabajo';
+                        else if (lowerTitle.includes('comunicación')) key = 'comunicacion';
+                        else key = sectionTitle;
+
+                        if (!sectionScores[key]) sectionScores[key] = { total: 0, count: 0 };
+                        sectionScores[key].total += Number(r.response_value) || 0;
+                        sectionScores[key].count += 1;
+                    });
+
+                    const puntajes: any = {};
+                    Object.entries(sectionScores).forEach(([key, val]) => {
+                        puntajes[key] = Number((val.total / val.count).toFixed(1));
+                    });
+
+                    const finalPuntajes = {
+                        integridad: puntajes.integridad || 0,
+                        trabajoEquipo: puntajes.trabajoEquipo || 0,
+                        institucional: puntajes.institucional || 0,
+                        comunicacion: puntajes.comunicacion || puntajes.liderazgo || 0, // Fallback
+                        orientacionResultados: puntajes.orientacionResultados || 0,
+                        calidadTrabajo: puntajes.calidadTrabajo || 0
+                    };
+
+                    const input: EvaluacionInput = {
+                        evaluado: {
+                            nombre: subject?.full_name || 'Colaborador',
+                            rol: subject?.role || 'Analista',
+                            fecha: new Date(evalData.created_at).toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })
+                        },
+                        puntajes: finalPuntajes
+                    };
+
+                    const informe = generarInformeIA(input);
+                    setAiReportData({ input, informe });
+                }
+
                 setGenerated(true);
             } else {
                 alert('No se encontró una evaluación completada para este usuario.');
                 setReportData(null);
+                setAiReportData(null);
             }
         } catch (error) {
             console.error('Error generating report:', error);
@@ -414,10 +477,29 @@ export function ReportsManagement() {
             <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 print:hidden">
                 <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
                     <FileText className="w-5 h-5 text-blue-600" />
-                    Generador de Informes Técnicos
+                    Generador de Informes
                 </h2>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Informe</label>
+                        <div className="flex bg-gray-100 p-1 rounded-lg">
+                            <button
+                                onClick={() => { setReportType('technical'); setGenerated(false); }}
+                                className={`flex-1 py-1.5 px-3 rounded-md text-sm font-medium transition-all ${reportType === 'technical' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                            >
+                                Técnico
+                            </button>
+                            <button
+                                onClick={() => { setReportType('ai-self'); setGenerated(false); }}
+                                className={`flex-1 py-1.5 px-3 rounded-md text-sm font-medium transition-all flex items-center justify-center gap-1 ${reportType === 'ai-self' ? 'bg-white text-amber-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                            >
+                                <Sparkles className="w-3 h-3" />
+                                IA Autoevaluación
+                            </button>
+                        </div>
+                    </div>
+
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Oficina</label>
                         <div className="relative">
@@ -482,221 +564,231 @@ export function ReportsManagement() {
             </div>
 
             {/* Report View */}
-            {generated && reportData && (
-                <div ref={componentRef} className="min-h-screen bg-slate-50 text-slate-800 font-sans selection:bg-amber-100 print:bg-white">
+            {generated && (
+                <>
+                    {reportType === 'technical' && reportData && (
+                        <div ref={componentRef} className="min-h-screen bg-slate-50 text-slate-800 font-sans selection:bg-amber-100 print:bg-white">
 
-                    {/* Header / Banner */}
-                    <header className="bg-slate-900 text-white pt-10 pb-24 px-6 md:px-12 relative overflow-hidden shadow-lg print:shadow-none print:pt-6 print:pb-12">
-                        {/* Logos for Print */}
-                        <div className="absolute top-6 left-6 z-30 hidden print:block">
-                            <img src="https://udes.edu.co/images/logo/logo-con-acreditada-color.png" alt="UDES Logo" className="h-16 object-contain bg-white/90 p-2 rounded" />
-                        </div>
-                        <div className="absolute top-6 right-6 z-30 hidden print:block">
-                            <img src="/prisma.png" alt="PRISMA Logo" className="h-12 object-contain bg-white/90 p-1 rounded" />
-                        </div>
-
-                        <div className="absolute top-0 right-0 p-10 opacity-10 print:hidden">
-                            <BrainCircuit size={300} />
-                        </div>
-                        <div className="max-w-5xl mx-auto relative z-10 print:mt-16">
-                            <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
-                                <div>
-                                    <div className="flex items-center gap-3 mb-2 text-amber-500 font-semibold tracking-wider text-sm uppercase">
-                                        <FileText size={16} />
-                                        {reportData.meta.title}
-                                    </div>
-                                    <h1 className="text-3xl md:text-5xl font-bold mb-2">{reportData.meta.subject}</h1>
-                                    <p className="text-slate-400 text-lg">{reportData.meta.role} | {reportData.meta.date}</p>
+                            {/* Header / Banner */}
+                            <header className="bg-slate-900 text-white pt-10 pb-24 px-6 md:px-12 relative overflow-hidden shadow-lg print:shadow-none print:pt-6 print:pb-12">
+                                {/* Logos for Print */}
+                                <div className="absolute top-6 left-6 z-30 hidden print:block">
+                                    <img src="https://udes.edu.co/images/logo/logo-con-acreditada-color.png" alt="UDES Logo" className="h-16 object-contain bg-white/90 p-2 rounded" />
                                 </div>
-                                <div className="text-right hidden md:block print:block">
-                                    <p className="text-slate-400 text-sm">Evaluadora</p>
-                                    <p className="font-medium">{reportData.meta.evaluator}</p>
-                                    <p className="text-xs text-amber-500 mt-1">{reportData.meta.analyst}</p>
+                                <div className="absolute top-6 right-6 z-30 hidden print:block">
+                                    <img src="/prisma.png" alt="PRISMA Logo" className="h-12 object-contain bg-white/90 p-1 rounded" />
                                 </div>
-                            </div>
-                        </div>
-                    </header>
 
-                    <main className="max-w-5xl mx-auto px-6 -mt-16 relative z-20 pb-20 print:mt-0 print:px-8">
-
-                        {/* Executive Summary Cards */}
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10 print:gap-4">
-                            <div className="bg-white rounded-lg shadow-md p-6 border-t-4 border-amber-500 print:shadow-none print:border">
-                                <h3 className="text-slate-500 text-sm font-semibold uppercase mb-2">Puntaje Ponderado</h3>
-                                <div className="flex items-end gap-2">
-                                    <span className="text-5xl font-bold text-slate-900">{reportData.executive.weightedScore}</span>
-                                    <span className="text-lg text-slate-400 mb-1">/ 5.0</span>
+                                <div className="absolute top-0 right-0 p-10 opacity-10 print:hidden">
+                                    <BrainCircuit size={300} />
                                 </div>
-                                <p className="text-xs text-slate-400 mt-2">Escala PRISMA Global</p>
-                            </div>
-
-                            <div className="bg-white rounded-lg shadow-md p-6 border-t-4 border-slate-700 print:shadow-none print:border">
-                                <h3 className="text-slate-500 text-sm font-semibold uppercase mb-2">Perfil Obtenido</h3>
-                                <div className="flex items-center gap-2 mt-2">
-                                    <Award className="text-amber-500 w-8 h-8" />
-                                    <span className="text-xl font-bold text-slate-800 leading-tight">
-                                        {reportData.executive.profile}
-                                    </span>
-                                </div>
-                                <p className="text-xs text-slate-400 mt-3">Nivel de desempeño destacado</p>
-                            </div>
-
-                            <div className="bg-white rounded-lg shadow-md p-6 border-t-4 border-slate-300 md:col-span-1 print:shadow-none print:border">
-                                <h3 className="text-slate-500 text-sm font-semibold uppercase mb-2">Cumplimiento Bruto</h3>
-                                <div className="flex items-end gap-2">
-                                    <span className="text-4xl font-bold text-slate-700">{reportData.executive.rawScore}</span>
-                                    <span className="text-sm text-slate-400 mb-1">Promedio Simple</span>
-                                </div>
-                                <p className="text-xs text-slate-400 mt-2">Basado en respuestas directas</p>
-                            </div>
-                        </div>
-
-                        {/* Introduction Summary */}
-                        <section className="bg-white rounded-lg shadow-sm p-8 mb-10 border-l-4 border-slate-900 print:shadow-none print:border print:p-4">
-                            <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
-                                <User className="text-amber-600" size={24} />
-                                Resumen Ejecutivo
-                            </h2>
-                            <p className="text-slate-600 leading-relaxed text-lg text-justify">
-                                {reportData.executive.summary}
-                            </p>
-                        </section>
-
-                        {/* Charts Section */}
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-12 print:grid-cols-1 print:gap-6">
-                            {/* Chart */}
-                            <div className="lg:col-span-2 bg-white p-6 rounded-lg shadow-sm print:shadow-none print:border">
-                                <h3 className="text-lg font-bold text-slate-800 mb-6">Métricas de Factores Clave</h3>
-                                <div className="h-64 w-full">
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <BarChart data={chartData} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                                            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
-                                            <XAxis type="number" domain={[0, 5]} hide />
-                                            <YAxis type="category" dataKey="category" tick={{ fill: '#475569', fontSize: 12 }} width={100} />
-                                            <Tooltip
-                                                cursor={{ fill: '#f1f5f9' }}
-                                                contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                                            />
-                                            <ReferenceLine x={3} stroke="#ef4444" strokeDasharray="3 3" />
-                                            <Bar dataKey="score" radius={[0, 4, 4, 0]} barSize={30}>
-                                                {chartData.map((entry, index) => (
-                                                    <Cell key={`cell-${index}`} fill={entry.color} />
-                                                ))}
-                                            </Bar>
-                                        </BarChart>
-                                    </ResponsiveContainer>
-                                </div>
-                                <div className="flex justify-center gap-6 mt-4 text-xs text-slate-500">
-                                    <span className="flex items-center gap-1"><div className="w-3 h-3 bg-blue-900 rounded-sm"></div> Fortaleza</span>
-                                    <span className="flex items-center gap-1"><div className="w-3 h-3 bg-amber-600 rounded-sm"></div> Área de Oportunidad</span>
-                                </div>
-                            </div>
-
-                            {/* Key Insight Box */}
-                            <div className="bg-slate-800 text-slate-100 p-6 rounded-lg shadow-md flex flex-col justify-center print:bg-slate-100 print:text-slate-900 print:border print:shadow-none">
-                                <h4 className="text-amber-500 font-bold uppercase tracking-wider text-sm mb-4 print:text-amber-700">Diagnóstico IA</h4>
-                                <p className="italic text-slate-300 mb-4 print:text-slate-700">
-                                    "{reportData.executive.weightedScore >= 4 ? 'Alto alineamiento cultural y operativo.' : 'Brechas significativas entre potencial y ejecución.'}"
-                                </p>
-                                <div className="mt-auto pt-4 border-t border-slate-700 print:border-slate-300">
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-sm text-slate-400 print:text-slate-600">Potencial de Liderazgo</span>
-                                        <span className="text-amber-500 font-bold print:text-amber-700">{reportData.executive.weightedScore >= 4 ? 'Alto' : 'Medio/Bajo'}</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Detailed Breakdown */}
-                        <h2 className="text-2xl font-bold text-slate-900 mb-6 border-b pb-2 border-slate-200">Análisis Detallado por Factores</h2>
-                        <div className="space-y-6 mb-12 print:break-inside-avoid">
-                            {reportData.factors.map((factor) => (
-                                <div key={factor.id} className="bg-white border border-slate-100 rounded-lg p-6 shadow-sm hover:shadow-md transition-shadow print:shadow-none print:border-slate-200 print:break-inside-avoid">
-                                    <div className="flex flex-col md:flex-row gap-4 md:items-start">
-                                        <div className={`p-3 rounded-full flex-shrink-0 ${factor.score >= 4 ? 'bg-blue-50 text-blue-900' : 'bg-amber-50 text-amber-600'}`}>
-                                            {factor.icon}
+                                <div className="max-w-5xl mx-auto relative z-10 print:mt-16">
+                                    <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
+                                        <div>
+                                            <div className="flex items-center gap-3 mb-2 text-amber-500 font-semibold tracking-wider text-sm uppercase">
+                                                <FileText size={16} />
+                                                {reportData.meta.title}
+                                            </div>
+                                            <h1 className="text-3xl md:text-5xl font-bold mb-2">{reportData.meta.subject}</h1>
+                                            <p className="text-slate-400 text-lg">{reportData.meta.role} | {reportData.meta.date}</p>
                                         </div>
-                                        <div className="flex-grow">
-                                            <div className="flex justify-between items-center mb-2">
-                                                <h3 className="text-lg font-bold text-slate-800">{factor.title}</h3>
-                                                <span className={`px-3 py-1 rounded-full text-xs font-bold ${factor.score >= 4.5 ? 'bg-green-100 text-green-800' :
-                                                    factor.score >= 4 ? 'bg-blue-100 text-blue-800' :
-                                                        'bg-amber-100 text-amber-800'
-                                                    }`}>
-                                                    {factor.score} / 5.0
-                                                </span>
-                                            </div>
-
-                                            {/* Progress Bar */}
-                                            <div className="w-full bg-slate-100 rounded-full h-2 mb-4 print:hidden">
-                                                <div
-                                                    className={`h-2 rounded-full ${factor.score >= 4 ? 'bg-slate-900' : 'bg-amber-500'}`}
-                                                    style={{ width: `${(factor.score / 5) * 100}%` }}
-                                                ></div>
-                                            </div>
-
-                                            <div className="grid md:grid-cols-2 gap-6">
-                                                <div>
-                                                    <h4 className="text-xs font-bold text-slate-500 uppercase mb-1 flex items-center gap-1">
-                                                        <CheckCircle2 size={14} className="text-green-600" /> Fortalezas
-                                                    </h4>
-                                                    <p className="text-sm text-slate-600 text-justify">{factor.strengths}</p>
-                                                </div>
-                                                <div>
-                                                    <h4 className="text-xs font-bold text-slate-500 uppercase mb-1 flex items-center gap-1">
-                                                        <AlertCircle size={14} className="text-amber-600" /> Vulnerabilidad
-                                                    </h4>
-                                                    <p className="text-sm text-slate-600 text-justify">{factor.weakness}</p>
-                                                </div>
-                                            </div>
+                                        <div className="text-right hidden md:block print:block">
+                                            <p className="text-slate-400 text-sm">Evaluadora</p>
+                                            <p className="font-medium">{reportData.meta.evaluator}</p>
+                                            <p className="text-xs text-amber-500 mt-1">{reportData.meta.analyst}</p>
                                         </div>
                                     </div>
                                 </div>
-                            ))}
-                        </div>
+                            </header>
 
-                        {/* Strategic Recommendations */}
-                        <section className="print:break-before-page">
-                            <div className="flex items-center gap-3 mb-6">
-                                <Target className="text-amber-600" size={28} />
-                                <h2 className="text-2xl font-bold text-slate-900">Recomendaciones Estratégicas (IA)</h2>
-                            </div>
+                            <main className="max-w-5xl mx-auto px-6 -mt-16 relative z-20 pb-20 print:mt-0 print:px-8">
 
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                {reportData.recommendations.map((rec) => (
-                                    <div key={rec.id} className="bg-white p-6 rounded-lg border-l-4 border-amber-500 shadow-sm flex flex-col h-full print:shadow-none print:border">
-                                        <div className="flex justify-between items-start mb-3">
-                                            <span className="text-slate-300 font-bold text-xl">{rec.id}</span>
-                                            <span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs font-semibold">{rec.goal}</span>
+                                {/* Executive Summary Cards */}
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10 print:gap-4">
+                                    <div className="bg-white rounded-lg shadow-md p-6 border-t-4 border-amber-500 print:shadow-none print:border">
+                                        <h3 className="text-slate-500 text-sm font-semibold uppercase mb-2">Puntaje Ponderado</h3>
+                                        <div className="flex items-end gap-2">
+                                            <span className="text-5xl font-bold text-slate-900">{reportData.executive.weightedScore}</span>
+                                            <span className="text-lg text-slate-400 mb-1">/ 5.0</span>
                                         </div>
-                                        <h3 className="font-bold text-lg text-slate-800 mb-2">{rec.action}</h3>
-                                        <p className="text-slate-600 text-sm leading-relaxed flex-grow text-justify">
-                                            {rec.psychFocus}
+                                        <p className="text-xs text-slate-400 mt-2">Escala PRISMA Global</p>
+                                    </div>
+
+                                    <div className="bg-white rounded-lg shadow-md p-6 border-t-4 border-slate-700 print:shadow-none print:border">
+                                        <h3 className="text-slate-500 text-sm font-semibold uppercase mb-2">Perfil Obtenido</h3>
+                                        <div className="flex items-center gap-2 mt-2">
+                                            <Award className="text-amber-500 w-8 h-8" />
+                                            <span className="text-xl font-bold text-slate-800 leading-tight">
+                                                {reportData.executive.profile}
+                                            </span>
+                                        </div>
+                                        <p className="text-xs text-slate-400 mt-3">Nivel de desempeño destacado</p>
+                                    </div>
+
+                                    <div className="bg-white rounded-lg shadow-md p-6 border-t-4 border-slate-300 md:col-span-1 print:shadow-none print:border">
+                                        <h3 className="text-slate-500 text-sm font-semibold uppercase mb-2">Cumplimiento Bruto</h3>
+                                        <div className="flex items-end gap-2">
+                                            <span className="text-4xl font-bold text-slate-700">{reportData.executive.rawScore}</span>
+                                            <span className="text-sm text-slate-400 mb-1">Promedio Simple</span>
+                                        </div>
+                                        <p className="text-xs text-slate-400 mt-2">Basado en respuestas directas</p>
+                                    </div>
+                                </div>
+
+                                {/* Introduction Summary */}
+                                <section className="bg-white rounded-lg shadow-sm p-8 mb-10 border-l-4 border-slate-900 print:shadow-none print:border print:p-4">
+                                    <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
+                                        <User className="text-amber-600" size={24} />
+                                        Resumen Ejecutivo
+                                    </h2>
+                                    <p className="text-slate-600 leading-relaxed text-lg text-justify">
+                                        {reportData.executive.summary}
+                                    </p>
+                                </section>
+
+                                {/* Charts Section */}
+                                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-12 print:grid-cols-1 print:gap-6">
+                                    {/* Chart */}
+                                    <div className="lg:col-span-2 bg-white p-6 rounded-lg shadow-sm print:shadow-none print:border">
+                                        <h3 className="text-lg font-bold text-slate-800 mb-6">Métricas de Factores Clave</h3>
+                                        <div className="h-64 w-full">
+                                            <ResponsiveContainer width="100%" height="100%">
+                                                <BarChart data={chartData} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                                                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
+                                                    <XAxis type="number" domain={[0, 5]} hide />
+                                                    <YAxis type="category" dataKey="category" tick={{ fill: '#475569', fontSize: 12 }} width={100} />
+                                                    <Tooltip
+                                                        cursor={{ fill: '#f1f5f9' }}
+                                                        contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                                                    />
+                                                    <ReferenceLine x={3} stroke="#ef4444" strokeDasharray="3 3" />
+                                                    <Bar dataKey="score" radius={[0, 4, 4, 0]} barSize={30}>
+                                                        {chartData.map((entry, index) => (
+                                                            <Cell key={`cell-${index}`} fill={entry.color} />
+                                                        ))}
+                                                    </Bar>
+                                                </BarChart>
+                                            </ResponsiveContainer>
+                                        </div>
+                                        <div className="flex justify-center gap-6 mt-4 text-xs text-slate-500">
+                                            <span className="flex items-center gap-1"><div className="w-3 h-3 bg-blue-900 rounded-sm"></div> Fortaleza</span>
+                                            <span className="flex items-center gap-1"><div className="w-3 h-3 bg-amber-600 rounded-sm"></div> Área de Oportunidad</span>
+                                        </div>
+                                    </div>
+
+                                    {/* Key Insight Box */}
+                                    <div className="bg-slate-800 text-slate-100 p-6 rounded-lg shadow-md flex flex-col justify-center print:bg-slate-100 print:text-slate-900 print:border print:shadow-none">
+                                        <h4 className="text-amber-500 font-bold uppercase tracking-wider text-sm mb-4 print:text-amber-700">Diagnóstico IA</h4>
+                                        <p className="italic text-slate-300 mb-4 print:text-slate-700">
+                                            "{reportData.executive.weightedScore >= 4 ? 'Alto alineamiento cultural y operativo.' : 'Brechas significativas entre potencial y ejecución.'}"
                                         </p>
+                                        <div className="mt-auto pt-4 border-t border-slate-700 print:border-slate-300">
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-sm text-slate-400 print:text-slate-600">Potencial de Liderazgo</span>
+                                                <span className="text-amber-500 font-bold print:text-amber-700">{reportData.executive.weightedScore >= 4 ? 'Alto' : 'Medio/Bajo'}</span>
+                                            </div>
+                                        </div>
                                     </div>
-                                ))}
-                            </div>
-                        </section>
+                                </div>
 
-                        {/* Conclusion Footer */}
-                        <div className="mt-12 bg-slate-900 text-slate-300 p-8 rounded-lg text-center print:bg-white print:text-slate-800 print:border-t-2 print:border-slate-900">
-                            <h3 className="text-white font-bold text-lg mb-2 print:text-slate-900">Conclusión PRISMA</h3>
-                            <p className="max-w-3xl mx-auto leading-relaxed">
-                                El/La colaborador(a) {reportData.meta.subject} es un activo valioso para la institución. El mayor retorno de inversión se obtendrá fortaleciendo sus competencias clave identificadas. Si aborda estas áreas, puede transicionar a un nivel de desempeño superior.
-                            </p>
+                                {/* Detailed Breakdown */}
+                                <h2 className="text-2xl font-bold text-slate-900 mb-6 border-b pb-2 border-slate-200">Análisis Detallado por Factores</h2>
+                                <div className="space-y-6 mb-12 print:break-inside-avoid">
+                                    {reportData.factors.map((factor) => (
+                                        <div key={factor.id} className="bg-white border border-slate-100 rounded-lg p-6 shadow-sm hover:shadow-md transition-shadow print:shadow-none print:border-slate-200 print:break-inside-avoid">
+                                            <div className="flex flex-col md:flex-row gap-4 md:items-start">
+                                                <div className={`p-3 rounded-full flex-shrink-0 ${factor.score >= 4 ? 'bg-blue-50 text-blue-900' : 'bg-amber-50 text-amber-600'}`}>
+                                                    {factor.icon}
+                                                </div>
+                                                <div className="flex-grow">
+                                                    <div className="flex justify-between items-center mb-2">
+                                                        <h3 className="text-lg font-bold text-slate-800">{factor.title}</h3>
+                                                        <span className={`px-3 py-1 rounded-full text-xs font-bold ${factor.score >= 4.5 ? 'bg-green-100 text-green-800' :
+                                                            factor.score >= 4 ? 'bg-blue-100 text-blue-800' :
+                                                                'bg-amber-100 text-amber-800'
+                                                            }`}>
+                                                            {factor.score} / 5.0
+                                                        </span>
+                                                    </div>
+
+                                                    {/* Progress Bar */}
+                                                    <div className="w-full bg-slate-100 rounded-full h-2 mb-4 print:hidden">
+                                                        <div
+                                                            className={`h-2 rounded-full ${factor.score >= 4 ? 'bg-slate-900' : 'bg-amber-500'}`}
+                                                            style={{ width: `${(factor.score / 5) * 100}%` }}
+                                                        ></div>
+                                                    </div>
+
+                                                    <div className="grid md:grid-cols-2 gap-6">
+                                                        <div>
+                                                            <h4 className="text-xs font-bold text-slate-500 uppercase mb-1 flex items-center gap-1">
+                                                                <CheckCircle2 size={14} className="text-green-600" /> Fortalezas
+                                                            </h4>
+                                                            <p className="text-sm text-slate-600 text-justify">{factor.strengths}</p>
+                                                        </div>
+                                                        <div>
+                                                            <h4 className="text-xs font-bold text-slate-500 uppercase mb-1 flex items-center gap-1">
+                                                                <AlertCircle size={14} className="text-amber-600" /> Vulnerabilidad
+                                                            </h4>
+                                                            <p className="text-sm text-slate-600 text-justify">{factor.weakness}</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                {/* Strategic Recommendations */}
+                                <section className="print:break-before-page">
+                                    <div className="flex items-center gap-3 mb-6">
+                                        <Target className="text-amber-600" size={28} />
+                                        <h2 className="text-2xl font-bold text-slate-900">Recomendaciones Estratégicas (IA)</h2>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        {reportData.recommendations.map((rec) => (
+                                            <div key={rec.id} className="bg-white p-6 rounded-lg border-l-4 border-amber-500 shadow-sm flex flex-col h-full print:shadow-none print:border">
+                                                <div className="flex justify-between items-start mb-3">
+                                                    <span className="text-slate-300 font-bold text-xl">{rec.id}</span>
+                                                    <span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs font-semibold">{rec.goal}</span>
+                                                </div>
+                                                <h3 className="font-bold text-lg text-slate-800 mb-2">{rec.action}</h3>
+                                                <p className="text-slate-600 text-sm leading-relaxed flex-grow text-justify">
+                                                    {rec.psychFocus}
+                                                </p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </section>
+
+                                {/* Conclusion Footer */}
+                                <div className="mt-12 bg-slate-900 text-slate-300 p-8 rounded-lg text-center print:bg-white print:text-slate-800 print:border-t-2 print:border-slate-900">
+                                    <h3 className="text-white font-bold text-lg mb-2 print:text-slate-900">Conclusión PRISMA</h3>
+                                    <p className="max-w-3xl mx-auto leading-relaxed">
+                                        El/La colaborador(a) {reportData.meta.subject} es un activo valioso para la institución. El mayor retorno de inversión se obtendrá fortaleciendo sus competencias clave identificadas. Si aborda estas áreas, puede transicionar a un nivel de desempeño superior.
+                                    </p>
+                                </div>
+
+                                {/* Print Footer Logos */}
+                                <div className="hidden print:flex justify-between items-end mt-12 pt-8 border-t border-slate-200">
+                                    <img src="/prisma.png" alt="PRISMA" className="h-8 opacity-50" />
+                                    <div className="text-right text-xs text-slate-400">
+                                        Generado por Sistema PRISMA v2.0<br />
+                                        {new Date().toLocaleString()}
+                                    </div>
+                                </div>
+
+                            </main>
                         </div>
+                    )}
 
-                        {/* Print Footer Logos */}
-                        <div className="hidden print:flex justify-between items-end mt-12 pt-8 border-t border-slate-200">
-                            <img src="/prisma.png" alt="PRISMA" className="h-8 opacity-50" />
-                            <div className="text-right text-xs text-slate-400">
-                                Generado por Sistema PRISMA v2.0<br />
-                                {new Date().toLocaleString()}
-                            </div>
+                    {reportType === 'ai-self' && aiReportData && (
+                        <div ref={componentRef}>
+                            <AiReportRenderer inputData={aiReportData.input} informe={aiReportData.informe} onPrint={handlePrint} />
                         </div>
-
-                    </main>
-                </div>
+                    )}
+                </>
             )}
         </div>
     );
