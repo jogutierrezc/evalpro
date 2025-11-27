@@ -4,7 +4,11 @@ import { supabase, Evaluation, EvaluationTemplate, User } from '../lib/supabase'
 import { FileText, Clock, CheckCircle, Play } from 'lucide-react';
 import { EvaluationForm } from './evaluations/EvaluationForm';
 
-export function EvaluationsModule() {
+interface EvaluationsModuleProps {
+  onNavigate: (module: string) => void;
+}
+
+export function EvaluationsModule({ onNavigate }: EvaluationsModuleProps) {
   const { user } = useAuth();
   const [activePeriod, setActivePeriod] = useState<null | { id: string; year: number; start_date: string; end_date: string }>(null);
   const [evaluations, setEvaluations] = useState<
@@ -806,7 +810,7 @@ export function EvaluationsModule() {
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
                           <div className="flex items-center gap-3 mb-2">
-                            <CheckCircle className="w-5 h-5 text-green-500" />
+                            {getStatusIcon(evaluation.status)}
                             <h3 className="font-semibold text-gray-900">{evaluation.template?.name}</h3>
                           </div>
                           <p className="text-sm text-gray-600 mb-1">
@@ -817,8 +821,8 @@ export function EvaluationsModule() {
                           </p>
                         </div>
                         <button
-                          onClick={() => onNavigate('reports')}
-                          className="flex items-center gap-2 bg-white border border-blue-600 text-blue-600 hover:bg-blue-50 px-4 py-2 rounded-lg transition-colors"
+                          onClick={() => window.open(`?module=technical-report&id=${evaluation.id}`, '_blank')}
+                          className="flex items-center gap-2 bg-white border border-blue-200 text-blue-600 hover:bg-blue-50 px-4 py-2 rounded-lg transition-colors"
                         >
                           <FileText className="w-4 h-4" />
                           Ver Informe Técnico
@@ -826,6 +830,7 @@ export function EvaluationsModule() {
                       </div>
                     </div>
                   ))}
+
               </div>
             </div>
           )}

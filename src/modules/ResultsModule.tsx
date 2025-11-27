@@ -410,15 +410,17 @@ export function ResultsModule() {
           >
             Vista por Oficina
           </button>
-          <button
-            onClick={() => setViewMode('campus')}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${viewMode === 'campus'
-              ? 'bg-blue-600 text-white'
-              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-          >
-            Vista por Campus
-          </button>
+          {user?.role === 'admin' && (
+            <button
+              onClick={() => setViewMode('campus')}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors ${viewMode === 'campus'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+            >
+              Vista por Campus
+            </button>
+          )}
           {user?.role === 'admin' && (
             <button
               onClick={() => setViewMode('university')}

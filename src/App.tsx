@@ -11,10 +11,17 @@ import { ResultsModule } from './modules/ResultsModule';
 import { ReportsManagement } from './modules/admin/ReportsManagement';
 import { SelfEvaluationReport } from './modules/SelfEvaluationReport';
 import { UserGuideModule } from './modules/UserGuideModule';
+import { TechnicalReportViewer } from './modules/TechnicalReportViewer';
 
 function AppContent() {
   const { loading, user } = useAuth();
-  const [activeModule, setActiveModule] = useState('dashboard');
+
+  // Initialize state from URL param if present
+  const [activeModule, setActiveModule] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const moduleParam = params.get('module');
+    return moduleParam || 'dashboard';
+  });
 
   if (loading) {
     return (
@@ -29,6 +36,11 @@ function AppContent() {
 
   if (!user) {
     return <LoginPage />;
+  }
+
+  // Standalone view for Technical Report (no sidebar)
+  if (activeModule === 'technical-report') {
+    return <TechnicalReportViewer />;
   }
 
   return (

@@ -2,7 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { supabase, EvaluationTemplate, User } from '../../lib/supabase';
 import { ChevronDown } from 'lucide-react';
 
-export function EvaluationsManagement() {
+interface EvaluationsManagementProps {
+  onNavigate: (module: string) => void;
+}
+
+export function EvaluationsManagement({ onNavigate }: EvaluationsManagementProps) {
   const [loading, setLoading] = useState(true);
   const [campusMap, setCampusMap] = useState<Record<string, {
     offices: Record<string, { users: User[]; templatesByUser: Record<string, EvaluationTemplate[]>; evaluationsByUser?: Record<string, any[]> }>
@@ -291,10 +295,10 @@ export function EvaluationsManagement() {
                             </div>
                             <span className="text-xs text-gray-500">{progressByEval[String(ev.id)] || 0}% completado</span>
                           </div>
-                          {ev.status === 'completed' && onNavigate && (
+                          {ev.status === 'completed' && (
                             <div className="col-span-2 md:col-span-6 lg:col-span-1 flex items-center justify-end mt-2 lg:mt-0">
                               <button
-                                onClick={() => onNavigate('reports')}
+                                onClick={() => window.open(`?module=technical-report&id=${ev.id}`, '_blank')}
                                 className="text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1 rounded border border-blue-200 transition-colors"
                               >
                                 Ver Informe
