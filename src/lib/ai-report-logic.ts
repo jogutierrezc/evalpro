@@ -26,6 +26,7 @@ export interface FactorAnalisis {
     icono: any;
     fortaleza: string;
     vulnerabilidad: string;
+    analisisAmpliado: string; // Nuevo campo para texto detallado
 }
 
 export interface Recomendacion {
@@ -189,13 +190,10 @@ export const generarInformeIA = (input: EvaluacionInput): InformeGenerado => {
     const nivelGlobal = promedio >= 4.5 ? "Sobresaliente" : promedio >= 4.0 ? "Avanzado" : "Estándar";
 
     // 2. Preparar puntajes canónicos para arquetipos
-    // Mapeamos los puntajes dinámicos a las claves canónicas (integridad, trabajoEquipo, etc.)
     const canonicalScores: Record<string, number> = {};
     Object.entries(p).forEach(([nombre, score]) => {
         const dim = detectarDimension(nombre);
         if (dim) {
-            // Si hay múltiples secciones que mapean a la misma dimensión, promediamos o tomamos la última.
-            // Para simplificar, tomamos el máximo o el último.
             canonicalScores[dim] = score;
         }
     });
@@ -219,24 +217,27 @@ export const generarInformeIA = (input: EvaluacionInput): InformeGenerado => {
             const textosDim = config[rango];
             if (textosDim) textos = textosDim;
         } else {
-            // Fallback genérico mejorado
             if (rango === 'CRITICO' || rango === 'VULNERABLE') {
                 textos = { f: "Muestra disposición al aprendizaje.", v: "Requiere plan de desarrollo urgente en esta área." };
             }
         }
 
+        // Construcción del análisis ampliado
+        const analisisAmpliado = `En la dimensión de ${nombreSeccion}, se obtuvo un puntaje de ${score.toFixed(1)}, ubicándose en el nivel ${rango}. Esto indica que ${textos.f.toLowerCase()} Sin embargo, ${textos.v.toLowerCase()} Se recomienda mantener el enfoque en las fortalezas mientras se abordan las áreas de oportunidad identificadas.`;
+
         // Adaptar nombre si es autoevaluación
         const nombreFinal = tipo === 'autoevaluacion' ? `${nombreSeccion} (Auto)` : nombreSeccion;
 
         return {
-            id: nombreSeccion, // Usamos el nombre como ID
+            id: nombreSeccion,
             nombre: nombreFinal,
             score: score,
             icono: icono,
             rango: rango,
             color: color,
             fortaleza: textos.f,
-            vulnerabilidad: textos.v
+            vulnerabilidad: textos.v,
+            analisisAmpliado // Asignar el nuevo campo
         };
     });
 

@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import {
     FileText, Award, Brain, BarChart3, TrendingUp, Target,
@@ -34,7 +33,12 @@ const CardFactor = ({ factor }: { factor: FactorAnalisis }) => (
 
         <ProgressBar value={factor.score} color={factor.color} />
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+        {/* Análisis Ampliado */}
+        <div className="mt-4 mb-6 text-slate-700 text-sm leading-relaxed border-l-2 border-slate-200 pl-4 italic bg-slate-50 p-3 rounded-r-lg">
+            {factor.analisisAmpliado}
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="bg-green-50 p-4 rounded-lg border border-green-100">
                 <div className="flex items-center gap-2 mb-2 text-green-700 font-bold text-sm uppercase tracking-wide">
                     <CheckCircle className="w-4 h-4" /> Fortalezas
@@ -62,14 +66,12 @@ export function AiReportRenderer({ inputData, informe, onPrint }: AiReportRender
     const [showRadar, setShowRadar] = useState(false);
     const handlePrint = onPrint || (() => window.print());
 
-    const radarData = [
-        { subject: 'Integridad', A: inputData.puntajes.integridad, B: inputData.comparativeScores?.integridad || 0, fullMark: 5 },
-        { subject: 'Equipo', A: inputData.puntajes.trabajoEquipo, B: inputData.comparativeScores?.trabajoEquipo || 0, fullMark: 5 },
-        { subject: 'Institucional', A: inputData.puntajes.institucional, B: inputData.comparativeScores?.institucional || 0, fullMark: 5 },
-        { subject: 'Comunicación', A: inputData.puntajes.comunicacion, B: inputData.comparativeScores?.comunicacion || 0, fullMark: 5 },
-        { subject: 'Resultados', A: inputData.puntajes.orientacionResultados, B: inputData.comparativeScores?.orientacionResultados || 0, fullMark: 5 },
-        { subject: 'Calidad', A: inputData.puntajes.calidadTrabajo, B: inputData.comparativeScores?.calidadTrabajo || 0, fullMark: 5 },
-    ];
+    const radarData = Object.entries(inputData.puntajes).map(([key, value]) => ({
+        subject: key.length > 15 ? key.substring(0, 12) + '...' : key,
+        A: value,
+        B: inputData.comparativeScores?.[key] || 0,
+        fullMark: 5
+    }));
 
     return (
         <div className="bg-slate-50 font-sans text-slate-900 pb-20 print:bg-white">
@@ -94,16 +96,25 @@ export function AiReportRenderer({ inputData, informe, onPrint }: AiReportRender
                             </p>
                         </div>
 
-                        <div className="text-left md:text-right print:block bg-slate-800/50 p-4 rounded-lg md:bg-transparent md:p-0">
-                            <div className="text-slate-500 text-xs uppercase tracking-widest mb-1">
-                                {inputData.tipoInforme === 'lider_a_colaborador' ? 'Evaluadora' : 'Evaluado por'}
+                        <div className="flex flex-col items-end gap-4">
+                            <div className="text-left md:text-right print:block bg-slate-800/50 p-4 rounded-lg md:bg-transparent md:p-0">
+                                <div className="text-slate-500 text-xs uppercase tracking-widest mb-1">
+                                    {inputData.tipoInforme === 'lider_a_colaborador' ? 'Evaluadora' : 'Evaluado por'}
+                                </div>
+                                <div className="font-semibold text-slate-300 uppercase">
+                                    {inputData.evaluadorNombre || 'Sistema Neural de Análisis Prisma UDES'}
+                                </div>
+                                {inputData.tipoInforme === 'lider_a_colaborador' && (
+                                    <div className="text-amber-500 text-xs mt-1">Dra. I.A. Psicológica Gemini</div>
+                                )}
                             </div>
-                            <div className="font-semibold text-slate-300 uppercase">
-                                {inputData.evaluadorNombre || 'Sistema Neural de Análisis Prisma UDES'}
-                            </div>
-                            {inputData.tipoInforme === 'lider_a_colaborador' && (
-                                <div className="text-amber-500 text-xs mt-1">Dra. I.A. Psicológica Gemini</div>
-                            )}
+
+                            <button
+                                onClick={handlePrint}
+                                className="hidden md:flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium print:hidden"
+                            >
+                                <Printer className="w-4 h-4" /> Descargar PDF
+                            </button>
                         </div>
                     </div>
                 </div>
