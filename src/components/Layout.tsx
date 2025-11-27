@@ -28,7 +28,7 @@ export function Layout({ children, activeModule, onModuleChange }: LayoutProps) 
     { id: 'evaluations', label: 'Evaluaciones', icon: FileText, roles: ['admin', 'office_manager', 'employee'] },
     { id: 'results', label: 'Resultados', icon: BarChart3, roles: ['admin', 'office_manager', 'employee'] },
     { id: 'reports', label: 'Informes', icon: FileText, roles: ['admin', 'office_manager', 'employee'] },
-    { id: 'self-report', label: 'Mi Resultado Prisma', icon: BrainCircuit, roles: ['admin', 'office_manager', 'employee'] },
+    { id: 'self-report', label: 'Mi Resultado Prisma', icon: BrainCircuit, roles: ['*'] },
     { id: 'admin', label: 'Administración', icon: Settings, roles: ['admin'] },
     { id: 'guide', label: 'Ayuda', icon: BookOpen, roles: ['admin', 'office_manager', 'employee'] },
   ];
@@ -38,6 +38,7 @@ export function Layout({ children, activeModule, onModuleChange }: LayoutProps) 
     const matchesRole = (roleKey: string) => {
       const rk = (roleKey || '').toString().toLowerCase();
       if (!rk) return false;
+      if (rk === '*') return true;
       if (rk === ur) return true;
       // allow broad matching: 'employee' matches any role containing 'colaborador' or 'employee'
       if (rk === 'employee' && (ur.includes('colaborador') || ur.includes('employee'))) return true;
