@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
+import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
+
 import {
     BarChart,
     Bar,
@@ -245,6 +247,7 @@ const getIconForSection = (title: string) => {
 };
 
 export function ReportsManagement() {
+    const { user } = useAuth();
     const [offices, setOffices] = useState<Office[]>([]);
     const [selectedOffice, setSelectedOffice] = useState<string>('');
     const [users, setUsers] = useState<UserProfile[]>([]);
@@ -255,18 +258,6 @@ export function ReportsManagement() {
     const [generated, setGenerated] = useState(false);
     const [reportType, setReportType] = useState<'technical' | 'ai-self'>('technical');
     const componentRef = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-        loadOffices();
-    }, []);
-
-    useEffect(() => {
-        if (selectedOffice) {
-            loadUsers(selectedOffice);
-        } else {
-            setUsers([]);
-        }
-    }, [selectedOffice]);
 
     const loadOffices = async () => {
         try {
@@ -292,6 +283,44 @@ export function ReportsManagement() {
             console.error('Error loading users:', error);
         }
     };
+
+    const loadEvaluatedUsers = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('evaluations')
+                .select('evaluated_id, users:evaluated_id(id, full_name, role, identification)')
+                .eq('evaluator_id', user?.id)
+                .eq('status', 'completed');
+
+            if (error) throw error;
+
+            const uniqueUsersMap = new Map();
+            data?.forEach((item: any) => {
+                if (item.users) {
+                    uniqueUsersMap.set(item.users.id, item.users);
+                }
+            });
+            setUsers(Array.from(uniqueUsersMap.values()));
+        } catch (error) {
+            console.error('Error loading evaluated users:', error);
+        }
+    };
+
+    useEffect(() => {
+        if (user) {
+            if (user.role === 'admin') {
+                loadOffices();
+            } else {
+                loadEvaluatedUsers();
+            }
+        }
+    }, [user]);
+
+    useEffect(() => {
+        if (user?.role === 'admin' && selectedOffice) {
+            loadUsers(selectedOffice);
+        }
+    }, [selectedOffice, user]);
 
     const generateReport = async () => {
         if (!selectedUser) return;
@@ -480,7 +509,7 @@ export function ReportsManagement() {
                     Generador de Informes
                 </h2>
 
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                <div className={`grid grid-cols-1 md:grid-cols-${user?.role === 'admin' ? 4 : 3} gap-4 items-end`}>
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Informe</label>
                         <div className="flex bg-gray-100 p-1 rounded-lg">
@@ -500,26 +529,28 @@ export function ReportsManagement() {
                         </div>
                     </div>
 
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Oficina</label>
-                        <div className="relative">
-                            <Building2 className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                            <select
-                                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                value={selectedOffice}
-                                onChange={(e) => {
-                                    setSelectedOffice(e.target.value);
-                                    setSelectedUser('');
-                                    setGenerated(false);
-                                }}
-                            >
-                                <option value="">Seleccionar Oficina...</option>
-                                {offices.map(o => (
-                                    <option key={o.id} value={o.id}>{o.name}</option>
-                                ))}
-                            </select>
+                    {user?.role === 'admin' && (
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Oficina</label>
+                            <div className="relative">
+                                <Building2 className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                                <select
+                                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    value={selectedOffice}
+                                    onChange={(e) => {
+                                        setSelectedOffice(e.target.value);
+                                        setSelectedUser('');
+                                        setGenerated(false);
+                                    }}
+                                >
+                                    <option value="">Seleccionar Oficina...</option>
+                                    {offices.map(o => (
+                                        <option key={o.id} value={o.id}>{o.name}</option>
+                                    ))}
+                                </select>
+                            </div>
                         </div>
-                    </div>
+                    )}
 
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Colaborador Evaluado</label>
@@ -532,7 +563,7 @@ export function ReportsManagement() {
                                     setSelectedUser(e.target.value);
                                     setGenerated(false);
                                 }}
-                                disabled={!selectedOffice}
+                                disabled={user?.role === 'admin' && !selectedOffice}
                             >
                                 <option value="">Seleccionar Colaborador...</option>
                                 {users.map(u => (
