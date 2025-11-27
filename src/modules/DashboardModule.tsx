@@ -203,6 +203,13 @@ export function DashboardModule() {
             canSelfEval = rels.some((r: any) => normalizeStr(r.evaluated_role_key) === userRoleNorm);
           }
 
+          // Refinement: Only treat as self-eval if the name explicitly implies it
+          // This prevents "Manager evaluating Manager" (same role) from being treated as self-eval
+          if (canSelfEval) {
+            const isExplicitSelfEval = /auto|self|propia|personal|mi\s/i.test(tpl.name) || /auto|self|propia|personal/i.test(tplTypeKey);
+            canSelfEval = canSelfEval && isExplicitSelfEval;
+          }
+
           // Fallback Self-Eval (Form Type Roles) - REMOVED to prevent incorrect self-evals
           // if (!canSelfEval) { ... }
           selfMap[tpl.id] = canSelfEval;
