@@ -1,4 +1,3 @@
-
 import { Shield, Users, Building, MessageSquare, Target, Award } from 'lucide-react';
 
 // --- 1. Definición de Tipos de Datos ---
@@ -106,15 +105,36 @@ export const KNOWLEDGE_BASE = {
             MODELO: { f: "Agente de cohesión; reduce la fricción grupal instintivamente.", v: "Tendencia a asumir carga ajena para evitar conflictos." },
             DESTACADO: { f: "Colaborador activo y empático.", v: "Puede mejorar en la delegación asertiva hacia pares." },
             COMPETENTE: { f: "Participa cuando se le solicita.", v: "Preferencia por el trabajo silo/individual sobre el colectivo." },
-            CRITICO: { f: "Mantiene interacciones mínimas.", v: "Genera fricción o resistencia pasiva en dinámicas grupales." },
-            VULNERABLE: { f: "Interacción limitada.", v: "Dificultad para integrarse." }
+            CRITICO: { f: "Requiere integración urgente.", v: "Genera fricción o resistencia pasiva en dinámicas grupales." },
+            VULNERABLE: { f: "Interacción limitada.", v: "Dificultad para integrarse y colaborar proactivamente." }
+        },
+        institucional: {
+            MODELO: { f: "Embajador de la marca y cultura institucional.", v: "Puede sobre-identificarse y perder objetividad crítica." },
+            DESTACADO: { f: "Alto sentido de pertenencia y lealtad.", v: "Podría participar más en iniciativas transversales." },
+            COMPETENTE: { f: "Respeta la institución y sus símbolos.", v: "Participación pasiva en eventos institucionales." },
+            CRITICO: { f: "Conoce la misión institucional.", v: "Desconexión con los valores y objetivos de la organización." },
+            VULNERABLE: { f: "Cumplimiento básico de protocolos.", v: "Falta de alineación con la visión estratégica." }
+        },
+        comunicacion: {
+            MODELO: { f: "Comunicador persuasivo e inspirador.", v: "Debe cuidar no monopolizar la palabra en reuniones." },
+            DESTACADO: { f: "Claro, asertivo y escucha activamente.", v: "En ocasiones puede ser demasiado directo." },
+            COMPETENTE: { f: "Se expresa correctamente.", v: "Le cuesta adaptar su mensaje a diferentes audiencias." },
+            CRITICO: { f: "Se comunica cuando es estrictamente necesario.", v: "Barreras comunicativas que generan malentendidos." },
+            VULNERABLE: { f: "Transmite información básica.", v: "Dificultad para expresar ideas complejas o dar feedback." }
         },
         orientacionResultados: {
             MODELO: { f: "Visión láser en objetivos; supera expectativas consistentemente.", v: "Riesgo de 'burnout' o de atropellar procesos por llegar a la meta." },
             DESTACADO: { f: "Cumple metas con calidad superior.", v: "Enfoque en el 'cómo' (proceso) puede retrasar el 'qué' (resultado final)." },
             COMPETENTE: { f: "Ejecuta lo asignado correctamente.", v: "Reactivo; espera instrucciones en lugar de proponer mejoras." },
-            CRITICO: { f: "Dificultad para cerrar tareas.", v: "Pierde el foco fácilmente; productividad por debajo del estándar." },
-            VULNERABLE: { f: "Cumple parcialmente.", v: "Requiere seguimiento constante." }
+            CRITICO: { f: "Intenta cumplir con las tareas.", v: "Pierde el foco fácilmente; productividad por debajo del estándar." },
+            VULNERABLE: { f: "Cumple parcialmente.", v: "Requiere seguimiento constante para asegurar entregables." }
+        },
+        calidadTrabajo: {
+            MODELO: { f: "Excelencia técnica y atención al detalle impecable.", v: "Puede caer en perfeccionismo paralizante." },
+            DESTACADO: { f: "Entregables de alta calidad y confiabilidad.", v: "Toma más tiempo del necesario en revisiones menores." },
+            COMPETENTE: { f: "Trabajo funcional y sin errores graves.", v: "Falta de profundidad en análisis o acabados." },
+            CRITICO: { f: "Entrega lo solicitado.", v: "Errores frecuentes que requieren reprocesos." },
+            VULNERABLE: { f: "Cumple con los requisitos mínimos.", v: "Descuido en detalles y presentación final." }
         }
     }
 };
@@ -163,90 +183,35 @@ export const generarInformeIA = (input: EvaluacionInput): InformeGenerado => {
     };
 
     // 3. Generar Análisis por Factor
-    let factores: FactorAnalisis[] = [];
+    // Definimos la estructura base de los factores para iterar y generar
+    const factoresDef = [
+        { key: 'integridad', nombre: 'Integridad y Ética', icono: Shield },
+        { key: 'trabajoEquipo', nombre: 'Trabajo en Equipo', icono: Users },
+        { key: 'institucional', nombre: 'Compromiso Institucional', icono: Building },
+        { key: 'comunicacion', nombre: 'Comunicación', icono: MessageSquare },
+        { key: 'orientacionResultados', nombre: 'Orientación a Resultados', icono: Target },
+        { key: 'calidadTrabajo', nombre: 'Calidad del Trabajo', icono: Award }
+    ] as const;
 
-    if (tipo === 'lider_a_colaborador') {
-        // Factores específicos para Evaluación Líder a Colaborador
-        factores = [
-            {
-                id: 'int', nombre: 'Integridad y Ética', score: p.integridad, icono: Shield,
-                rango: determinarRango(p.integridad), color: getColorPorRango(determinarRango(p.integridad)),
-                fortaleza: getText('integridad', p.integridad).f,
-                vulnerabilidad: getText('integridad', p.integridad).v
-            },
-            {
-                id: 'team', nombre: 'Trabajo en Equipo', score: p.trabajoEquipo, icono: Users,
-                rango: determinarRango(p.trabajoEquipo), color: getColorPorRango(determinarRango(p.trabajoEquipo)),
-                fortaleza: getText('trabajoEquipo', p.trabajoEquipo).f,
-                vulnerabilidad: getText('trabajoEquipo', p.trabajoEquipo).v
-            },
-            {
-                id: 'inst', nombre: 'Compromiso Institucional', score: p.institucional, icono: Building,
-                rango: determinarRango(p.institucional), color: getColorPorRango(determinarRango(p.institucional)),
-                fortaleza: "Alineación cultural casi total. Cumplimiento perfecto de horarios y recursos.",
-                vulnerabilidad: "Priorización de operatividad sobre formación teórica (capacitaciones)."
-            },
-            {
-                id: 'com', nombre: 'Comunicación', score: p.comunicacion, icono: MessageSquare,
-                rango: determinarRango(p.comunicacion), color: getColorPorRango(determinarRango(p.comunicacion)),
-                fortaleza: "Etiqueta y comunicación con la comunidad sobresalientes.",
-                vulnerabilidad: "Inseguridad en asertividad directa; prudencia excesiva para no ofender."
-            },
-            {
-                id: 'res', nombre: 'Orientación a Resultados', score: p.orientacionResultados, icono: Target,
-                rango: determinarRango(p.orientacionResultados), color: getColorPorRango(determinarRango(p.orientacionResultados)),
-                fortaleza: getText('orientacionResultados', p.orientacionResultados).f,
-                vulnerabilidad: getText('orientacionResultados', p.orientacionResultados).v
-            },
-            {
-                id: 'cal', nombre: 'Calidad del Trabajo', score: p.calidadTrabajo, icono: Award,
-                rango: determinarRango(p.calidadTrabajo), color: getColorPorRango(determinarRango(p.calidadTrabajo)),
-                fortaleza: "Entrega productos con altos estándares de revisión.",
-                vulnerabilidad: "Puede demorar entregas por revisiones excesivas (perfeccionismo)."
-            }
-        ];
-    } else {
-        // Factores para Autoevaluación (o default)
-        // Nota: Ajustar nombres si la autoevaluación tiene dimensiones ligeramente diferentes
-        factores = [
-            {
-                id: 'int', nombre: 'Integridad y Ética (Auto)', score: p.integridad, icono: Shield,
-                rango: determinarRango(p.integridad), color: getColorPorRango(determinarRango(p.integridad)),
-                fortaleza: getText('integridad', p.integridad).f,
-                vulnerabilidad: getText('integridad', p.integridad).v
-            },
-            {
-                id: 'team', nombre: 'Trabajo en Equipo (Auto)', score: p.trabajoEquipo, icono: Users,
-                rango: determinarRango(p.trabajoEquipo), color: getColorPorRango(determinarRango(p.trabajoEquipo)),
-                fortaleza: getText('trabajoEquipo', p.trabajoEquipo).f,
-                vulnerabilidad: getText('trabajoEquipo', p.trabajoEquipo).v
-            },
-            {
-                id: 'inst', nombre: 'Compromiso Institucional (Auto)', score: p.institucional, icono: Building,
-                rango: determinarRango(p.institucional), color: getColorPorRango(determinarRango(p.institucional)),
-                fortaleza: "Identificación personal con la misión institucional.",
-                vulnerabilidad: "Oportunidad de participar más activamente en eventos institucionales."
-            },
-            {
-                id: 'com', nombre: 'Comunicación (Auto)', score: p.comunicacion, icono: MessageSquare,
-                rango: determinarRango(p.comunicacion), color: getColorPorRango(determinarRango(p.comunicacion)),
-                fortaleza: "Claridad en la expresión de ideas propias.",
-                vulnerabilidad: "Escucha activa puede ser fortalecida."
-            },
-            {
-                id: 'res', nombre: 'Orientación a Resultados (Auto)', score: p.orientacionResultados, icono: Target,
-                rango: determinarRango(p.orientacionResultados), color: getColorPorRango(determinarRango(p.orientacionResultados)),
-                fortaleza: getText('orientacionResultados', p.orientacionResultados).f,
-                vulnerabilidad: getText('orientacionResultados', p.orientacionResultados).v
-            },
-            {
-                id: 'cal', nombre: 'Calidad del Trabajo (Auto)', score: p.calidadTrabajo, icono: Award,
-                rango: determinarRango(p.calidadTrabajo), color: getColorPorRango(determinarRango(p.calidadTrabajo)),
-                fortaleza: "Atención al detalle y rigor técnico.",
-                vulnerabilidad: "Gestión del tiempo en tareas complejas."
-            }
-        ];
-    }
+    const factores: FactorAnalisis[] = factoresDef.map(def => {
+        const score = p[def.key];
+        const rango = determinarRango(score);
+        const textos = getText(def.key, score);
+
+        // Adaptar nombre si es autoevaluación
+        const nombreFinal = tipo === 'autoevaluacion' ? `${def.nombre} (Auto)` : def.nombre;
+
+        return {
+            id: def.key,
+            nombre: nombreFinal,
+            score: score,
+            icono: def.icono,
+            rango: rango,
+            color: getColorPorRango(rango),
+            fortaleza: textos.f,
+            vulnerabilidad: textos.v
+        };
+    });
 
     // 4. Generar Recomendaciones Dinámicas
     const recomendaciones: Recomendacion[] = [];
