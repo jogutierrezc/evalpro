@@ -9,6 +9,7 @@ import EvaluationsManagement from './modules/admin/EvaluationsManagement';
 import { ResultsModule } from './modules/ResultsModule';
 
 import { ReportsManagement } from './modules/admin/ReportsManagement';
+import { SelfEvaluationReport } from './modules/SelfEvaluationReport';
 import { UserGuideModule } from './modules/UserGuideModule';
 
 function AppContent() {
@@ -44,6 +45,7 @@ function AppContent() {
       )}
       {activeModule === 'results' && <ResultsModule />}
       {activeModule === 'reports' && user.role === 'admin' && <ReportsManagement />}
+      {activeModule === 'self-report' && <SelfEvaluationReport />}
       {activeModule === 'guide' && <UserGuideModule />}
       {activeModule === 'admin' && user.role === 'admin' && <AdminModule />}
     </Layout>

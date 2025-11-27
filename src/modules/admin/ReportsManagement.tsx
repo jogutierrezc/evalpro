@@ -117,7 +117,7 @@ const generateAnalysis = (sections: SectionData[], subjectName: string) => {
     }
 
     // 2. Factors Analysis (Simulated Variations)
-    const factors = sections.map((s, idx) => {
+    const factors = sections.map((s) => {
         let strengths = "";
         let weakness = "";
 
@@ -368,7 +368,7 @@ export function ReportsManagement() {
 
                 setReportData({
                     meta: {
-                        title: "INFORME PSICOLÓGICO DE DESEMPEÑO PRISMA",
+                        title: "INFORME DE DESEMPEÑO INDIVIDUAL PRISMA UDES",
                         subject: subject?.full_name || "Desconocido",
                         date: new Date(evalData.created_at).toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' }),
                         evaluator: evaluatorData?.full_name || "Sistema PRISMA",
@@ -620,8 +620,8 @@ export function ReportsManagement() {
                                             <div className="flex justify-between items-center mb-2">
                                                 <h3 className="text-lg font-bold text-slate-800">{factor.title}</h3>
                                                 <span className={`px-3 py-1 rounded-full text-xs font-bold ${factor.score >= 4.5 ? 'bg-green-100 text-green-800' :
-                                                        factor.score >= 4 ? 'bg-blue-100 text-blue-800' :
-                                                            'bg-amber-100 text-amber-800'
+                                                    factor.score >= 4 ? 'bg-blue-100 text-blue-800' :
+                                                        'bg-amber-100 text-amber-800'
                                                     }`}>
                                                     {factor.score} / 5.0
                                                 </span>

@@ -8,7 +8,8 @@ import {
   LogOut,
   Menu,
   X,
-  BookOpen
+  BookOpen,
+  BrainCircuit
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -27,6 +28,7 @@ export function Layout({ children, activeModule, onModuleChange }: LayoutProps) 
     { id: 'evaluations', label: 'Evaluaciones', icon: FileText, roles: ['admin', 'office_manager', 'employee'] },
     { id: 'results', label: 'Resultados', icon: BarChart3, roles: ['admin', 'office_manager', 'employee'] },
     { id: 'reports', label: 'Informes', icon: FileText, roles: ['admin'] },
+    { id: 'self-report', label: 'Mi Informe IA', icon: BrainCircuit, roles: ['admin', 'office_manager', 'employee'] },
     { id: 'admin', label: 'Administración', icon: Settings, roles: ['admin'] },
     { id: 'guide', label: 'Ayuda', icon: BookOpen, roles: ['admin', 'office_manager', 'employee'] },
   ];
