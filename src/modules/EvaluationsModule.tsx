@@ -723,14 +723,22 @@ export function EvaluationsModule() {
                             </button>
                           </>
                         ) : (
-                          <button
-                            onClick={() => handleTakeSoftSkill(template)}
-                            disabled={!!takenTemplatesMap[template.id]}
-                            className={`px-4 py-2 rounded-lg text-white transition-colors ${takenTemplatesMap[template.id] ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
-                              }`}
-                          >
-                            {takenTemplatesMap[template.id] ? 'Ya tomado' : 'Tomar prueba'}
-                          </button>
+                          takenTemplatesMap[template.id] ? (
+                            <button
+                              onClick={() => onNavigate('self-report')}
+                              className="px-4 py-2 rounded-lg text-white bg-green-600 hover:bg-green-700 transition-colors flex items-center gap-2"
+                            >
+                              <FileText className="w-4 h-4" />
+                              Leer mi informe
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleTakeSoftSkill(template)}
+                              className="px-4 py-2 rounded-lg text-white bg-blue-600 hover:bg-blue-700 transition-colors"
+                            >
+                              Tomar prueba
+                            </button>
+                          )
                         )}
                       </div>
                     );
@@ -743,41 +751,85 @@ export function EvaluationsModule() {
       )}
 
       {myEvaluations.length > 0 && (
-        <div className="mb-8">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">Mis Evaluaciones Pendientes</h2>
-          <div className="space-y-3">
-            {myEvaluations
-              .filter((e) => e.status !== 'completed')
-              .map((evaluation) => (
-                <div
-                  key={evaluation.id}
-                  className="bg-white rounded-lg border border-gray-200 p-5 hover:shadow-md transition-shadow"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        {getStatusIcon(evaluation.status)}
-                        <h3 className="font-semibold text-gray-900">{evaluation.template?.name}</h3>
-                      </div>
-                      <p className="text-sm text-gray-600 mb-1">
-                        Evaluando a: <span className="font-medium">{evaluation.evaluated?.full_name}</span>
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        Creada: {new Date(evaluation.created_at).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => handleStartEvaluation(evaluation)}
-                      className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
+        <>
+          {/* Pending Evaluations */}
+          {myEvaluations.some(e => e.status !== 'completed') && (
+            <div className="mb-8">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">Mis Evaluaciones Pendientes</h2>
+              <div className="space-y-3">
+                {myEvaluations
+                  .filter((e) => e.status !== 'completed')
+                  .map((evaluation) => (
+                    <div
+                      key={evaluation.id}
+                      className="bg-white rounded-lg border border-gray-200 p-5 hover:shadow-md transition-shadow"
                     >
-                      <Play className="w-4 h-4" />
-                      {evaluation.status === 'pending' ? 'Comenzar' : 'Continuar'}
-                    </button>
-                  </div>
-                </div>
-              ))}
-          </div>
-        </div>
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            {getStatusIcon(evaluation.status)}
+                            <h3 className="font-semibold text-gray-900">{evaluation.template?.name}</h3>
+                          </div>
+                          <p className="text-sm text-gray-600 mb-1">
+                            Evaluando a: <span className="font-medium">{evaluation.evaluated?.full_name}</span>
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            Creada: {new Date(evaluation.created_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => handleStartEvaluation(evaluation)}
+                          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
+                        >
+                          <Play className="w-4 h-4" />
+                          {evaluation.status === 'pending' ? 'Comenzar' : 'Continuar'}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+
+          {/* Completed Evaluations */}
+          {myEvaluations.some(e => e.status === 'completed') && (
+            <div className="mb-8">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">Evaluaciones Realizadas</h2>
+              <div className="space-y-3">
+                {myEvaluations
+                  .filter((e) => e.status === 'completed')
+                  .map((evaluation) => (
+                    <div
+                      key={evaluation.id}
+                      className="bg-white rounded-lg border border-gray-200 p-5 hover:shadow-md transition-shadow"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <CheckCircle className="w-5 h-5 text-green-500" />
+                            <h3 className="font-semibold text-gray-900">{evaluation.template?.name}</h3>
+                          </div>
+                          <p className="text-sm text-gray-600 mb-1">
+                            Evaluado: <span className="font-medium">{evaluation.evaluated?.full_name}</span>
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            Completada: {new Date(evaluation.created_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => onNavigate('reports')}
+                          className="flex items-center gap-2 bg-white border border-blue-600 text-blue-600 hover:bg-blue-50 px-4 py-2 rounded-lg transition-colors"
+                        >
+                          <FileText className="w-4 h-4" />
+                          Ver Informe Técnico
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {user?.role !== 'employee' && otherEvaluations.length > 0 && (

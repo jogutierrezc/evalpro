@@ -40,7 +40,7 @@ function AppContent() {
           const lower = (user.role || '').toString().toLowerCase();
           const managerKeywords = ['director', 'programa', 'lider', 'vaf', 'proceso', 'rectoria', 'vicerectoria', 'jefe'];
           const isManager = managerKeywords.some(k => lower.includes(k));
-          return (user.role === 'admin' || isManager) ? <EvaluationsManagement /> : <EvaluationsModule />;
+          return (user.role === 'admin' || isManager) ? <EvaluationsManagement onNavigate={setActiveModule} /> : <EvaluationsModule onNavigate={setActiveModule} />;
         })())
       )}
       {activeModule === 'results' && <ResultsModule />}

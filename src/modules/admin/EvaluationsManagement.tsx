@@ -56,24 +56,24 @@ export function EvaluationsManagement() {
       const templateIds = Array.from(new Set((evals || []).map((e: any) => e.template_id))).filter(Boolean);
       const evaluatorIds = Array.from(new Set((evals || []).map((e: any) => e.evaluator_id))).filter(Boolean);
       const evaluatedIds = Array.from(new Set((evals || []).map((e: any) => e.evaluated_id))).filter(Boolean);
-      
+
       const [{ data: templates }, { data: evaluators }, { data: evaluated }] = await Promise.all([
         supabase.from('evaluation_templates').select('*').in('id', templateIds),
         supabase.from('users').select('*').in('id', evaluatorIds),
         supabase.from('users').select('*').in('id', evaluatedIds),
       ]);
-      
+
       const tplMap: Record<string, EvaluationTemplate> = {};
       (templates || []).forEach((t: any) => { tplMap[t.id] = t; });
-      
+
       const evaluatorMap: Record<string, User> = {};
       (evaluators || []).forEach((e: any) => { evaluatorMap[e.id] = e; });
-      
+
       const evaluatedMap: Record<string, User> = {};
       (evaluated || []).forEach((e: any) => { evaluatedMap[e.id] = e; });
-      
-      return (evals || []).map((ev: any) => ({ 
-        ...ev, 
+
+      return (evals || []).map((ev: any) => ({
+        ...ev,
         template: tplMap[ev.template_id] || null,
         evaluator: evaluatorMap[ev.evaluator_id] || null,
         evaluated: evaluatedMap[ev.evaluated_id] || null,
@@ -287,10 +287,20 @@ export function EvaluationsManagement() {
                             </span>
                             <div className="mt-1 h-1 bg-gray-200 rounded-full overflow-hidden">
                               <div className={`h-full rounded-full transition-all duration-700 ease-out ${progressByEval[String(ev.id)] >= 100 ? 'bg-green-500' : progressByEval[String(ev.id)] > 50 ? 'bg-blue-500' : progressByEval[String(ev.id)] > 0 ? 'bg-yellow-500' : 'bg-gray-400'}`}
-                                   style={{ width: `${progressByEval[String(ev.id)] || 0}%` }} />
+                                style={{ width: `${progressByEval[String(ev.id)] || 0}%` }} />
                             </div>
                             <span className="text-xs text-gray-500">{progressByEval[String(ev.id)] || 0}% completado</span>
                           </div>
+                          {ev.status === 'completed' && onNavigate && (
+                            <div className="col-span-2 md:col-span-6 lg:col-span-1 flex items-center justify-end mt-2 lg:mt-0">
+                              <button
+                                onClick={() => onNavigate('reports')}
+                                className="text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1 rounded border border-blue-200 transition-colors"
+                              >
+                                Ver Informe
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
                     ))}
