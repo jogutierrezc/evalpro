@@ -43,9 +43,25 @@ export function DashboardModule() {
   const [userEvaluationsMap, setUserEvaluationsMap] = useState<Record<string, Evaluation>>({});
 
   useEffect(() => {
-    loadRoles();
-    loadStats();
-    loadUserEvaluations();
+    let mounted = true;
+
+    const init = async () => {
+      if (!mounted) return;
+      setLoading(true);
+      await loadRoles();
+      await loadStats();
+      await loadUserEvaluations();
+      // We need to trigger template calculation here or ensure it runs after roles/stats
+      // The separate useEffect for availableTemplates depends on 'availableTemplates' state which is set in loadStats?
+      // No, loadStats sets availableTemplates.
+      setLoading(false);
+    };
+
+    if (user) {
+      init();
+    }
+
+    return () => { mounted = false; };
   }, [user]);
 
   // Close dropdowns when clicking outside
@@ -316,7 +332,10 @@ export function DashboardModule() {
         // compute available templates for this role (consider active period if present)
         let availableCount = 0;
         try {
-          const today = new Date().toISOString().slice(0, 10);
+          // Use local date for period check to avoid timezone issues (UTC vs Local)
+          const now = new Date();
+          const today = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().slice(0, 10);
+
           const { data: periodData } = await supabase
             .from('evaluation_periods')
             .select('id')

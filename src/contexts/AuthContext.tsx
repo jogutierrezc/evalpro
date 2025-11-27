@@ -38,13 +38,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      if (session?.user) {
-        loadUserProfile(session.user.id);
-      } else {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        setSession(null);
         setUser(null);
+        localStorage.removeItem('user');
         setLoading(false);
+      } else {
+        setSession(session);
+        if (session?.user) {
+          loadUserProfile(session.user.id);
+        } else {
+          // Only clear if we are sure it's not a local session
+          if (!localStorage.getItem('user')) {
+            setUser(null);
+          }
+          setLoading(false);
+        }
       }
     });
 
@@ -116,8 +126,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     await supabase.auth.signOut();
+    setSession(null);
     setUser(null);
     localStorage.removeItem('user');
+    localStorage.clear(); // Optional: clear everything to be safe, or just specific keys
   };
 
   return (
