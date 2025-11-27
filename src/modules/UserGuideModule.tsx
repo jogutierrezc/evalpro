@@ -16,46 +16,57 @@ export function UserGuideModule() {
     const steps = [
         {
             title: "1. Acceso al Sistema",
-            description: "Ingrese al sistema PRISMA utilizando sus credenciales institucionales. Asegúrese de seleccionar su rol correcto si el sistema lo solicita.",
-            image: "/guide_login.png",
+            description: "El primer paso es acceder al sistema con su correo de oficina y de contraseña el número de documento de identidad.",
+            image: "/guide_step1.png",
             icon: LogIn,
             tips: [
-                "Utilice su correo institucional completo.",
-                "Si olvidó su contraseña, contacte a soporte técnico.",
-                "El acceso es compatible con dispositivos móviles."
+                "Usuario: Correo de oficina completo",
+                "Contraseña: Número de documento de identidad",
+                "Si tiene problemas, contacte a soporte."
             ]
         },
         {
-            title: "2. Panel de Control (Dashboard)",
-            description: "Al ingresar, verá el Dashboard principal. Aquí encontrará un resumen de sus evaluaciones pendientes, completadas y métricas clave.",
-            image: "/guide_dashboard.png",
+            title: "2. Panel de Control",
+            description: "Dentro del sistema aparecerán los exámenes disponibles para hacer. Si es jefe de oficina, aparecerán los exámenes para evaluar a su equipo de trabajo, más los exámenes de autoevaluación correspondientes.",
+            image: "/guide_step2.png",
             icon: LayoutDashboard,
             tips: [
-                "Verifique las notificaciones en la parte superior.",
-                "El menú lateral le permite navegar entre módulos.",
-                "Los indicadores de color muestran el estado de sus tareas."
+                "Identifique las evaluaciones pendientes.",
+                "Revise si tiene evaluaciones de equipo.",
+                "El panel muestra el estado actual."
             ]
         },
         {
-            title: "3. Realizar una Evaluación",
-            description: "Seleccione 'Evaluaciones' en el menú. Elija la evaluación pendiente y responda cada pregunta seleccionando la escala de 1 a 5.",
-            image: "/guide_evaluation.png",
+            title: "3. Iniciar Examen",
+            description: "El siguiente paso es dar clic en la opción 'Iniciar Examen' en la tarjeta correspondiente.",
+            image: "/guide_step3.png",
             icon: FileCheck,
             tips: [
-                "Lea cuidadosamente cada pregunta antes de responder.",
-                "Puede guardar su progreso y continuar después.",
-                "Asegúrese de responder todas las preguntas obligatorias."
+                "Verifique que sea el examen correcto.",
+                "Lea la descripción antes de iniciar.",
+                "Asegúrese de tener tiempo disponible."
             ]
         },
         {
-            title: "4. Visualización de Resultados",
-            description: "Una vez completada la evaluación, podrá ver los resultados detallados en el módulo 'Resultados', incluyendo gráficos de radar y barras.",
-            image: "/guide_results.png",
+            title: "4. Realizar Evaluación",
+            description: "Cuando inicie, se cargarán las preguntas correspondientes. Deberá hacerlo a conciencia. Podrá guardar su progreso y continuar luego o finalizar el examen en el momento que termine.",
+            image: "/guide_step4.png",
+            icon: BookOpen,
+            tips: [
+                "Responda con honestidad y objetividad.",
+                "Use el botón 'Guardar Progreso' si necesita pausar.",
+                "Revise sus respuestas antes de continuar."
+            ]
+        },
+        {
+            title: "5. Finalizar y Consultar Resultados",
+            description: "Finalizado el examen, el sistema le enviará una notificación. Si realizó su autoevaluación, podrá consultar sus resultados en 'Mi Resultado Prisma' para ver el informe del Sistema Neural PRISMA.",
+            image: "/guide_step5.png",
             icon: BarChart3,
             tips: [
-                "Los gráficos de radar comparan su desempeño con el promedio.",
-                "Puede descargar los informes en formato PDF.",
-                "Revise las recomendaciones automáticas generadas por el sistema."
+                "Confirme el envío al finalizar.",
+                "Consulte su informe detallado en Resultados.",
+                "Analice las recomendaciones del sistema."
             ]
         }
     ];
@@ -92,7 +103,7 @@ export function UserGuideModule() {
                         <div
                             key={idx}
                             className={`h-2 w-16 rounded-full transition-all duration-300 ${idx === currentStep ? 'bg-blue-600 w-24' :
-                                    idx < currentStep ? 'bg-green-500' : 'bg-gray-200'
+                                idx < currentStep ? 'bg-green-500' : 'bg-gray-200'
                                 }`}
                         />
                     ))}
