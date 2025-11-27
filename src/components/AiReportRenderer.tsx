@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
     FileText, Award, Brain, BarChart3, TrendingUp, Target,
-    CheckCircle, AlertTriangle, Printer
+    CheckCircle, AlertTriangle, Printer, Lightbulb
 } from 'lucide-react';
 import {
     ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Legend
@@ -22,7 +22,7 @@ const CardFactor = ({ factor }: { factor: FactorAnalisis }) => (
         <div className="flex justify-between items-center mb-4">
             <div className="flex items-center gap-3">
                 <div className={`p-2 rounded-lg ${factor.color} bg-opacity-10 text-slate-700`}>
-                    <factor.icono className="w-6 h-6" />
+                    {factor.icono ? <factor.icono className="w-6 h-6" /> : <Target className="w-6 h-6" />}
                 </div>
                 <h3 className="font-bold text-slate-800 text-lg">{factor.nombre}</h3>
             </div>
@@ -33,25 +33,17 @@ const CardFactor = ({ factor }: { factor: FactorAnalisis }) => (
 
         <ProgressBar value={factor.score} color={factor.color} />
 
-        {/* Análisis Ampliado */}
+        {/* Análisis Psico-Técnico */}
         <div className="mt-4 mb-6 text-slate-700 text-sm leading-relaxed border-l-2 border-slate-200 pl-4 italic bg-slate-50 p-3 rounded-r-lg">
-            {factor.analisisAmpliado}
+            <h4 className="font-bold text-slate-900 mb-1 not-italic">Análisis Integral</h4>
+            {factor.analisisPsicoTecnico}
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="bg-green-50 p-4 rounded-lg border border-green-100">
-                <div className="flex items-center gap-2 mb-2 text-green-700 font-bold text-sm uppercase tracking-wide">
-                    <CheckCircle className="w-4 h-4" /> Fortalezas
-                </div>
-                <p className="text-slate-600 text-sm leading-relaxed">{factor.fortaleza}</p>
+        <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
+            <div className="flex items-center gap-2 mb-2 text-blue-700 font-bold text-sm uppercase tracking-wide">
+                <Lightbulb className="w-4 h-4" /> Acción Sugerida
             </div>
-
-            <div className="bg-orange-50 p-4 rounded-lg border border-orange-100">
-                <div className="flex items-center gap-2 mb-2 text-orange-700 font-bold text-sm uppercase tracking-wide">
-                    <AlertTriangle className="w-4 h-4" /> Vulnerabilidad
-                </div>
-                <p className="text-slate-600 text-sm leading-relaxed">{factor.vulnerabilidad}</p>
-            </div>
+            <p className="text-slate-600 text-sm leading-relaxed">{factor.accionSugerida}</p>
         </div>
     </div>
 );
@@ -73,6 +65,14 @@ export function AiReportRenderer({ inputData, informe, onPrint }: AiReportRender
         fullMark: 5
     }));
 
+    // Fallback for recommendations if they don't exist in the new structure
+    const recomendaciones = (informe as any).recomendaciones || informe.factores.map(f => ({
+        id: f.id,
+        titulo: `Mejora en ${f.nombre}`,
+        tipo: 'Estrategia',
+        descripcion: f.accionSugerida
+    }));
+
     return (
         <div className="bg-slate-50 font-sans text-slate-900 pb-20 print:bg-white">
 
@@ -84,7 +84,7 @@ export function AiReportRenderer({ inputData, informe, onPrint }: AiReportRender
                         <div>
                             <div className="flex items-center gap-2 text-amber-400 font-bold text-sm tracking-wider uppercase mb-4">
                                 <FileText className="w-4 h-4" />
-                                {inputData.tipoInforme === 'lider_a_colaborador'
+                                {inputData.tipoInforme === 'LIDERAZGO_TACTICO'
                                     ? 'Informe de Análisis de Desempeño de Evaluación de Lider a Colaborador'
                                     : 'Informe de Análisis de Autoevaluación del Personal UDES'}
                             </div>
@@ -99,12 +99,12 @@ export function AiReportRenderer({ inputData, informe, onPrint }: AiReportRender
                         <div className="flex flex-col items-end gap-4">
                             <div className="text-left md:text-right print:block bg-slate-800/50 p-4 rounded-lg md:bg-transparent md:p-0">
                                 <div className="text-slate-500 text-xs uppercase tracking-widest mb-1">
-                                    {inputData.tipoInforme === 'lider_a_colaborador' ? 'Evaluadora' : 'Evaluado por'}
+                                    {inputData.tipoInforme === 'LIDERAZGO_TACTICO' ? 'Evaluadora' : 'Evaluado por'}
                                 </div>
                                 <div className="font-semibold text-slate-300 uppercase">
                                     {inputData.evaluadorNombre || 'Sistema Neural de Análisis Prisma UDES'}
                                 </div>
-                                {inputData.tipoInforme === 'lider_a_colaborador' && (
+                                {inputData.tipoInforme === 'LIDERAZGO_TACTICO' && (
                                     <div className="text-amber-500 text-xs mt-1">Dra. I.A. Psicológica Gemini</div>
                                 )}
                             </div>
@@ -139,15 +139,15 @@ export function AiReportRenderer({ inputData, informe, onPrint }: AiReportRender
                         </div>
                     </div>
 
-                    {/* KPI 2: Arquetipo */}
+                    {/* KPI 2: Perfil Psicometrico (Antes Arquetipo) */}
                     <div className="bg-white p-6 rounded-xl shadow-lg border border-slate-100 md:col-span-2 flex items-center gap-6 print:shadow-none print:border">
-                        <div className="text-6xl bg-slate-50 w-24 h-24 flex items-center justify-center rounded-2xl shadow-inner">
-                            {informe.meta.arquetipo.icono}
+                        <div className="text-6xl bg-slate-50 w-24 h-24 flex items-center justify-center rounded-2xl shadow-inner text-blue-600">
+                            <Brain className="w-12 h-12" />
                         </div>
                         <div>
                             <div className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Perfil Psicolaboral Obtenido</div>
-                            <h2 className="text-2xl font-bold text-slate-900 mb-2">{informe.meta.arquetipo.nombre}</h2>
-                            <p className="text-slate-600 text-sm leading-relaxed">{informe.meta.arquetipo.descripcion}</p>
+                            <h2 className="text-xl font-bold text-slate-900 mb-2">Análisis de Perfil</h2>
+                            <p className="text-slate-600 text-sm leading-relaxed">{informe.meta.perfilPsicometrico}</p>
                         </div>
                     </div>
 
@@ -239,8 +239,8 @@ export function AiReportRenderer({ inputData, informe, onPrint }: AiReportRender
                         </h2>
 
                         <div className="grid gap-4">
-                            {informe.recomendaciones.map((rec) => (
-                                <div key={rec.id} className="bg-white p-6 rounded-xl border-l-4 border-amber-400 shadow-sm hover:shadow-md transition-shadow print:shadow-none print:border">
+                            {recomendaciones.map((rec: any, idx: number) => (
+                                <div key={rec.id || idx} className="bg-white p-6 rounded-xl border-l-4 border-amber-400 shadow-sm hover:shadow-md transition-shadow print:shadow-none print:border">
                                     <div className="flex justify-between items-start mb-3">
                                         <h4 className="font-bold text-slate-800 text-lg">{rec.id} | {rec.titulo}</h4>
                                         <span className="bg-amber-100 text-amber-800 text-xs font-bold px-2 py-1 rounded-md uppercase tracking-wide">
@@ -252,7 +252,7 @@ export function AiReportRenderer({ inputData, informe, onPrint }: AiReportRender
                             ))}
 
                             {/* Fallback si no hay recomendaciones críticas */}
-                            {informe.recomendaciones.length === 0 && (
+                            {recomendaciones.length === 0 && (
                                 <div className="bg-green-50 p-6 rounded-xl border border-green-200 text-center">
                                     <p className="text-green-800 font-medium">No se detectaron brechas críticas que requieran intervención inmediata. Se sugiere mantener el plan de carrera actual.</p>
                                 </div>
@@ -277,3 +277,4 @@ export function AiReportRenderer({ inputData, informe, onPrint }: AiReportRender
         </div>
     );
 }
+
