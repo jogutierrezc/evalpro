@@ -12,30 +12,6 @@ export function useEvaluationReport({ evaluationId, userId }: UseEvaluationRepor
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    const mapSectionToKey = useCallback((title: string) => {
-        const lowerTitle = title.toLowerCase();
-
-        // Integridad y Ética
-        if (lowerTitle.match(/integridad|ética|etica|valores|honestidad|moral/)) return 'integridad';
-
-        // Trabajo en Equipo
-        if (lowerTitle.match(/equipo|colaboración|colaboracion|interpersonal|relaciones|compañerismo/)) return 'trabajoEquipo';
-
-        // Compromiso Institucional
-        if (lowerTitle.match(/institucional|compromiso|pertenencia|identidad|cultura|normas/)) return 'institucional';
-
-        // Comunicación
-        if (lowerTitle.match(/comunicación|comunicacion|asertividad|expresión|expresion|escucha|liderazgo/)) return 'comunicacion';
-
-        // Orientación a Resultados
-        if (lowerTitle.match(/resultados|logro|objetivos|metas|desempeño|innovacion|innovación|proactividad/)) return 'orientacionResultados';
-
-        // Calidad del Trabajo
-        if (lowerTitle.match(/calidad|excelencia|técnica|tecnica|rigor|detalle|profesionalismo|conocimiento/)) return 'calidadTrabajo';
-
-        return 'general';
-    }, []);
-
     const loadData = useCallback(async () => {
         try {
             setLoading(true);
@@ -101,6 +77,8 @@ export function useEvaluationReport({ evaluationId, userId }: UseEvaluationRepor
             }
 
             // 2. Fetch Comparative Data (All completed evaluations)
+            // Note: For comparative data to be meaningful with dynamic sections, 
+            // we ideally need to aggregate by the SAME section names.
             const { data: allEvaluations } = await supabase
                 .from('evaluations')
                 .select(`
@@ -113,62 +91,39 @@ export function useEvaluationReport({ evaluationId, userId }: UseEvaluationRepor
                 `)
                 .eq('status', 'completed');
 
-            // Process User Scores
+            // Process User Scores - Aggregating by RAW Section Title
             const sectionScores: Record<string, { total: number; count: number }> = {};
             evaluationData.responses?.forEach((r: any) => {
                 const title = r.question?.section?.title || 'General';
-                const key = mapSectionToKey(title);
-                if (key === 'general') return; // Skip unmapped for now, or maybe log it
-
-                if (!sectionScores[key]) sectionScores[key] = { total: 0, count: 0 };
-                sectionScores[key].total += Number(r.response_value) || 0;
-                sectionScores[key].count += 1;
+                // We use the raw title to allow the AI logic to detect the dimension dynamically
+                // or display the custom section name if no dimension matches.
+                if (!sectionScores[title]) sectionScores[title] = { total: 0, count: 0 };
+                sectionScores[title].total += Number(r.response_value) || 0;
+                sectionScores[title].count += 1;
             });
 
-            const puntajes: any = {};
+            const puntajes: Record<string, number> = {};
             Object.entries(sectionScores).forEach(([key, val]) => {
                 puntajes[key] = Number((val.total / val.count).toFixed(1));
             });
 
-            // Process Comparative Scores
+            // Process Comparative Scores - Also by RAW Section Title
             const compScores: Record<string, { total: number; count: number }> = {};
             if (allEvaluations) {
                 allEvaluations.forEach(ev => {
                     ev.responses?.forEach((r: any) => {
                         const title = r.question?.section?.title || 'General';
-                        const key = mapSectionToKey(title);
-                        if (key === 'general') return;
-
-                        if (!compScores[key]) compScores[key] = { total: 0, count: 0 };
-                        compScores[key].total += Number(r.response_value) || 0;
-                        compScores[key].count += 1;
+                        if (!compScores[title]) compScores[title] = { total: 0, count: 0 };
+                        compScores[title].total += Number(r.response_value) || 0;
+                        compScores[title].count += 1;
                     });
                 });
             }
 
-            const comparativePuntajes: any = {};
+            const comparativePuntajes: Record<string, number> = {};
             Object.entries(compScores).forEach(([key, val]) => {
                 comparativePuntajes[key] = Number((val.total / val.count).toFixed(1));
             });
-
-            // Ensure all required keys exist with defaults
-            const finalPuntajes = {
-                integridad: puntajes.integridad || 0,
-                trabajoEquipo: puntajes.trabajoEquipo || 0,
-                institucional: puntajes.institucional || 0,
-                comunicacion: puntajes.comunicacion || 0,
-                orientacionResultados: puntajes.orientacionResultados || 0,
-                calidadTrabajo: puntajes.calidadTrabajo || 0
-            };
-
-            const finalComparativePuntajes = {
-                integridad: comparativePuntajes.integridad || 0,
-                trabajoEquipo: comparativePuntajes.trabajoEquipo || 0,
-                institucional: comparativePuntajes.institucional || 0,
-                comunicacion: comparativePuntajes.comunicacion || 0,
-                orientacionResultados: comparativePuntajes.orientacionResultados || 0,
-                calidadTrabajo: comparativePuntajes.calidadTrabajo || 0
-            };
 
             // Determine Report Type
             let tipoInforme: 'autoevaluacion' | 'lider_a_colaborador' | 'otro' = 'otro';
@@ -198,8 +153,8 @@ export function useEvaluationReport({ evaluationId, userId }: UseEvaluationRepor
                 },
                 tipoInforme,
                 evaluadorNombre,
-                puntajes: finalPuntajes,
-                comparativeScores: finalComparativePuntajes
+                puntajes, // Dynamic keys now
+                comparativeScores: comparativePuntajes
             });
 
         } catch (err: any) {
@@ -208,7 +163,7 @@ export function useEvaluationReport({ evaluationId, userId }: UseEvaluationRepor
         } finally {
             setLoading(false);
         }
-    }, [evaluationId, userId, mapSectionToKey]);
+    }, [evaluationId, userId]);
 
     useEffect(() => {
         if (evaluationId || userId) {
