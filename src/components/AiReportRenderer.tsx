@@ -72,7 +72,7 @@ export function AiReportRenderer({ inputData, informe, onPrint }: AiReportRender
     ];
 
     return (
-        <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-20 print:bg-white">
+        <div className="bg-slate-50 font-sans text-slate-900 pb-20 print:bg-white">
 
             {/* --- HEADER DEL INFORME --- */}
             <header className="bg-slate-900 text-white pt-16 pb-24 px-6 md:px-12 relative overflow-hidden print:pt-8 print:pb-12">
