@@ -214,14 +214,17 @@ export function DashboardModule() {
             }
           }
 
-          // REMOVED restrictive regex check for self-eval names
-          // The previous logic forced the name to contain 'auto', 'self', etc.
-          // Now we rely on the configuration (roles or relations).
+          // C. Fallback: If no relations found at all, but user has access (via form_types), assume Self Eval
+          // This handles cases where a template is assigned to a role but no explicit "evaluator->evaluated" relation exists.
+          if (!canSelfEval && rels.length === 0) {
+            canSelfEval = true;
+          }
 
           selfMap[tpl.id] = canSelfEval;
 
           // 3. Determine Candidates (Evaluated)
           if (rels.length === 0) {
+            // If no relations, we have no candidates to evaluate (other than self, handled above)
             map[tpl.id] = [];
             continue;
           }
