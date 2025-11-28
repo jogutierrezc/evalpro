@@ -18,6 +18,8 @@ export function EvaluationsModule({ onNavigate }: EvaluationsModuleProps) {
   const [selectedEvaluation, setSelectedEvaluation] = useState<Evaluation | null>(null);
   const [availableSoftTemplates, setAvailableSoftTemplates] = useState<EvaluationTemplate[]>([]);
   const [takenTemplatesMap, setTakenTemplatesMap] = useState<Record<string, boolean>>({});
+  const [canSelfEval, setCanSelfEval] = useState<Record<string, boolean>>({});
+  const [canEvaluateOthers, setCanEvaluateOthers] = useState<Record<string, boolean>>({});
 
   const [selectedCandidate, setSelectedCandidate] = useState<Record<string, string>>({});
   const [evaluateOther, setEvaluateOther] = useState<Record<string, boolean>>({});
@@ -361,12 +363,34 @@ export function EvaluationsModule({ onNavigate }: EvaluationsModuleProps) {
 
             // for each template in tplList, resolve candidates
             const candidatesMap: Record<string, User[]> = {};
+            const selfEvalMap: Record<string, boolean> = {};
+            const evalOthersMap: Record<string, boolean> = {};
+
             for (const tpl of tplList) {
               const evaluatedRoles = relsByFormType[tpl.type] || [];
               console.debug('[EvaluationsModule] Template:', tpl.name, 'type:', tpl.type, 'evaluatedRoles:', evaluatedRoles);
 
+              // Determine if self-evaluation is allowed
+              let canSelf = false;
+              // 1. Direct role assignment in template
+              if (tpl.roles && Array.isArray(tpl.roles) && canonicalRole && tpl.roles.includes(canonicalRole)) {
+                canSelf = true;
+              }
+              // 2. Self-relation (evaluator role == evaluated role)
+              if (!canSelf && canonicalRole) {
+                // Check if any of the evaluated roles for this template matches the user's canonical role
+                // Since we are iterating templates where WE are the evaluator (from relsByFormType),
+                // if the evaluated role is also US, then it's a self-eval.
+                const userRoleNorm = normalizeStr(canonicalRole);
+                if (evaluatedRoles.some(r => normalizeStr(r) === userRoleNorm)) {
+                  canSelf = true;
+                }
+              }
+              selfEvalMap[tpl.id] = canSelf;
+
               if (evaluatedRoles.length === 0) {
                 candidatesMap[tpl.id] = [];
+                evalOthersMap[tpl.id] = false;
                 continue;
               }
 
@@ -393,8 +417,16 @@ export function EvaluationsModule({ onNavigate }: EvaluationsModuleProps) {
                 candidatesMap[tpl.id] = finalOfficeCandidates;
                 console.debug(`[EvaluationsModule] Template ${tpl.name}: Found ${finalOfficeCandidates.length} office fallback candidates (filtered by role).`);
               }
+
+              // Check if there are candidates to evaluate (excluding self, which is already excluded from officeCandidates)
+              // strictCandidates might include self if I manage myself? Unlikely.
+              // But let's be safe and filter self out for evalOthersMap
+              const others = (candidatesMap[tpl.id] || []).filter(c => c.id !== user.id);
+              evalOthersMap[tpl.id] = others.length > 0;
             }
             setEvaluationCandidatesByTemplate(candidatesMap);
+            setCanSelfEval(selfEvalMap);
+            setCanEvaluateOthers(evalOthersMap);
 
             // Update diagnostics
             setDiagnostic((d: any) => ({
@@ -694,26 +726,45 @@ export function EvaluationsModule({ onNavigate }: EvaluationsModuleProps) {
                   {user?.role === 'admin' ? (
                     <button onClick={() => handleAdminTakeTemplate(template)} className="px-4 py-2 rounded-lg text-white bg-green-600 hover:bg-green-700">Crear prueba (Admin)</button>
                   ) : (() => {
-                    // Allow any user to take the test for themselves; optionally evaluate a colleague
+                    const canSelf = canSelfEval[template.id];
+                    const canOther = canEvaluateOthers[template.id];
+                    const isEvaluatingOther = evaluateOther[template.id] || (!canSelf && canOther);
+
+                    if (!canSelf && !canOther) {
+                      return <span className="text-sm text-gray-500 italic">No disponible para tu rol</span>;
+                    }
+
                     return (
                       <div className="flex items-center gap-2">
-                        <label className="flex items-center gap-2 text-sm">
-                          <input
-                            type="checkbox"
-                            checked={!!evaluateOther[template.id]}
-                            onChange={(e) => setEvaluateOther({ ...evaluateOther, [template.id]: e.target.checked })}
-                          />
-                          Evaluar a otro colaborador
-                        </label>
+                        {canSelf && canOther && (
+                          <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={!!evaluateOther[template.id]}
+                              onChange={(e) => setEvaluateOther({ ...evaluateOther, [template.id]: e.target.checked })}
+                              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            Evaluar a otro colaborador
+                          </label>
+                        )}
 
-                        {evaluateOther[template.id] ? (
+                        {/* If only canOther, show label as static text or just show the dropdown directly */}
+                        {!canSelf && canOther && (
+                          <span className="text-sm font-medium text-gray-700 mr-2">Evaluación de Colaborador:</span>
+                        )}
+
+                        {isEvaluatingOther ? (
                           <>
-                            <select className="border rounded p-2 text-sm" value={selectedCandidate[template.id] || ''} onChange={(e) => setSelectedCandidate({ ...selectedCandidate, [template.id]: e.target.value })}>
+                            <select
+                              className="border rounded p-2 text-sm max-w-[200px]"
+                              value={selectedCandidate[template.id] || ''}
+                              onChange={(e) => setSelectedCandidate({ ...selectedCandidate, [template.id]: e.target.value })}
+                            >
                               <option value="">Selecciona colaborador</option>
                               {(() => {
                                 const relationCandidates = evaluationCandidatesByTemplate[template.id] || [];
-                                const candidateList = relationCandidates;
-                                console.debug('[EvaluationsModule UI] Template:', template.name, 'relationCandidates:', relationCandidates.length);
+                                // Filter out self just in case
+                                const candidateList = relationCandidates.filter(c => c.id !== user?.id);
                                 return candidateList.map((c) => (
                                   <option key={c.id} value={c.id}>{c.full_name} ({c.role || c.identification})</option>
                                 ));
@@ -721,7 +772,8 @@ export function EvaluationsModule({ onNavigate }: EvaluationsModuleProps) {
                             </select>
                             <button
                               onClick={() => handleTakeForEvaluated(template, selectedCandidate[template.id])}
-                              className="px-4 py-2 rounded-lg text-white bg-blue-600 hover:bg-blue-700"
+                              className="px-4 py-2 rounded-lg text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                              disabled={!selectedCandidate[template.id]}
                             >
                               Crear evaluación
                             </button>

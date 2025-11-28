@@ -40,7 +40,8 @@ export interface EvaluationTemplate {
   id: string;
   name: string;
   description: string | null;
-  type: 'soft_skills' | 'self_evaluation' | 'manager_to_employee' | 'employee_to_manager';
+  type: string; // Changed from union to string to support dynamic form types
+  roles?: string[]; // Added to support direct role assignment
   key?: string; // Added for fallback logic
   job_position: string | null;
   is_active: boolean;
