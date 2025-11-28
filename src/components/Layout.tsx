@@ -26,7 +26,7 @@ export function Layout({ children, activeModule, onModuleChange }: LayoutProps) 
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'office_manager', 'employee'] },
     { id: 'evaluations', label: 'Evaluaciones', icon: FileText, roles: ['admin', 'office_manager', 'employee'] },
-    { id: 'results', label: 'Resultados', icon: BarChart3, roles: ['admin'] },
+    { id: 'results', label: 'Resultados', icon: BarChart3, roles: ['admin', 'office_manager'] },
     { id: 'reports', label: 'Informes', icon: FileText, roles: ['admin'] },
     { id: 'self-report', label: 'Mi Resultado Prisma', icon: BrainCircuit, roles: ['*'] },
     { id: 'admin', label: 'Administración', icon: Settings, roles: ['admin'] },
@@ -41,8 +41,8 @@ export function Layout({ children, activeModule, onModuleChange }: LayoutProps) 
       if (rk === '*') return true;
       if (rk === ur) return true;
       // allow broad matching: 'employee' matches any role containing 'colaborador' or 'employee'
-      if (rk === 'employee' && (ur.includes('colaborador') || ur.includes('employee'))) return true;
-      if (rk === 'office_manager' && (ur.includes('jefe') || ur.includes('manager') || ur.includes('oficina'))) return true;
+      if (rk === 'employee' && (ur.includes('colaborador') || ur.includes('employee') || ur.includes('coordinador') || ur.includes('director') || ur.includes('lider') || ur.includes('jefe'))) return true;
+      if (rk === 'office_manager' && (ur.includes('jefe') || ur.includes('manager') || ur.includes('oficina') || ur.includes('coordinador') || ur.includes('director') || ur.includes('lider'))) return true;
       if (rk === 'admin' && (ur.includes('admin') || ur.includes('administrador'))) return true;
       // fallback: substring match (useful when roles stored as labels)
       if (ur.includes(rk) || rk.includes(ur)) return true;

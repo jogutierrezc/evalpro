@@ -243,8 +243,31 @@ export function DashboardModule() {
           });
 
           // Filter by manager relation
-          eligible = await filterByManagerRelation(eligible);
-          map[tpl.id] = eligible;
+          const managedCandidates = await filterByManagerRelation(eligible);
+
+          if (managedCandidates.length > 0) {
+            map[tpl.id] = managedCandidates;
+          } else {
+            // Fallback for custom roles without strict hierarchy in DB
+            // If we are here, it means we have explicit `rels` (otherwise we continued earlier)
+            // So we trust the `rels` and show the candidates.
+            // To avoid showing the whole university, we can try matching Office or Campus.
+
+            // 1. Try Same Office
+            const sameOffice = eligible.filter(u => u.office_id && u.office_id === user.office_id);
+            if (sameOffice.length > 0) {
+              map[tpl.id] = sameOffice;
+            } else {
+              // 2. Try Same Campus
+              const sameCampus = eligible.filter(u => u.campus && u.campus === user.campus);
+              if (sameCampus.length > 0) {
+                map[tpl.id] = sameCampus;
+              } else {
+                // 3. Last resort: show all eligible (e.g. University-wide roles or explicit cross-functional eval)
+                map[tpl.id] = eligible;
+              }
+            }
+          }
 
         } catch (err) {
           console.warn('[Dashboard] Error processing template', tpl.id, err);
