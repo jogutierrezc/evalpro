@@ -196,22 +196,28 @@ export function DashboardModule() {
 
           // 2. Determine Self-Eval
           let canSelfEval = false;
-          if (userRoleId) {
-            canSelfEval = rels.some((r: any) => r.evaluated_role_id === userRoleId);
+          // A. Direct role assignment in template
+          if (tpl.roles && Array.isArray(tpl.roles) && userRoleNorm) {
+            // check if userRoleNorm matches any of the roles
+            if (tpl.roles.some((r: string) => normalizeStr(r) === userRoleNorm)) {
+              canSelfEval = true;
+            }
           }
+
+          // B. Self-relation (evaluator role == evaluated role)
           if (!canSelfEval) {
-            canSelfEval = rels.some((r: any) => normalizeStr(r.evaluated_role_key) === userRoleNorm);
+            if (userRoleId) {
+              canSelfEval = rels.some((r: any) => r.evaluated_role_id === userRoleId);
+            }
+            if (!canSelfEval) {
+              canSelfEval = rels.some((r: any) => normalizeStr(r.evaluated_role_key) === userRoleNorm);
+            }
           }
 
-          // Refinement: Only treat as self-eval if the name explicitly implies it
-          // This prevents "Manager evaluating Manager" (same role) from being treated as self-eval
-          if (canSelfEval) {
-            const isExplicitSelfEval = /auto|self|propia|personal|mi\s/i.test(tpl.name) || /auto|self|propia|personal/i.test(tplTypeKey);
-            canSelfEval = canSelfEval && isExplicitSelfEval;
-          }
+          // REMOVED restrictive regex check for self-eval names
+          // The previous logic forced the name to contain 'auto', 'self', etc.
+          // Now we rely on the configuration (roles or relations).
 
-          // Fallback Self-Eval (Form Type Roles) - REMOVED to prevent incorrect self-evals
-          // if (!canSelfEval) { ... }
           selfMap[tpl.id] = canSelfEval;
 
           // 3. Determine Candidates (Evaluated)
