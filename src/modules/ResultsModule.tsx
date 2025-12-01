@@ -249,14 +249,21 @@ export function ResultsModule() {
 
       let filteredResults = merged;
 
-      if (user?.role === 'office_manager') {
-        filteredResults = merged.filter(
-          (r) => r.evaluated?.office_id === user.office_id
-        );
-      } else if (user?.role === 'employee') {
-        filteredResults = merged.filter(
-          (r) => r.evaluation?.evaluated_id === user.id || (r.evaluated && r.evaluated.id === user.id)
-        );
+      const roleLower = (user?.role || '').toLowerCase();
+      const isAdmin = roleLower === 'admin' || roleLower.includes('administrador');
+      const isOfficeManager = roleLower === 'office_manager' || roleLower.includes('jefe') || roleLower.includes('manager') || roleLower.includes('oficina') || roleLower.includes('coordinador') || roleLower.includes('director') || roleLower.includes('lider');
+
+      if (!isAdmin) {
+        if (isOfficeManager) {
+          filteredResults = merged.filter(
+            (r) => r.evaluated?.office_id === user?.office_id
+          );
+        } else {
+          // Default for employees and others: only see own results
+          filteredResults = merged.filter(
+            (r) => r.evaluation?.evaluated_id === user?.id || (r.evaluated && r.evaluated.id === user?.id)
+          );
+        }
       }
 
       setResults(filteredResults as ResultWithDetails[]);

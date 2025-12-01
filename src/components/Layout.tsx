@@ -24,13 +24,13 @@ export function Layout({ children, activeModule, onModuleChange }: LayoutProps) 
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const menuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'office_manager', 'employee'] },
-    { id: 'evaluations', label: 'Evaluaciones', icon: FileText, roles: ['admin', 'office_manager', 'employee'] },
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['*'] },
+    { id: 'evaluations', label: 'Evaluaciones', icon: FileText, roles: ['admin'] },
     { id: 'results', label: 'Resultados', icon: BarChart3, roles: ['admin', 'office_manager'] },
     { id: 'reports', label: 'Informes', icon: FileText, roles: ['admin'] },
     { id: 'self-report', label: 'Mi Resultado Prisma', icon: BrainCircuit, roles: ['*'] },
     { id: 'admin', label: 'Administración', icon: Settings, roles: ['admin'] },
-    { id: 'guide', label: 'Ayuda', icon: BookOpen, roles: ['admin', 'office_manager', 'employee'] },
+    { id: 'guide', label: 'Ayuda', icon: BookOpen, roles: ['*'] },
   ];
 
   const filteredMenuItems = menuItems.filter(item => {
