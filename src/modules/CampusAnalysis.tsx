@@ -15,7 +15,8 @@ import {
     BarChart3,
     Link,
     ChevronDown,
-    ChevronUp
+    ChevronUp,
+    Filter
 } from 'lucide-react';
 
 interface RadarDataPoint {
@@ -170,6 +171,7 @@ const normalize = (text: string) => text.toLowerCase().normalize("NFD").replace(
 
 export default function CampusAnalysis({ campusName, results, organizationAverage }: Props) {
     const [expandedProposals, setExpandedProposals] = useState<Record<number, boolean>>({});
+    const [selectedTemplate, setSelectedTemplate] = useState<string>('all');
 
     const toggleProposal = (idx: number) => {
         setExpandedProposals(prev => ({
@@ -178,9 +180,23 @@ export default function CampusAnalysis({ campusName, results, organizationAverag
         }));
     };
 
+    const uniqueTemplates = useMemo(() => {
+        const templates = new Set<string>();
+        results.forEach(r => {
+            if (r.template?.name) {
+                templates.add(r.template.name);
+            }
+        });
+        return Array.from(templates).sort();
+    }, [results]);
+
     const analysis = useMemo(() => {
         // Filter results that have scores
-        const validResults = results.filter(r => r.avgScore !== null && r.avgScore !== undefined);
+        let validResults = results.filter(r => r.avgScore !== null && r.avgScore !== undefined);
+
+        if (selectedTemplate !== 'all') {
+            validResults = validResults.filter(r => r.template?.name === selectedTemplate);
+        }
 
         if (validResults.length === 0) return null;
 
@@ -526,7 +542,7 @@ export default function CampusAnalysis({ campusName, results, organizationAverag
             predictiveAnalysis,
             correlationMap
         };
-    }, [results, organizationAverage]);
+    }, [results, organizationAverage, selectedTemplate]);
 
     if (!analysis) {
         return (
@@ -540,6 +556,25 @@ export default function CampusAnalysis({ campusName, results, organizationAverag
 
     return (
         <div className="space-y-8 animate-in fade-in duration-500">
+
+            {/* Template Filter */}
+            <div className="flex justify-end mb-4">
+                <div className="relative inline-block text-left">
+                    <div className="flex items-center gap-2">
+                        <Filter className="w-5 h-5 text-slate-500" />
+                        <select
+                            value={selectedTemplate}
+                            onChange={(e) => setSelectedTemplate(e.target.value)}
+                            className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
+                        >
+                            <option value="all">Todos los Formularios</option>
+                            {uniqueTemplates.map(t => (
+                                <option key={t} value={t}>{t}</option>
+                            ))}
+                        </select>
+                    </div>
+                </div>
+            </div>
 
             {/* Header Stats */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

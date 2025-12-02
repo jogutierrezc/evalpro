@@ -601,11 +601,30 @@ export default function UniversityAnalysis({ results }: Props) {
 
     if (!analysis) return <div className="p-8 text-center text-slate-500">Cargando análisis universitario...</div>;
 
-    const { globalAverage, campuses, radarData, topOffices, intelligentAnalysis, hrPlan, focusedActions, strategicProposals, predictiveAnalysis, correlationMap } = analysis;
+    const { globalAverage, campuses, radarData, topOffices, intelligentAnalysis, hrPlan, focusedActions, strategicProposals, predictiveAnalysis, correlationMap, top10Workers, bottom10Workers } = analysis;
     const campusColors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
 
     return (
         <div className="space-y-8 animate-in fade-in duration-500">
+
+            {/* Template Filter */}
+            <div className="flex justify-end mb-4">
+                <div className="relative inline-block text-left">
+                    <div className="flex items-center gap-2">
+                        <Filter className="w-5 h-5 text-slate-500" />
+                        <select
+                            value={selectedTemplate}
+                            onChange={(e) => setSelectedTemplate(e.target.value)}
+                            className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
+                        >
+                            <option value="all">Todos los Formularios</option>
+                            {uniqueTemplates.map(t => (
+                                <option key={t} value={t}>{t}</option>
+                            ))}
+                        </select>
+                    </div>
+                </div>
+            </div>
 
             {/* Header / Level 1 Diagnosis */}
             <div className={`rounded-3xl p-8 text-white bg-gradient-to-br ${intelligentAnalysis.level1.color} shadow-xl relative overflow-hidden`}>
@@ -731,6 +750,90 @@ export default function UniversityAnalysis({ results }: Props) {
                             </div>
                         </div>
                     ))}
+                </div>
+            </div>
+
+            {/* Top 10 Workers */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
+                <div className="flex items-center gap-2 mb-6">
+                    <Award className="w-6 h-6 text-emerald-500" />
+                    <h3 className="font-bold text-slate-800 text-lg">Top 10 Colaboradores Destacados</h3>
+                </div>
+                <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                            <tr>
+                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ranking</th>
+                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Colaborador</th>
+                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Oficina / Campus</th>
+                                <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Puntaje</th>
+                            </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                            {top10Workers.map((worker, idx) => (
+                                <tr key={idx}>
+                                    <td className="px-6 py-4 whitespace-nowrap">
+                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-white text-sm ${idx < 3 ? 'bg-emerald-500' : 'bg-slate-400'}`}>
+                                            {idx + 1}
+                                        </div>
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap">
+                                        <div className="text-sm font-medium text-gray-900">{worker.name}</div>
+                                        <div className="text-xs text-gray-500">{worker.role}</div>
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap">
+                                        <div className="text-sm text-gray-900">{worker.office}</div>
+                                        <div className="text-xs text-gray-500">{worker.campus}</div>
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-right">
+                                        <span className="text-sm font-bold text-emerald-600">{worker.avg.toFixed(2)}</span>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            {/* Bottom 10 Workers (Below Average) */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 border-l-4 border-l-red-500">
+                <div className="flex items-center gap-2 mb-6">
+                    <AlertTriangle className="w-6 h-6 text-red-500" />
+                    <h3 className="font-bold text-slate-800 text-lg">Colaboradores por debajo de la Media Nacional (Top 10 Crítico)</h3>
+                </div>
+                <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-red-50">
+                            <tr>
+                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Colaborador</th>
+                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Oficina / Campus</th>
+                                <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Puntaje</th>
+                                <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Desviación</th>
+                            </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                            {bottom10Workers.map((worker, idx) => (
+                                <tr key={idx}>
+                                    <td className="px-6 py-4 whitespace-nowrap">
+                                        <div className="text-sm font-medium text-gray-900">{worker.name}</div>
+                                        <div className="text-xs text-gray-500">{worker.role}</div>
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap">
+                                        <div className="text-sm text-gray-900">{worker.office}</div>
+                                        <div className="text-xs text-gray-500">{worker.campus}</div>
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-right">
+                                        <span className="text-sm font-bold text-red-600">{worker.avg.toFixed(2)}</span>
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-right">
+                                        <span className="text-xs font-medium text-red-500">
+                                            {(worker.avg - globalAverage).toFixed(2)}
+                                        </span>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
                 </div>
             </div>
 
