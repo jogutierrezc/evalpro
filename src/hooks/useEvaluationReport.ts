@@ -9,6 +9,7 @@ interface UseEvaluationReportProps {
 
 export function useEvaluationReport({ evaluationId, userId }: UseEvaluationReportProps) {
     const [inputData, setInputData] = useState<EvaluacionInput | null>(null);
+    const [evaluationData, setEvaluationData] = useState<any | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -43,6 +44,7 @@ export function useEvaluationReport({ evaluationId, userId }: UseEvaluationRepor
 
                 if (error) throw error;
                 evaluationData = data;
+                setEvaluationData(data);
             } else if (userId) {
                 const { data, error } = await supabase
                     .from('evaluations')
@@ -68,6 +70,7 @@ export function useEvaluationReport({ evaluationId, userId }: UseEvaluationRepor
 
                 if (error) throw error;
                 evaluationData = data;
+                setEvaluationData(data);
             }
 
             if (!evaluationData) {
@@ -181,5 +184,5 @@ export function useEvaluationReport({ evaluationId, userId }: UseEvaluationRepor
         }
     }, [loadData, evaluationId, userId]);
 
-    return { inputData, loading, error, reload: loadData };
+    return { inputData, rawEvaluation: evaluationData, loading, error, reload: loadData };
 }
