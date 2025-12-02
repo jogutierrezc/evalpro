@@ -294,7 +294,42 @@ export default function UniversityAnalysis({ results }: Props) {
         });
         const topOffices = allOffices.sort((a, b) => b.avg - a.avg).slice(0, 10); // Top 10
 
-        // --- 5. Intelligent Analysis Logic ---
+        // --- 5. Top 10 Workers & Bottom 10 Workers ---
+        // Deduplicate by evaluated user ID to avoid showing same person multiple times if they have multiple evaluations (though usually 1 per template)
+        // If filtering by template, duplicates shouldn't be an issue unless multiple evals of same type.
+        // We will take the average score per person if multiple exist.
+        const workerScores: Record<string, { name: string, office: string, campus: string, score: number, count: number, role: string }> = {};
+
+        validResults.forEach(r => {
+            if (r.evaluated?.id) {
+                if (!workerScores[r.evaluated.id]) {
+                    workerScores[r.evaluated.id] = {
+                        name: r.evaluated.full_name,
+                        office: r.office?.name || 'Sin Oficina',
+                        campus: r.evaluated.campus || 'Sin Campus',
+                        score: 0,
+                        count: 0,
+                        role: r.evaluated.role || ''
+                    };
+                }
+                workerScores[r.evaluated.id].score += (Number(r.avgScore) || 0);
+                workerScores[r.evaluated.id].count += 1;
+            }
+        });
+
+        const workersList = Object.values(workerScores).map(w => ({
+            ...w,
+            avg: w.score / w.count
+        }));
+
+        const top10Workers = [...workersList].sort((a, b) => b.avg - a.avg).slice(0, 10);
+
+        // Bottom 10 (or below average)
+        // User asked for "10 que no alcanzan la media nacional o estan por debajo de ella"
+        const belowAverageWorkers = workersList.filter(w => w.avg < globalAverage);
+        const bottom10Workers = [...belowAverageWorkers].sort((a, b) => a.avg - b.avg).slice(0, 10);
+
+        // --- 6. Intelligent Analysis Logic ---
 
         // Level 1: Macro Diagnosis
         // Calculate Standard Deviation of Campus Averages to detect disparity
@@ -558,9 +593,11 @@ export default function UniversityAnalysis({ results }: Props) {
             focusedActions,
             strategicProposals,
             predictiveAnalysis,
-            correlationMap
+            correlationMap,
+            top10Workers,
+            bottom10Workers
         };
-    }, [results]);
+    }, [results, selectedTemplate]);
 
     if (!analysis) return <div className="p-8 text-center text-slate-500">Cargando análisis universitario...</div>;
 
