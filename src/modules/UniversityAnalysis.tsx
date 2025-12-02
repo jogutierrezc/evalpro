@@ -13,7 +13,8 @@ import {
     Link,
     AlertTriangle,
     ChevronDown,
-    ChevronUp
+    ChevronUp,
+    Filter
 } from 'lucide-react';
 
 interface Props {
@@ -169,6 +170,7 @@ const MultiRadarChart = ({ data, campuses, colors }: { data: RadarDataPoint[], c
 
 export default function UniversityAnalysis({ results }: Props) {
     const [expandedProposals, setExpandedProposals] = useState<Record<number, boolean>>({});
+    const [selectedTemplate, setSelectedTemplate] = useState<string>('all');
 
     const toggleProposal = (idx: number) => {
         setExpandedProposals(prev => ({
@@ -177,8 +179,23 @@ export default function UniversityAnalysis({ results }: Props) {
         }));
     };
 
+    const uniqueTemplates = useMemo(() => {
+        const templates = new Set<string>();
+        results.forEach(r => {
+            if (r.template?.name) {
+                templates.add(r.template.name);
+            }
+        });
+        return Array.from(templates).sort();
+    }, [results]);
+
     const analysis = useMemo(() => {
-        const validResults = results.filter(r => r.avgScore !== null && r.avgScore !== undefined);
+        let validResults = results.filter(r => r.avgScore !== null && r.avgScore !== undefined);
+
+        if (selectedTemplate !== 'all') {
+            validResults = validResults.filter(r => r.template?.name === selectedTemplate);
+        }
+
         if (validResults.length === 0) return null;
 
         // --- 1. Global Metrics ---

@@ -70,22 +70,43 @@ export function UsersManagement() {
     }
   };
 
-  // Ensure collaborator_offices entries exist for given user and list of office ids
+  // Sync collaborator_offices: add new ones, remove missing ones
   const ensureCollaboratorOffices = async (userId: string | null | undefined, officeIds: string[] | undefined) => {
-    if (!userId || !officeIds || officeIds.length === 0) return;
+    if (!userId) return;
+    const targetIds = (officeIds || []).filter(Boolean);
+
     try {
-      for (const officeId of officeIds) {
-        try {
-          const { data: existingRel } = await supabase.from('collaborator_offices').select('office_id').eq('collaborator_id', userId).eq('office_id', officeId).maybeSingle();
-          if (!existingRel) {
-            await supabase.from('collaborator_offices').insert([{ collaborator_id: userId, office_id: officeId }]);
-          }
-        } catch (e) {
-          console.warn('Could not ensure collaborator_offices mapping for user->office', e);
-        }
+      // Get existing relations
+      const { data: existing, error } = await supabase
+        .from('collaborator_offices')
+        .select('id, office_id')
+        .eq('collaborator_id', userId);
+
+      if (error) throw error;
+
+      const existingRows = (existing as any[]) || [];
+      const existingOfficeIds = new Set(existingRows.map(r => r.office_id));
+
+      // Identify additions and removals
+      const toAdd = targetIds.filter(id => !existingOfficeIds.has(id));
+      const toRemove = existingRows.filter(r => !targetIds.includes(r.office_id));
+
+      // Execute additions
+      if (toAdd.length > 0) {
+        const rows = toAdd.map(office_id => ({ collaborator_id: userId, office_id }));
+        const { error: insErr } = await supabase.from('collaborator_offices').insert(rows);
+        if (insErr) console.error('Error inserting collaborator_offices:', insErr);
       }
+
+      // Execute removals
+      if (toRemove.length > 0) {
+        const idsToRemove = toRemove.map(r => r.id);
+        const { error: delErr } = await supabase.from('collaborator_offices').delete().in('id', idsToRemove);
+        if (delErr) console.error('Error deleting collaborator_offices:', delErr);
+      }
+
     } catch (e) {
-      console.error('Error ensuring collaborator_offices for user:', e);
+      console.error('Error syncing collaborator_offices for user:', e);
     }
   };
 
