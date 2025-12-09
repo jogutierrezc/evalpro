@@ -216,61 +216,52 @@ export function AiReportRenderer({ inputData, informe, onPrint }: AiReportRender
 
                 {/* --- DIAGNÓSTICO Y RECOMENDACIONES --- */}
                 {/* Visible ONLY for Admin */}
-                {(inputData.evaluado.rol === 'admin' || (window as any).userRole === 'admin' || (inputData as any).currentUserRole === 'admin') ? (
-                    <section className="grid grid-cols-1 lg:grid-cols-3 gap-8 print:break-before-page">
+                <section className="grid grid-cols-1 lg:grid-cols-3 gap-8 print:break-before-page">
 
-                        {/* Columna Izquierda: Diagnóstico Oscuro */}
-                        <div className="bg-slate-900 text-white p-8 rounded-xl shadow-xl flex flex-col justify-center print:bg-slate-800 print:text-white">
-                            <div className="text-amber-400 font-bold text-sm tracking-wider uppercase mb-6 flex items-center gap-2">
-                                <TrendingUp className="w-4 h-4" /> Diagnóstico Sintético
-                            </div>
-                            <p className="text-2xl font-serif italic leading-normal text-slate-200">
-                                "{informe.diagnosticoIA}"
-                            </p>
-                            <div className="mt-8 pt-6 border-t border-slate-700">
-                                <p className="text-sm text-slate-500 uppercase tracking-widest">Acción Prioritaria</p>
-                                <p className="text-white font-semibold mt-1">Plan de Desarrollo en Innovación</p>
-                            </div>
+                    {/* Columna Izquierda: Diagnóstico Oscuro */}
+                    <div className="bg-slate-900 text-white p-8 rounded-xl shadow-xl flex flex-col justify-center print:bg-slate-800 print:text-white">
+                        <div className="text-amber-400 font-bold text-sm tracking-wider uppercase mb-6 flex items-center gap-2">
+                            <TrendingUp className="w-4 h-4" /> Diagnóstico Sintético
                         </div>
-
-                        {/* Columna Derecha: Recomendaciones */}
-                        <div className="lg:col-span-2">
-                            <h2 className="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-2">
-                                <Target className="w-6 h-6 text-amber-500" />
-                                Recomendaciones Estratégicas
-                            </h2>
-
-                            <div className="grid gap-4">
-                                {recomendaciones.map((rec: any, idx: number) => (
-                                    <div key={rec.id || idx} className="bg-white p-6 rounded-xl border-l-4 border-amber-400 shadow-sm hover:shadow-md transition-shadow print:shadow-none print:border">
-                                        <div className="flex justify-between items-start mb-3">
-                                            <h4 className="font-bold text-slate-800 text-lg">{rec.id} | {rec.titulo}</h4>
-                                            <span className="bg-amber-100 text-amber-800 text-xs font-bold px-2 py-1 rounded-md uppercase tracking-wide">
-                                                {rec.tipo}
-                                            </span>
-                                        </div>
-                                        <p className="text-slate-600">{rec.descripcion}</p>
-                                    </div>
-                                ))}
-
-                                {/* Fallback si no hay recomendaciones críticas */}
-                                {recomendaciones.length === 0 && (
-                                    <div className="bg-green-50 p-6 rounded-xl border border-green-200 text-center">
-                                        <p className="text-green-800 font-medium">No se detectaron brechas críticas que requieran intervención inmediata. Se sugiere mantener el plan de carrera actual.</p>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-
-                    </section>
-                ) : (
-                    <div className="bg-blue-50 p-6 rounded-xl border border-blue-100 text-center mb-10 print:hidden">
-                        <p className="text-blue-800 font-medium">
-                            <Lightbulb className="w-5 h-5 inline-block mr-2 mb-1" />
-                            El análisis estratégico detallado y las recomendaciones están disponibles únicamente para la administración.
+                        <p className="text-2xl font-serif italic leading-normal text-slate-200">
+                            "{informe.diagnosticoIA}"
                         </p>
+                        <div className="mt-8 pt-6 border-t border-slate-700">
+                            <p className="text-sm text-slate-500 uppercase tracking-widest">Acción Prioritaria</p>
+                            <p className="text-white font-semibold mt-1">Plan de Desarrollo en Innovación</p>
+                        </div>
                     </div>
-                )}
+
+                    {/* Columna Derecha: Recomendaciones */}
+                    <div className="lg:col-span-2">
+                        <h2 className="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-2">
+                            <Target className="w-6 h-6 text-amber-500" />
+                            Recomendaciones Estratégicas
+                        </h2>
+
+                        <div className="grid gap-4">
+                            {recomendaciones.map((rec: any, idx: number) => (
+                                <div key={rec.id || idx} className="bg-white p-6 rounded-xl border-l-4 border-amber-400 shadow-sm hover:shadow-md transition-shadow print:shadow-none print:border">
+                                    <div className="flex justify-between items-start mb-3">
+                                        <h4 className="font-bold text-slate-800 text-lg">{rec.id} | {rec.titulo}</h4>
+                                        <span className="bg-amber-100 text-amber-800 text-xs font-bold px-2 py-1 rounded-md uppercase tracking-wide">
+                                            {rec.tipo}
+                                        </span>
+                                    </div>
+                                    <p className="text-slate-600">{rec.descripcion}</p>
+                                </div>
+                            ))}
+
+                            {/* Fallback si no hay recomendaciones críticas */}
+                            {recomendaciones.length === 0 && (
+                                <div className="bg-green-50 p-6 rounded-xl border border-green-200 text-center">
+                                    <p className="text-green-800 font-medium">No se detectaron brechas críticas que requieran intervención inmediata. Se sugiere mantener el plan de carrera actual.</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                </section>
 
                 {/* --- FOOTER --- */}
                 <div className="mt-20 pt-10 border-t border-slate-200 text-center text-slate-500 text-sm print:break-inside-avoid">

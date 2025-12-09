@@ -18,7 +18,8 @@ export interface EvaluacionInput {
     // Mapeamos tus 4 imágenes a estos tipos
     tipoInforme: TipoExamenVaf;
     puntajes: Record<string, number>;
-    comparativeScores?: Record<string, number>; // Added to keep compatibility with existing calls if needed, though not used in logic
+    comparativeScores?: Record<string, number>;
+    evaluadorNombre?: string;
 }
 
 export interface FactorAnalisis {
