@@ -200,8 +200,8 @@ const PrismaReport = () => {
                 // Find matching section in sectionScores
                 const matchingSectionKey = Object.keys(sectionScores).find(k => {
                     const kNorm = normalizeStr(k);
-                    return kNorm.includes(configName) || configName.includes(kNorm) ||
-                        (catNorm.includes('calidad') && kNorm.includes('calidad')) ||
+                    return kNorm.includes(configName) || configName.includes(configName) ||
+                        (catNorm === 'calidad' && kNorm.includes('calidad') && !kNorm.includes('sistema')) || // Prevent Calidad from matching SGC
                         (catNorm.includes('resultados') && kNorm.includes('resultados')) ||
                         (catNorm.includes('integridad') && kNorm.includes('integridad')) ||
                         (catNorm.includes('comunicacion') && kNorm.includes('comunicacion')) ||
@@ -227,8 +227,8 @@ const PrismaReport = () => {
                             nivelRiesgo: avg < 3 ? 'Alto' : avg < 4 ? 'Medio' : 'Bajo',
                             arquetipo: isHigh ? 'Desempeño Sobresaliente' : isMed ? 'Desempeño Competente' : 'Oportunidad de Mejora',
                             analisis: `El análisis se ha generado a partir del promedio general de la sección "${matchingSectionKey}" (${avg}/5.0). ${isHigh ? 'El evaluado demuestra un dominio sólido de esta competencia.' :
-                                    isMed ? 'El evaluado cumple con los expectativas básicas, aunque hay margen de mejora.' :
-                                        'Se requiere un plan de fortalecimiento inmediato en esta área.'
+                                isMed ? 'El evaluado cumple con los expectativas básicas, aunque hay margen de mejora.' :
+                                    'Se requiere un plan de fortalecimiento inmediato en esta área.'
                                 }`,
                             accionSugerida: isHigh ? 'Continuar liderando con el ejemplo y mentorear a otros.' :
                                 isMed ? 'Establecer objetivos específicos para elevar el estándar de calidad.' :
@@ -240,7 +240,8 @@ const PrismaReport = () => {
             }
 
             console.log(`[Prisma Debug] Analysis for ${cat}:`, res);
-            if (res) results.push(res);
+            // Only push if score > 0 effectively hides irrelevant categories
+            if (res && res.score > 0) results.push(res);
         });
 
         return results;
