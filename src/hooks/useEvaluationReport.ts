@@ -35,6 +35,7 @@ export function useEvaluationReport({ evaluationId, userId }: UseEvaluationRepor
                             question:evaluation_questions(
                                 id,
                                 question_text,
+                                question_type,
                                 section:evaluation_sections(id, title)
                             )
                         )
@@ -58,6 +59,7 @@ export function useEvaluationReport({ evaluationId, userId }: UseEvaluationRepor
                             question:evaluation_questions(
                                 id,
                                 question_text,
+                                question_type,
                                 section:evaluation_sections(id, title)
                             )
                         )
@@ -88,26 +90,56 @@ export function useEvaluationReport({ evaluationId, userId }: UseEvaluationRepor
                     responses:evaluation_responses(
                         response_value,
                         question:evaluation_questions(
+                            question_type,
                             section:evaluation_sections(title)
                         )
                     )
                 `)
                 .eq('status', 'completed');
 
+            // Helper to handle jsonb values
+            const normalizeValue = (val: any): number => {
+                if (val === null || val === undefined) return 0;
+                if (typeof val === 'number') return val;
+                if (typeof val === 'string') {
+                    const parsed = parseFloat(val);
+                    return isNaN(parsed) ? 0 : parsed;
+                }
+                if (typeof val === 'object') {
+                    // Start digging
+                    return Number(val.value || val.rating || val.score || val.response || 0);
+                }
+                return 0;
+            };
+
             // Process User Scores - Aggregating by RAW Section Title
             const sectionScores: Record<string, { total: number; count: number }> = {};
+
+            console.log('[EvalPro Debug] Processing responses:', evaluationData.responses?.length);
+
             evaluationData.responses?.forEach((r: any) => {
+                const qType = r.question?.question_type;
                 const title = r.question?.section?.title || 'General';
+                const numericVal = normalizeValue(r.response_value);
+
+                // Filter out non-rating questions unless they have a valid numeric value > 0 (fallback)
+                if (qType && qType !== 'rating' && numericVal === 0) return;
+
+                // Log for debugging (temporary)
+                if (numericVal === 0) console.warn(`[EvalPro Debug] Zero value for ${title}:`, r.response_value);
+
                 // We use the raw title to allow the AI logic to detect the dimension dynamically
                 // or display the custom section name if no dimension matches.
                 if (!sectionScores[title]) sectionScores[title] = { total: 0, count: 0 };
-                sectionScores[title].total += Number(r.response_value) || 0;
+                sectionScores[title].total += numericVal;
                 sectionScores[title].count += 1;
             });
 
+            console.log('[EvalPro Debug] Section Scores:', sectionScores);
+
             const puntajes: Record<string, number> = {};
             Object.entries(sectionScores).forEach(([key, val]) => {
-                puntajes[key] = Number((val.total / val.count).toFixed(1));
+                puntajes[key] = val.count > 0 ? Number((val.total / val.count).toFixed(1)) : 0;
             });
 
             // Process Comparative Scores - Also by RAW Section Title
@@ -115,9 +147,14 @@ export function useEvaluationReport({ evaluationId, userId }: UseEvaluationRepor
             if (allEvaluations) {
                 allEvaluations.forEach(ev => {
                     ev.responses?.forEach((r: any) => {
+                        // Same normalization for comparative
+                        const qType = r.question?.question_type;
+                        const numericVal = normalizeValue(r.response_value);
+                        if (qType && qType !== 'rating' && numericVal === 0) return;
+
                         const title = r.question?.section?.title || 'General';
                         if (!compScores[title]) compScores[title] = { total: 0, count: 0 };
-                        compScores[title].total += Number(r.response_value) || 0;
+                        compScores[title].total += numericVal;
                         compScores[title].count += 1;
                     });
                 });
@@ -125,7 +162,7 @@ export function useEvaluationReport({ evaluationId, userId }: UseEvaluationRepor
 
             const comparativePuntajes: Record<string, number> = {};
             Object.entries(compScores).forEach(([key, val]) => {
-                comparativePuntajes[key] = Number((val.total / val.count).toFixed(1));
+                comparativePuntajes[key] = val.count > 0 ? Number((val.total / val.count).toFixed(1)) : 0;
             });
 
             // Determine Report Type
