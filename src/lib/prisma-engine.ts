@@ -98,6 +98,37 @@ export const PRISMA_KNOWLEDGE_BASE: Record<string, CategoryConfig> = {
             { id: 'te3', text: 'Se adapta a los diferentes estilos de trabajo', weight: 0.2, isAnchor: false },
             { id: 'te4', text: 'Respeta las ideas y opiniones de sus compañeros', weight: 0.2, isAnchor: false },
         ]
+    },
+    // --- NUEVAS CATEGORÍAS VAF / EVALPROM ---
+    liderazgo: {
+        id: 'liderazgo',
+        name: 'Liderazgo',
+        questions: [{ id: 'lid_gen', text: 'Competencia General de Liderazgo', weight: 1.0, isAnchor: false }]
+    },
+    requisitos: {
+        id: 'requisitos',
+        name: 'Cumplimiento de los Requisitos',
+        questions: [{ id: 'req_gen', text: 'Competencia General de Requisitos', weight: 1.0, isAnchor: false }]
+    },
+    sgc: {
+        id: 'sgc',
+        name: 'Compromiso con el Sistema de Gestión de Calidad (SGC)',
+        questions: [{ id: 'sgc_gen', text: 'Competencia General SGC', weight: 1.0, isAnchor: false }]
+    },
+    documental: {
+        id: 'documental',
+        name: 'Gestión Documental',
+        questions: [{ id: 'doc_gen', text: 'Competencia General Documental', weight: 1.0, isAnchor: false }]
+    },
+    planeacion: {
+        id: 'planeacion',
+        name: 'Planeación',
+        questions: [{ id: 'plan_gen', text: 'Competencia General Planeación', weight: 1.0, isAnchor: false }]
+    },
+    mejora: {
+        id: 'mejora',
+        name: 'Mejora',
+        questions: [{ id: 'mej_gen', text: 'Competencia General Mejora', weight: 1.0, isAnchor: false }]
     }
 };
 
@@ -143,6 +174,7 @@ export const NARRATIVE_DB: Record<string, CategoryNarrative> = {
             accion: 'Instituir la regla del "Doble Check" con un par antes de cada entrega final. Capacitación en gestión del tiempo enfocada en la técnica Pomodoro para mantener focos de atención sostenida.'
         }
     },
+    // ... (Keep existing Standard Categories: resultados, integridad, comunicacion, institucional, trabajo_equipo)
     resultados: {
         anchorFailure: {
             arquetipo: 'Esforzado sin Estrategia (Ineficacia Cíclica)',
@@ -272,6 +304,43 @@ export const NARRATIVE_DB: Record<string, CategoryNarrative> = {
                 `Su colaboración está condicionada a la afinidad personal o a la conveniencia. Le cuesta adaptarse a estilos de trabajo diversos o a personalidades que chocan con la suya. \n\nTiende a juzgar las ideas de otros prematuramente, lo que puede inhibir la participación de compañeros más introvertidos. Necesita trabajar en la tolerancia y en la valoración de la diversidad cognitiva como un activo, no como un obstáculo.`,
             accion: 'Rotación temporal en proyectos con personas con las que usualmente tiene menos interacción. Taller de "Estilos de Pensamiento" o DISC.'
         }
+    },
+    // --- NARRATIVAS NUEVAS CATEGORÍAS VAF ---
+    liderazgo: {
+        anchorFailure: { arquetipo: 'Liderazgo en Desarrollo', analisis: () => 'Fortalecer competencias de dirección.', accion: 'Capacitación en liderazgo.' },
+        excellence: { arquetipo: 'Líder Transformacional', analisis: () => 'Capacidad superior de influir y guiar.', accion: 'Mentoring estratégico.' },
+        good: { arquetipo: 'Líder Efectivo', analisis: () => 'Dirige equipos con claridad.', accion: 'Desarrollar visión a largo plazo.' },
+        development: { arquetipo: 'Líder en Formación', analisis: () => 'Gestión de equipos en etapa temprana.', accion: 'Coaching de liderazgo.' }
+    },
+    requisitos: {
+        anchorFailure: { arquetipo: 'Riesgo de Cumplimiento', analisis: () => 'Brechas en el cumplimiento de requisitos.', accion: 'Plan de acción correctiva.' },
+        excellence: { arquetipo: 'Auditor de Requisitos', analisis: () => 'Cumplimiento impecable y sistemático.', accion: 'Liderar auditorías internas.' },
+        good: { arquetipo: 'Cumplimiento Sólido', analisis: () => 'Adherencia adecuada a los requisitos.', accion: 'Optimización de procesos.' },
+        development: { arquetipo: 'En Alineación', analisis: () => 'Requiere supervisión en requisitos.', accion: 'Refuerzo de normativas.' }
+    },
+    sgc: {
+        anchorFailure: { arquetipo: 'Desalineado con Calidad', analisis: () => 'Brechas en el sistema de gestión.', accion: 'Capacitación SGC.' },
+        excellence: { arquetipo: 'Campeón de Calidad', analisis: () => 'Promotor activo del SGC.', accion: 'Liderar mejoras del SGC.' },
+        good: { arquetipo: 'Comprometido con Calidad', analisis: () => 'Aplica correctamente el SGC.', accion: 'Participar en auditorías.' },
+        development: { arquetipo: 'Conociendo el SGC', analisis: () => 'Adopción temprana del sistema.', accion: 'Inducción SGC.' }
+    },
+    documental: {
+        anchorFailure: { arquetipo: 'Desorden Documental', analisis: () => 'Riesgo en gestión de información.', accion: 'Organización inmediata.' },
+        excellence: { arquetipo: 'Archivista Experto', analisis: () => 'Gestión documental impecable.', accion: 'Digitalización avanzada.' },
+        good: { arquetipo: 'Organizado', analisis: () => 'Mantiene control documental.', accion: 'Mejorar indexación.' },
+        development: { arquetipo: 'Organización Básica', analisis: () => 'Mejorar trazabilidad.', accion: 'Capacitación en archivo.' }
+    },
+    planeacion: {
+        anchorFailure: { arquetipo: 'Reactivo', analisis: () => 'Falta de planificación estructurada.', accion: 'Taller de planeación.' },
+        excellence: { arquetipo: 'Estratega', analisis: () => 'Visión y ejecución planificada.', accion: 'Planeación estratégica.' },
+        good: { arquetipo: 'Planificador', analisis: () => 'Organiza sus tareas adecuadamente.', accion: 'Uso de herramientas de gestión.' },
+        development: { arquetipo: 'Improvisador', analisis: () => 'Dependencia del día a día.', accion: 'Agenda estructurada.' }
+    },
+    mejora: {
+        anchorFailure: { arquetipo: 'Estático', analisis: () => 'Resistencia al cambio.', accion: 'Sensibilización de mejora.' },
+        excellence: { arquetipo: 'Innovador', analisis: () => 'Impulsor de mejora continua.', accion: 'Liderar proyectos de innovación.' },
+        good: { arquetipo: 'Proactivo', analisis: () => 'Propone mejoras regularmente.', accion: 'Metodologías ágiles.' },
+        development: { arquetipo: 'Adaptable', analisis: () => 'Se adapta a cambios propuestos.', accion: 'Participar en ideación.' }
     },
     // Default fallback
     default: {
