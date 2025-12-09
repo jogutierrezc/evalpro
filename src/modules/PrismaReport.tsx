@@ -148,12 +148,26 @@ const PrismaReport = () => {
     const analysisResults = useMemo(() => {
         if (!rawEvaluation || !rawEvaluation.responses) return [];
 
+        // Helper to handle jsonb values
+        const normalizeValue = (val: any): number => {
+            if (val === null || val === undefined) return 0;
+            if (typeof val === 'number') return val;
+            if (typeof val === 'string') {
+                const parsed = parseFloat(val);
+                return isNaN(parsed) ? 0 : parsed;
+            }
+            if (typeof val === 'object') {
+                return Number(val.value || val.rating || val.score || val.response || 0);
+            }
+            return 0;
+        };
+
         // Map responses: Question Text -> Score
         const userAnswers: Record<string, number> = {};
         rawEvaluation.responses.forEach((r: any) => {
             const text = r.question?.question_text || '';
             // Store by text for fuzzy matching in engine
-            userAnswers[text] = Number(r.response_value);
+            userAnswers[text] = normalizeValue(r.response_value);
         });
 
         const results: AnalysisResult[] = [];
@@ -362,7 +376,11 @@ const PrismaReport = () => {
 
 
                         </div>
-                        );
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
 };
 
-                        export default PrismaReport;
+export default PrismaReport;
