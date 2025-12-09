@@ -167,6 +167,10 @@ const PrismaReport = () => {
         const sectionScores: Record<string, { total: number; count: number }> = {};
 
         rawEvaluation.responses.forEach((r: any) => {
+            // Filter only rating questions to avoid skewing averages
+            const qType = r.question?.type || 'rating'; // Default to rating if missing, but should be there
+            if (qType !== 'rating') return;
+
             const text = r.question?.question_text || '';
             const section = r.question?.section?.title || 'General';
             const val = normalizeValue(r.response_value);
