@@ -359,20 +359,10 @@ const PrismaReport = () => {
                                     </div>
                                 </div>
                             ))}
-                            <span>92%</span>
+
+
                         </div>
-                        <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
-                            <div className="h-full bg-purple-400 w-[92%]"></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-
-
-
-        </div>
-    );
+                        );
 };
 
-export default PrismaReport;
+                        export default PrismaReport;
