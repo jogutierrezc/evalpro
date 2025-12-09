@@ -171,10 +171,10 @@ export function useEvaluationReport({ evaluationId, userId }: UseEvaluationRepor
             const tName = (template?.name || '').toLowerCase();
             const tType = (template?.type || '').toLowerCase();
 
-            if (tName.includes('vaf')) {
+            if (tName.includes('vaf') || tName.includes('equipo') || tName.includes('personal') || tName.includes('auxiliar')) {
                 if (tName.includes('lider') && tName.includes('colaborador')) {
                     tipoInforme = 'LIDERAZGO_TACTICO';
-                } else if (tName.includes('lider')) {
+                } else if (tName.includes('lider') || tName.includes('jefe') || tName.includes('coordinador')) {
                     tipoInforme = 'LIDER_ESTRATEGICO';
                 } else {
                     tipoInforme = 'EQUIPO_OPERATIVO';

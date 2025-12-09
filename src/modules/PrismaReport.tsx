@@ -164,17 +164,67 @@ const PrismaReport = () => {
 
         // Map responses: Question Text -> Score
         const userAnswers: Record<string, number> = {};
+        const sectionScores: Record<string, { total: number; count: number }> = {};
+
         rawEvaluation.responses.forEach((r: any) => {
             const text = r.question?.question_text || '';
+            const section = r.question?.section?.title || 'General';
+            const val = normalizeValue(r.response_value);
+
             // Store by text for fuzzy matching in engine
-            userAnswers[text] = normalizeValue(r.response_value);
+            userAnswers[text] = val;
+
+            // Store by section for fallback
+            if (!sectionScores[section]) sectionScores[section] = { total: 0, count: 0 };
+            sectionScores[section].total += val;
+            sectionScores[section].count += 1;
         });
+
+        console.log('[Prisma Debug] User Answers Keys:', Object.keys(userAnswers));
+        console.log('[Prisma Debug] Section Scores:', sectionScores);
 
         const results: AnalysisResult[] = [];
         const categories = PrismaBrain.getCategories();
 
         categories.forEach(cat => {
-            const res = PrismaBrain.analyze(cat, userAnswers);
+            let res = PrismaBrain.analyze(cat, userAnswers);
+
+            // Fallback: If score is 0, try to find a matching section
+            if (res.score === 0) {
+                const configName = (res.category || '').toLowerCase();
+                // Find matching section in sectionScores
+                const matchingSectionKey = Object.keys(sectionScores).find(k => {
+                    const kLower = k.toLowerCase();
+                    return kLower.includes(configName) || configName.includes(kLower) ||
+                        (cat === 'calidad' && kLower.includes('calidad')) ||
+                        (cat === 'resultados' && kLower.includes('resultados')) ||
+                        (cat === 'integridad' && kLower.includes('integridad')) ||
+                        (cat === 'comunicacion' && kLower.includes('comunicacion')) ||
+                        (cat === 'institucional' && kLower.includes('institucional')) ||
+                        (cat === 'trabajo_equipo' && kLower.includes('equipo'));
+                });
+
+                if (matchingSectionKey) {
+                    const sData = sectionScores[matchingSectionKey];
+                    const avg = sData.count > 0 ? Number((sData.total / sData.count).toFixed(2)) : 0;
+                    if (avg > 0) {
+                        // Create a synthetic result based on the section average
+                        res = {
+                            ...res,
+                            score: avg,
+                            percentage: Math.round((avg / 5) * 100),
+                            analisis: res.analisis === 'Categoría no configurada'
+                                ? `Se ha calculado un puntaje basado en el promedio de la sección "${matchingSectionKey}".`
+                                : res.analisis,
+                            arquetipo: avg >= 4 ? 'Desempeño Sobresaliente' : avg >= 3 ? 'Desempeño Competente' : 'Oportunidad de Mejora',
+                            nivelRiesgo: avg < 3 ? 'Alto' : 'Bajo'
+                        };
+                        console.log(`[Prisma Debug] Used fallback for ${cat} using section ${matchingSectionKey}: ${avg}`);
+                    }
+                }
+            }
+
+            console.log(`[Prisma Debug] Analysis for ${cat}:`, res);
             if (res) results.push(res);
         });
 
