@@ -186,38 +186,53 @@ const PrismaReport = () => {
         const results: AnalysisResult[] = [];
         const categories = PrismaBrain.getCategories();
 
+        // Helper to normalize strings (remove accents, lowercase)
+        const normalizeStr = (str: string) => str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
         categories.forEach(cat => {
             let res = PrismaBrain.analyze(cat, userAnswers);
 
             // Fallback: If score is 0, try to find a matching section
             if (res.score === 0) {
-                const configName = (res.category || '').toLowerCase();
+                const configName = normalizeStr(res.category || '');
+                const catNorm = normalizeStr(cat);
+
                 // Find matching section in sectionScores
                 const matchingSectionKey = Object.keys(sectionScores).find(k => {
-                    const kLower = k.toLowerCase();
-                    return kLower.includes(configName) || configName.includes(kLower) ||
-                        (cat === 'calidad' && kLower.includes('calidad')) ||
-                        (cat === 'resultados' && kLower.includes('resultados')) ||
-                        (cat === 'integridad' && kLower.includes('integridad')) ||
-                        (cat === 'comunicacion' && kLower.includes('comunicacion')) ||
-                        (cat === 'institucional' && kLower.includes('institucional')) ||
-                        (cat === 'trabajo_equipo' && kLower.includes('equipo'));
+                    const kNorm = normalizeStr(k);
+                    return kNorm.includes(configName) || configName.includes(kNorm) ||
+                        (catNorm.includes('calidad') && kNorm.includes('calidad')) ||
+                        (catNorm.includes('resultados') && kNorm.includes('resultados')) ||
+                        (catNorm.includes('integridad') && kNorm.includes('integridad')) ||
+                        (catNorm.includes('comunicacion') && kNorm.includes('comunicacion')) ||
+                        (catNorm.includes('institucional') && kNorm.includes('institucional')) ||
+                        (catNorm.includes('equipo') && kNorm.includes('equipo'));
                 });
 
                 if (matchingSectionKey) {
                     const sData = sectionScores[matchingSectionKey];
                     const avg = sData.count > 0 ? Number((sData.total / sData.count).toFixed(2)) : 0;
+
                     if (avg > 0) {
                         // Create a synthetic result based on the section average
+                        // FORCE overwriting the narrative to avoid "Anchor Failed" text from 0 score
+                        const isHigh = avg >= 4;
+                        const isMed = avg >= 3;
+
                         res = {
                             ...res,
                             score: avg,
                             percentage: Math.round((avg / 5) * 100),
-                            analisis: res.analisis === 'Categoría no configurada'
-                                ? `Se ha calculado un puntaje basado en el promedio de la sección "${matchingSectionKey}".`
-                                : res.analisis,
-                            arquetipo: avg >= 4 ? 'Desempeño Sobresaliente' : avg >= 3 ? 'Desempeño Competente' : 'Oportunidad de Mejora',
-                            nivelRiesgo: avg < 3 ? 'Alto' : 'Bajo'
+                            anchorFailed: false, // Important: clear anchor failure
+                            nivelRiesgo: avg < 3 ? 'Alto' : avg < 4 ? 'Medio' : 'Bajo',
+                            arquetipo: isHigh ? 'Desempeño Sobresaliente' : isMed ? 'Desempeño Competente' : 'Oportunidad de Mejora',
+                            analisis: `El análisis se ha generado a partir del promedio general de la sección "${matchingSectionKey}" (${avg}/5.0). ${isHigh ? 'El evaluado demuestra un dominio sólido de esta competencia.' :
+                                    isMed ? 'El evaluado cumple con los expectativas básicas, aunque hay margen de mejora.' :
+                                        'Se requiere un plan de fortalecimiento inmediato en esta área.'
+                                }`,
+                            accionSugerida: isHigh ? 'Continuar liderando con el ejemplo y mentorear a otros.' :
+                                isMed ? 'Establecer objetivos específicos para elevar el estándar de calidad.' :
+                                    'Solicitar feedback frecuente y capacitación de refuerzo.'
                         };
                         console.log(`[Prisma Debug] Used fallback for ${cat} using section ${matchingSectionKey}: ${avg}`);
                     }
