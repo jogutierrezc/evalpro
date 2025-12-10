@@ -28,7 +28,7 @@ export function Layout({ children, activeModule, onModuleChange }: LayoutProps) 
     { id: 'evaluations', label: 'Evaluaciones', icon: FileText, roles: ['admin'] },
     { id: 'results', label: 'Resultados', icon: BarChart3, roles: ['admin', 'office_manager'] },
     { id: 'reports', label: 'Informes', icon: FileText, roles: ['admin'] },
-    { id: 'self-report', label: 'Mi Resultado Prisma', icon: BrainCircuit, roles: ['*'] },
+    { id: 'self-report', label: 'Mi Resultado Prisma', icon: BrainCircuit, roles: ['admin'] }, // Temporalmente solo admin
     { id: 'admin', label: 'Administración', icon: Settings, roles: ['admin'] },
     { id: 'guide', label: 'Ayuda', icon: BookOpen, roles: ['*'] },
   ];
