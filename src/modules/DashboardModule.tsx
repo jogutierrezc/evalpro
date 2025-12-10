@@ -433,44 +433,62 @@ export function DashboardModule() {
         // compute available templates for this role (consider active period if present)
         let availableCount = 0;
         try {
+          console.log('[Dashboard] Starting template loading for user:', user?.full_name, 'role:', user?.role, 'roleKey:', roleKey);
+
           // Use local date for period check to avoid timezone issues (UTC vs Local)
           const now = new Date();
           const today = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().slice(0, 10);
+          console.log('[Dashboard] Today date:', today);
 
-          const { data: periodData } = await supabase
+          const { data: periodData, error: periodError } = await supabase
             .from('evaluation_periods')
             .select('id')
             .lte('start_date', today)
             .gte('end_date', today)
             .limit(1);
 
+          console.log('[Dashboard] Period query result:', { periodData, periodError });
+
           const period = (periodData && periodData.length > 0) ? periodData[0] : null;
+          console.log('[Dashboard] Active period:', period);
 
           let allowedFormTypeKeys: string[] = [];
           if (period) {
-            const { data: pfts } = await supabase.from('evaluation_period_form_types').select('form_type_key').eq('period_id', period.id);
+            const { data: pfts, error: pftsError } = await supabase.from('evaluation_period_form_types').select('form_type_key').eq('period_id', period.id);
+            console.log('[Dashboard] Period form types:', { pfts, pftsError });
             allowedFormTypeKeys = (pfts || []).map((r: any) => r.form_type_key);
           } else {
-            const { data: allFts } = await supabase.from('form_types').select('key');
+            const { data: allFts, error: allFtsError } = await supabase.from('form_types').select('key');
+            console.log('[Dashboard] All form types (no period):', { allFts, allFtsError });
             allowedFormTypeKeys = (allFts || []).map((r: any) => r.key);
           }
 
+          console.log('[Dashboard] Allowed form type keys:', allowedFormTypeKeys);
+
           if (allowedFormTypeKeys.length > 0) {
-            const { data: fts } = await supabase.from('form_types').select('key,roles').in('key', allowedFormTypeKeys);
-            console.debug('[Dashboard] roleKey=', roleKey, 'allowedFormTypeKeys=', allowedFormTypeKeys, 'fts_count=', (fts || []).length);
-            const allowedForRole = (fts || []).filter((ft: any) => Array.isArray(ft.roles) ? ft.roles.includes(roleKey) : false).map((ft: any) => ft.key);
+            const { data: fts, error: ftsError } = await supabase.from('form_types').select('key,roles,role_ids').in('key', allowedFormTypeKeys);
+            console.log('[Dashboard] Form types with roles:', { fts, ftsError, roleKey });
+
+            const allowedForRole = (fts || []).filter((ft: any) => {
+              const hasRole = Array.isArray(ft.roles) ? ft.roles.includes(roleKey) : false;
+              console.log(`[Dashboard] Form type ${ft.key}: roles=${JSON.stringify(ft.roles)}, includes roleKey(${roleKey})=${hasRole}`);
+              return hasRole;
+            }).map((ft: any) => ft.key);
+
+            console.log('[Dashboard] Allowed for role:', allowedForRole);
 
             // Try explicit relations too
             let relAllowed: string[] = [];
             try {
-              const { data: rels } = await supabase.from('form_type_relations').select('form_type_key').in('form_type_key', allowedFormTypeKeys).eq('evaluator_role_key', roleKey);
+              const { data: rels, error: relsError } = await supabase.from('form_type_relations').select('form_type_key,evaluator_role_key').in('form_type_key', allowedFormTypeKeys).eq('evaluator_role_key', roleKey);
+              console.log('[Dashboard] Relations query:', { rels, relsError, roleKey });
               relAllowed = (rels || []).map((r: any) => r.form_type_key);
             } catch (e) {
               console.debug('[Dashboard] no relations table or query failed', e);
             }
 
             const finalAllowed = Array.from(new Set([...allowedForRole, ...relAllowed]));
-            console.debug('[Dashboard] allowedForRole=', allowedForRole, 'relAllowed=', relAllowed, 'finalAllowed=', finalAllowed);
+            console.log('[Dashboard] Final allowed form types:', finalAllowed);
 
             if (finalAllowed.length > 0) {
               const { data: templates, error: tplErr } = await supabase
@@ -479,12 +497,18 @@ export function DashboardModule() {
                 .eq('is_active', true)
                 .in('type', finalAllowed)
                 .order('created_at', { ascending: false });
+
+              console.log('[Dashboard] Templates query result:', { templates, tplErr, count: templates?.length });
+
               if (tplErr) throw tplErr;
               setAvailableTemplates((templates as EvaluationTemplate[]) || []);
               availableCount = (templates || []).length || 0;
             } else {
+              console.warn('[Dashboard] No allowed form types for user role');
               setAvailableTemplates([]);
             }
+          } else {
+            console.warn('[Dashboard] No form type keys available');
           }
         } catch (err) {
           console.warn('Error computing available templates for dashboard', err);
