@@ -399,8 +399,10 @@ export function DashboardModule() {
     const byLabel = roles.find((x) => x.label && x.label.toLowerCase() === asStr.toLowerCase());
     if (byLabel) return byLabel.key;
     const lower = asStr.toLowerCase();
+
+    // Check for admin with word boundaries to avoid matching "Administrativo"
+    if (lower === 'admin' || lower === 'administrador' || lower.startsWith('admin ')) return 'admin';
     if (lower.includes('jefe') || lower.includes('manager') || lower.includes('oficina')) return 'office_manager';
-    if (lower.includes('admin') || lower.includes('administrador')) return 'admin';
     if (lower.includes('colaborador') || lower.includes('empleado')) return 'colaborador_vaf';
     return asStr;
   };
