@@ -35,6 +35,8 @@ export function DashboardModule() {
 
   // Dynamic Dropdown State
   const [selectedCandidate, setSelectedCandidate] = useState<Record<string, string>>({});
+  const [inProgressEvaluations, setInProgressEvaluations] = useState<any[]>([]);
+
   const [dropdownOpenMap, setDropdownOpenMap] = useState<Record<string, boolean>>({});
   const [searchTermMap, setSearchTermMap] = useState<Record<string, string>>({});
   const dropdownRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -91,6 +93,7 @@ export function DashboardModule() {
       // AND track which users have been evaluated per template
       const map: Record<string, Evaluation> = {};
       const evaluatedUsersMap: Record<string, Set<string>> = {};
+      const pendingList: any[] = [];
 
       (evaluations || []).forEach((e: any) => {
         // Map for self-evaluations (where evaluator = evaluated)
@@ -103,7 +106,36 @@ export function DashboardModule() {
           evaluatedUsersMap[e.template_id] = new Set();
         }
         evaluatedUsersMap[e.template_id].add(e.evaluated_id);
+
+        // Track in-progress evaluations (All types)
+        if (e.status !== 'completed') {
+          pendingList.push(e);
+        }
       });
+
+      // Fetch details for pending list (names, templates)
+      if (pendingList.length > 0) {
+        // Fetch templates
+        const tplIds = Array.from(new Set(pendingList.map(p => p.template_id)));
+        const { data: tpls } = await supabase.from('evaluation_templates').select('id,name').in('id', tplIds);
+        const tplMap: Record<string, string> = {};
+        (tpls || []).forEach((t: any) => tplMap[t.id] = t.name);
+
+        // Fetch evaluated users names
+        const userIds = Array.from(new Set(pendingList.map(p => p.evaluated_id)));
+        const { data: usrs } = await supabase.from('users').select('id,full_name').in('id', userIds);
+        const usrMap: Record<string, string> = {};
+        (usrs || []).forEach((u: any) => usrMap[u.id] = u.full_name);
+
+        const enrichedPending = pendingList.map(p => ({
+          ...p,
+          template_name: tplMap[p.template_id] || 'Evaluación',
+          evaluated_name: usrMap[p.evaluated_id] || 'Desconocido'
+        }));
+        setInProgressEvaluations(enrichedPending);
+      } else {
+        setInProgressEvaluations([]);
+      }
 
       setUserEvaluationsMap(map);
 
@@ -203,28 +235,19 @@ export function DashboardModule() {
 
           // 2. Determine Self-Eval
           let canSelfEval = false;
-          // A. Direct role assignment in form_type (Fixed: check form_type.roles, not tpl.roles)
-          const ft = formTypeMap[tplTypeKey] || formTypeMap[tpl.type];
-          if (ft && ft.roles && Array.isArray(ft.roles) && userRoleNorm) {
-            if (ft.roles.some((r: string) => normalizeStr(r) === userRoleNorm)) {
-              canSelfEval = true;
-            }
-          }
 
-          // B. Self-relation (evaluator role == evaluated role)
-          if (!canSelfEval) {
-            if (userRoleId) {
-              canSelfEval = rels.some((r: any) => r.evaluated_role_id === userRoleId);
+          // Only enable Self-Eval card if NO relations are defined (Pure Self-Eval / Survey)
+          // If relations exist (e.g. Leader -> Team, or even Director -> Director), 
+          // it implies a Managed Evaluation (evaluating others), so we hide the Self-Eval card 
+          // to prevent "Evaluación Líder al equipo" from showing as "Autoevaluación".
+          if (rels.length === 0) {
+            const ft = formTypeMap[tplTypeKey] || formTypeMap[tpl.type];
+            // Verify user is actually allowed in this form type
+            if (ft && ft.roles && Array.isArray(ft.roles) && userRoleNorm) {
+              if (ft.roles.some((r: string) => normalizeStr(r) === userRoleNorm)) {
+                canSelfEval = true;
+              }
             }
-            if (!canSelfEval) {
-              canSelfEval = rels.some((r: any) => normalizeStr(r.evaluated_role_key) === userRoleNorm);
-            }
-          }
-
-          // C. Fallback: If no relations found at all, but user has access (via form_types), assume Self Eval
-          // This handles cases where a template is assigned to a role but no explicit "evaluator->evaluated" relation exists.
-          if (!canSelfEval && rels.length === 0) {
-            canSelfEval = true;
           }
 
           selfMap[tpl.id] = canSelfEval;
@@ -633,6 +656,43 @@ export function DashboardModule() {
 
           {/* Left Column: Exams (Takes up 2/3 on desktop) */}
           <div className="lg:col-span-2 space-y-6">
+
+            {/* Pending Evaluations Section */}
+            {inProgressEvaluations.length > 0 && (
+              <div className="mb-8">
+                <h4 className="text-md font-semibold text-orange-600 mb-4 flex items-center gap-2">
+                  <Clock className="w-4 h-4" />
+                  Evaluaciones Pendientes por terminar ({inProgressEvaluations.length})
+                </h4>
+                <div className="grid grid-cols-1 gap-4">
+                  {inProgressEvaluations.map((p) => (
+                    <div key={p.id} className="bg-white rounded-xl p-5 shadow-sm border border-orange-100 flex flex-col sm:flex-row justify-between items-center gap-4">
+                      <div>
+                        <h5 className="font-bold text-slate-800">{p.template_name}</h5>
+                        <div className="text-sm text-slate-500 mt-1">
+                          Evaluado: <span className="font-medium text-slate-700">{p.evaluated_name}</span>
+                          {p.evaluator_id === p.evaluated_id && <span className="ml-2 text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">Autoevaluación</span>}
+                        </div>
+                        <div className="text-xs text-slate-400 mt-2">
+                          Iniciado el: {new Date(p.created_at).toLocaleDateString()}
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setSelectedEvaluation(p)}
+                          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg transition-colors shadow-sm"
+                        >
+                          Continuar
+                        </button>
+                        {/* Optional: Add cancel/delete button */}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <hr className="my-6 border-slate-100" />
+              </div>
+            )}
+
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
                 <FileText className="w-5 h-5 text-blue-600" />
