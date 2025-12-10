@@ -452,7 +452,25 @@ export function DashboardModule() {
         // compute available templates for this role (consider active period if present)
         let availableCount = 0;
         try {
-          console.log('[Dashboard] Starting template loading for user:', user?.full_name, 'role:', user?.role, 'roleKey:', roleKey);
+          // Get comprehensive role information
+          let userRoleKey = user?.role || '';
+          let userRoleLabel = user?.role || '';
+
+          // Try to get canonical role from roles table
+          if (user?.role_id) {
+            const { data: roleData } = await supabase
+              .from('roles')
+              .select('key, label')
+              .eq('id', user.role_id)
+              .single();
+
+            if (roleData) {
+              userRoleKey = roleData.key;
+              userRoleLabel = roleData.label;
+            }
+          }
+
+          console.log('[Dashboard] Starting template loading for user:', user?.full_name, 'role:', user?.role, 'roleKey:', roleKey, 'userRoleKey:', userRoleKey, 'userRoleLabel:', userRoleLabel);
 
           // Use local date for period check to avoid timezone issues (UTC vs Local)
           const now = new Date();
@@ -486,19 +504,23 @@ export function DashboardModule() {
 
           if (allowedFormTypeKeys.length > 0) {
             const { data: fts, error: ftsError } = await supabase.from('form_types').select('key,roles,role_ids').in('key', allowedFormTypeKeys);
-            console.log('[Dashboard] Form types with roles:', { fts, ftsError, roleKey, originalRole: user?.role });
+            console.log('[Dashboard] Form types with roles:', { fts, ftsError, roleKey, userRoleKey, userRoleLabel, originalRole: user?.role });
 
             const allowedForRole = (fts || []).filter((ft: any) => {
               if (!Array.isArray(ft.roles)) return false;
 
-              // Check both normalized roleKey AND original user.role string
+              // Check ALL role variants
               const hasNormalizedRole = ft.roles.includes(roleKey);
+              const hasUserRoleKey = ft.roles.includes(userRoleKey);
+              const hasUserRoleLabel = ft.roles.includes(userRoleLabel);
               const hasOriginalRole = ft.roles.includes(user?.role);
 
-              const allowed = hasNormalizedRole || hasOriginalRole;
+              const allowed = hasNormalizedRole || hasUserRoleKey || hasUserRoleLabel || hasOriginalRole;
 
               console.log(`[Dashboard] Form type ${ft.key}: roles=${JSON.stringify(ft.roles)}, ` +
                 `includes roleKey(${roleKey})=${hasNormalizedRole}, ` +
+                `includes userRoleKey(${userRoleKey})=${hasUserRoleKey}, ` +
+                `includes userRoleLabel(${userRoleLabel})=${hasUserRoleLabel}, ` +
                 `includes originalRole(${user?.role})=${hasOriginalRole}, ` +
                 `allowed=${allowed}`);
 
