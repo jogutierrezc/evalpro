@@ -163,9 +163,10 @@ export function DashboardModule() {
 
       const normalizeStr = (s: any) => (s || '').toString().toLowerCase().normalize('NFD').replace(/[^\w\s-]/g, '').replace(/[\u0300-\u036f]/g, '').trim();
 
+
       let userRoleNorm = normalizeStr(user.role);
       const userRoleId = user.role_id;
-      const user_office_id = user.office_id;
+
 
       // Try to canonicalize role key if possible
       try {
@@ -220,10 +221,15 @@ export function DashboardModule() {
           }
 
           if (rels.length === 0) {
-            // Fallback to string key
-            rels = (allRels || []).filter((r: any) => normalizeStr(r.evaluator_role_key) === userRoleNorm);
+            // Try with normalized role key
+            const relsByNormalized = (allRels || []).filter((r: any) => normalizeStr(r.evaluator_role_key) === userRoleNorm);
 
-            // Fallback to generic manager
+            // Try with original user role
+            const relsByOriginal = (allRels || []).filter((r: any) => normalizeStr(r.evaluator_role_key) === normalizeStr(user.role));
+
+            rels = relsByNormalized.length > 0 ? relsByNormalized : relsByOriginal;
+
+            // Last fallback to generic manager keywords
             if (rels.length === 0) {
               const genericManagerRels = (allRels || []).filter((r: any) => {
                 const k = normalizeStr(r.evaluator_role_key);
@@ -242,11 +248,11 @@ export function DashboardModule() {
           // to prevent "Evaluación Líder al equipo" from showing as "Autoevaluación".
           if (rels.length === 0) {
             const ft = formTypeMap[tplTypeKey] || formTypeMap[tpl.type];
-            // Verify user is actually allowed in this form type
-            if (ft && ft.roles && Array.isArray(ft.roles) && userRoleNorm) {
-              if (ft.roles.some((r: string) => normalizeStr(r) === userRoleNorm)) {
-                canSelfEval = true;
-              }
+            // Verify user is actually allowed in this form type (check both normalized AND original role)
+            if (ft && ft.roles && Array.isArray(ft.roles)) {
+              const hasNormalizedRole = ft.roles.some((r: string) => normalizeStr(r) === userRoleNorm);
+              const hasOriginalRole = ft.roles.some((r: string) => normalizeStr(r) === normalizeStr(user.role));
+              canSelfEval = hasNormalizedRole || hasOriginalRole;
             }
           }
 
@@ -272,74 +278,17 @@ export function DashboardModule() {
             return false;
           });
 
-          // Filter by manager relation
+          // Filter by manager relation (STRICT - NO FALLBACK TO OFFICE/CAMPUS)
           const managedCandidates = await filterByManagerRelation(eligible);
 
+          // ONLY use direct manager relationship - no office or campus fallback
           if (managedCandidates.length > 0) {
             map[tpl.id] = managedCandidates;
+            console.log(`[Dashboard] Template ${tpl.name}: Found ${managedCandidates.length} direct reports (manager relationship)`);
           } else {
-            // Fallback for custom roles without strict hierarchy in DB
-            // If we are here, it means we have explicit `rels` (otherwise we continued earlier)
-            // So we trust the `rels` and show the candidates.
-            // To avoid showing the whole university, we can try matching Office or Campus.
-
-            // 1. Try Same Office (Multi-office support)
-            // Get all office IDs for the evaluator (User)
-            const evaluatorOfficeIds = new Set<string>();
-            if (user_office_id) evaluatorOfficeIds.add(user_office_id);
-            const { data: myOffices } = await supabase.from('collaborator_offices').select('office_id').eq('collaborator_id', user.id);
-            (myOffices || []).forEach((mo: any) => evaluatorOfficeIds.add(mo.office_id));
-
-            // If we have offices to check
-            if (evaluatorOfficeIds.size > 0) {
-              const eligibleIds = eligible.map(u => u.id);
-
-              // Load auxiliary offices for all eligible candidates
-              const { data: candOffices } = await supabase
-                .from('collaborator_offices')
-                .select('collaborator_id, office_id')
-                .in('collaborator_id', eligibleIds);
-
-              const candidateOfficeMap: Record<string, Set<string>> = {};
-              (candOffices || []).forEach((co: any) => {
-                if (!candidateOfficeMap[co.collaborator_id]) candidateOfficeMap[co.collaborator_id] = new Set();
-                candidateOfficeMap[co.collaborator_id].add(co.office_id);
-              });
-
-              const officeCandidates = eligible.filter(u => {
-                // Check primary office
-                if (u.office_id && evaluatorOfficeIds.has(u.office_id)) return true;
-                // Check auxiliary offices
-                const aux = candidateOfficeMap[u.id];
-                if (aux) {
-                  for (const oid of Array.from(aux)) {
-                    if (evaluatorOfficeIds.has(oid)) return true;
-                  }
-                }
-                return false;
-              });
-
-              if (officeCandidates.length > 0) {
-                map[tpl.id] = officeCandidates;
-              } else {
-                // 2. Try Same Campus
-                const sameCampus = eligible.filter(u => u.campus && u.campus === user.campus);
-                if (sameCampus.length > 0) {
-                  map[tpl.id] = sameCampus;
-                } else {
-                  // 3. Last resort: show all eligible
-                  map[tpl.id] = eligible;
-                }
-              }
-            } else {
-              // Fallback if evaluator has no office assigned
-              const sameCampus = eligible.filter(u => u.campus && u.campus === user.campus);
-              if (sameCampus.length > 0) {
-                map[tpl.id] = sameCampus;
-              } else {
-                map[tpl.id] = eligible;
-              }
-            }
+            // No fallback - if no direct reports, show empty
+            map[tpl.id] = [];
+            console.log(`[Dashboard] Template ${tpl.name}: No direct reports found for this manager`);
           }
 
         } catch (err) {
