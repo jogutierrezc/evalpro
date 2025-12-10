@@ -71,16 +71,13 @@ export default function FormTypesManagement() {
   async function handleSave() {
     // roles is an array of keys
     const rolesArr = (form.roles || []).map(s => s.trim()).filter(Boolean);
-    // Map keys to IDs
-    const roleIdsArr = rolesArr.map(k => availableRoles.find(r => r.key === k)?.id).filter(Boolean) as string[];
 
     try {
       if (editing) {
         const { error } = await supabase.from('form_types').update({
           label: form.label,
           description: form.description,
-          roles: rolesArr,
-          role_ids: roleIdsArr
+          roles: rolesArr
         }).eq('id', editing.id);
         if (error) throw error;
         // update relations: delete existing and insert new
@@ -107,8 +104,7 @@ export default function FormTypesManagement() {
           key: form.key,
           label: form.label,
           description: form.description,
-          roles: rolesArr,
-          role_ids: roleIdsArr
+          roles: rolesArr
         }]);
         if (error) throw error;
         // insert relations for newly created type
