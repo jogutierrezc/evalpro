@@ -133,6 +133,7 @@ export function DashboardModule() {
 
       let userRoleNorm = normalizeStr(user.role);
       const userRoleId = user.role_id;
+      const user_office_id = user.office_id;
 
       // Try to canonicalize role key if possible
       try {
@@ -259,17 +260,60 @@ export function DashboardModule() {
             // So we trust the `rels` and show the candidates.
             // To avoid showing the whole university, we can try matching Office or Campus.
 
-            // 1. Try Same Office
-            const sameOffice = eligible.filter(u => u.office_id && u.office_id === user.office_id);
-            if (sameOffice.length > 0) {
-              map[tpl.id] = sameOffice;
+            // 1. Try Same Office (Multi-office support)
+            // Get all office IDs for the evaluator (User)
+            const evaluatorOfficeIds = new Set<string>();
+            if (user_office_id) evaluatorOfficeIds.add(user_office_id);
+            const { data: myOffices } = await supabase.from('collaborator_offices').select('office_id').eq('collaborator_id', user.id);
+            (myOffices || []).forEach((mo: any) => evaluatorOfficeIds.add(mo.office_id));
+
+            // If we have offices to check
+            if (evaluatorOfficeIds.size > 0) {
+              const eligibleIds = eligible.map(u => u.id);
+
+              // Load auxiliary offices for all eligible candidates
+              const { data: candOffices } = await supabase
+                .from('collaborator_offices')
+                .select('collaborator_id, office_id')
+                .in('collaborator_id', eligibleIds);
+
+              const candidateOfficeMap: Record<string, Set<string>> = {};
+              (candOffices || []).forEach((co: any) => {
+                if (!candidateOfficeMap[co.collaborator_id]) candidateOfficeMap[co.collaborator_id] = new Set();
+                candidateOfficeMap[co.collaborator_id].add(co.office_id);
+              });
+
+              const officeCandidates = eligible.filter(u => {
+                // Check primary office
+                if (u.office_id && evaluatorOfficeIds.has(u.office_id)) return true;
+                // Check auxiliary offices
+                const aux = candidateOfficeMap[u.id];
+                if (aux) {
+                  for (const oid of Array.from(aux)) {
+                    if (evaluatorOfficeIds.has(oid)) return true;
+                  }
+                }
+                return false;
+              });
+
+              if (officeCandidates.length > 0) {
+                map[tpl.id] = officeCandidates;
+              } else {
+                // 2. Try Same Campus
+                const sameCampus = eligible.filter(u => u.campus && u.campus === user.campus);
+                if (sameCampus.length > 0) {
+                  map[tpl.id] = sameCampus;
+                } else {
+                  // 3. Last resort: show all eligible
+                  map[tpl.id] = eligible;
+                }
+              }
             } else {
-              // 2. Try Same Campus
+              // Fallback if evaluator has no office assigned
               const sameCampus = eligible.filter(u => u.campus && u.campus === user.campus);
               if (sameCampus.length > 0) {
                 map[tpl.id] = sameCampus;
               } else {
-                // 3. Last resort: show all eligible (e.g. University-wide roles or explicit cross-functional eval)
                 map[tpl.id] = eligible;
               }
             }

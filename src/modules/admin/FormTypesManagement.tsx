@@ -70,7 +70,7 @@ export default function FormTypesManagement() {
 
   async function handleSave() {
     // roles is an array of keys
-    const rolesArr = (form.roles || []).map(s => s.trim()).filter(Boolean);
+    const rolesArr = (form.roles || []).filter(Boolean);
 
     try {
       if (editing) {
