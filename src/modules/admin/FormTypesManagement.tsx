@@ -126,7 +126,8 @@ export default function FormTypesManagement() {
         }
       }
       setShowForm(false);
-      loadTypes();
+      await loadTypes();
+      alert('Cambios guardados correctamente.');
     } catch (err: any) {
       console.error('Save error:', err);
       alert('Error guardando tipo: ' + (err.message || String(err)));
