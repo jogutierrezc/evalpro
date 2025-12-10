@@ -366,17 +366,33 @@ export function EvaluationsModule({ onNavigate }: EvaluationsModuleProps) {
             const selfEvalMap: Record<string, boolean> = {};
             const evalOthersMap: Record<string, boolean> = {};
 
+            // Create lookup map for form types to check roles
+            const formTypeMap: Record<string, any> = {};
+            (fts || []).forEach((ft: any) => { formTypeMap[ft.key] = ft; });
+
             for (const tpl of tplList) {
               const evaluatedRoles = relsByFormType[tpl.type] || [];
               console.debug('[EvaluationsModule] Template:', tpl.name, 'type:', tpl.type, 'evaluatedRoles:', evaluatedRoles);
 
               // Determine if self-evaluation is allowed
               let canSelf = false;
-              // 1. Direct role assignment in template
-              if (tpl.roles && Array.isArray(tpl.roles) && canonicalRole && tpl.roles.includes(canonicalRole)) {
-                canSelf = true;
+              const ft = formTypeMap[tpl.type];
+
+              // 1. Direct role assignment in form_type (The intended way)
+              if (ft && ft.roles && Array.isArray(ft.roles) && canonicalRole) {
+                // Check logical inclusion (ignoring case/accents just to be safe)
+                if (ft.roles.includes(canonicalRole) ||
+                  ft.roles.some((r: string) => normalizeStr(r) === normalizeStr(canonicalRole))) {
+                  canSelf = true;
+                }
               }
-              // 2. Self-relation (evaluator role == evaluated role)
+
+              // 2. Fallback: Self-relation (evaluator role == evaluated role)
+              // Only apply if NOT explicitly defined in roles? Or always?
+              // If it's pure self-eval, #1 usually handles it. 
+              // If it's "Director evaluates Director", #1 might not have it if it's meant for peers.
+              // But if I matched in #1, I am definitely allowed to self-eval.
+
               if (!canSelf && canonicalRole) {
                 // Check if any of the evaluated roles for this template matches the user's canonical role
                 // Since we are iterating templates where WE are the evaluator (from relsByFormType),
@@ -386,6 +402,7 @@ export function EvaluationsModule({ onNavigate }: EvaluationsModuleProps) {
                   canSelf = true;
                 }
               }
+
               selfEvalMap[tpl.id] = canSelf;
 
               if (evaluatedRoles.length === 0) {
