@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, useRef, useMemo, ReactNode } from 'react';
 import { supabase, User } from '../lib/supabase';
 import { Session } from '@supabase/supabase-js';
 
@@ -16,6 +16,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const userRef = useRef<User | null>(null);
+
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
 
   useEffect(() => {
     // Check for Supabase session
@@ -39,19 +44,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('Auth state change:', event);
       if (event === 'SIGNED_OUT') {
         setSession(null);
         setUser(null);
         localStorage.removeItem('user');
         setLoading(false);
       } else {
-        setSession(session);
+        setSession(prev => {
+          if (prev?.access_token === session?.access_token) return prev;
+          return session;
+        });
+
         if (session?.user) {
-          loadUserProfile(session.user.id);
+          // Only load profile if user changed or completely missing
+          // This prevents reloading on every TOKEN_REFRESHED (window focus)
+          if (userRef.current?.id !== session.user.id) {
+            loadUserProfile(session.user.id);
+          }
         } else {
           // Only clear if we are sure it's not a local session
           if (!localStorage.getItem('user')) {
-            setUser(null);
+            if (userRef.current) setUser(null);
           }
           setLoading(false);
         }
@@ -70,7 +84,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .maybeSingle();
 
       if (error) throw error;
-      setUser(data);
+
+
+      setUser(prev => {
+        // Only update if data actually changed to avoid triggering unnecessary re-renders
+        // which causes Dashboard and other modules to reload
+        if (JSON.stringify(prev) === JSON.stringify(data)) {
+          return prev;
+        }
+        return data;
+      });
     } catch (error) {
       console.error('Error loading user profile:', error);
     } finally {
@@ -132,8 +155,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.clear(); // Optional: clear everything to be safe, or just specific keys
   };
 
+  const value = useMemo(() => ({
+    session,
+    user,
+    loading,
+    signIn,
+    signOut
+  }), [session, user, loading]);
+
   return (
-    <AuthContext.Provider value={{ session, user, loading, signIn, signOut }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );
