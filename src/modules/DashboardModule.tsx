@@ -167,6 +167,11 @@ export function DashboardModule() {
       let userRoleNorm = normalizeStr(user.role);
       const userRoleId = user.role_id;
 
+      console.log('[Dashboard] ==== ROLE DETECTION ====');
+      console.log('[Dashboard] User:', user.full_name);
+      console.log('[Dashboard] Original role:', user.role);
+      console.log('[Dashboard] Normalized role:', userRoleNorm);
+      console.log('[Dashboard] Role ID:', userRoleId);
 
       // Try to canonicalize role key if possible
       try {
@@ -178,11 +183,18 @@ export function DashboardModule() {
           const found = rolesList.find((rr) => normalizeStr(rr.label) === target || normalizeStr(rr.key) === target);
           if (found) {
             userRoleNorm = normalizeStr(found.key);
+            console.log('[Dashboard] Found canonical role key:', found.key, 'from label:', found.label);
+          } else {
+            console.warn('[Dashboard] ⚠️ Role not found in roles table:', user.role);
           }
+        } else {
+          console.log('[Dashboard] ✅ Role found directly:', direct.key);
         }
       } catch (e) {
         console.warn('Error fetching roles for normalization', e);
       }
+      console.log('[Dashboard] Final role for matching:', userRoleNorm);
+      console.log('[Dashboard] ============================');
 
       const map: Record<string, User[]> = {};
       const selfMap: Record<string, boolean> = {};
@@ -229,24 +241,31 @@ export function DashboardModule() {
         try {
           let tplTypeKey = tpl.key || tpl.type; // prefer key if available
 
+          console.log(`[Dashboard] ---- Processing template: ${tpl.name} (type: ${tplTypeKey}) ----`);
+
           // Fetch relations for this form type
           const { data: allRels } = await supabase
             .from('form_type_relations')
             .select('*')
             .eq('form_type_key', tplTypeKey);
 
+          console.log(`[Dashboard] Found ${(allRels || []).length} relations for form type "${tplTypeKey}":`, allRels);
+
           // 1. Determine Relations (Evaluator)
           let rels = [];
           if (userRoleId) {
             rels = (allRels || []).filter((r: any) => r.evaluator_role_id === userRoleId);
+            console.log(`[Dashboard] Matched by role_id (${userRoleId}):`, rels.length, 'relations');
           }
 
           if (rels.length === 0) {
             // Try with normalized role key
             const relsByNormalized = (allRels || []).filter((r: any) => normalizeStr(r.evaluator_role_key) === userRoleNorm);
+            console.log(`[Dashboard] Matched by normalized role key (${userRoleNorm}):`, relsByNormalized.length, 'relations');
 
             // Try with original user role
             const relsByOriginal = (allRels || []).filter((r: any) => normalizeStr(r.evaluator_role_key) === normalizeStr(user.role));
+            console.log(`[Dashboard] Matched by original role (${user.role}):`, relsByOriginal.length, 'relations');
 
             rels = relsByNormalized.length > 0 ? relsByNormalized : relsByOriginal;
 
