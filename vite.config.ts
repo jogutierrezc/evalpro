@@ -6,6 +6,7 @@ export default defineConfig({
   plugins: [react()],
   optimizeDeps: {
     exclude: ['lucide-react'],
+    force: true, // Force re-optimization
   },
   build: {
     target: 'es2015',
@@ -23,8 +24,15 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: false,
+    hmr: {
+      overlay: true,
+    },
+    watch: {
+      usePolling: true, // Force file watching
+    },
   },
   define: {
     'process.env': {},
   },
+  cacheDir: '.vite-cache', // Custom cache directory
 });

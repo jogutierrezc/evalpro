@@ -406,10 +406,14 @@ export function DashboardModule() {
   };
 
   const loadStats = async () => {
+    console.log('[Dashboard] === loadStats CALLED ===');
+    console.log('[Dashboard] User:', user?.full_name, 'Role:', user?.role);
     try {
       const roleKey = normalizeRoleKey(user?.role as any);
+      console.log('[Dashboard] Normalized roleKey:', roleKey);
 
       if (user?.role === 'admin' || roleKey === 'admin') {
+        console.log('[Dashboard] User is ADMIN - loading admin stats');
         const [employeesRes, officesRes, pendingRes, completedRes, rolesRes, usersData] = await Promise.all([
           supabase.from('users').select('id', { count: 'exact', head: true }),
           supabase.from('offices').select('id', { count: 'exact', head: true }),
@@ -435,6 +439,7 @@ export function DashboardModule() {
         });
         setUsersByCampus(campusDistribution);
       } else {
+        console.log('[Dashboard] User is NOT ADMIN - loading user stats');
         // For all non-admin users, count only evaluations related to the user
         const [pendingRes, completedRes] = await Promise.all([
           supabase
@@ -451,6 +456,7 @@ export function DashboardModule() {
 
         // compute available templates for this role (consider active period if present)
         let availableCount = 0;
+        console.log('[Dashboard] About to start template loading...');
         try {
           // Get comprehensive role information
           let userRoleKey = user?.role || '';
