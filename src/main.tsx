@@ -3,6 +3,31 @@ import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 
+// Global error handler
+window.addEventListener('error', (event) => {
+  console.error('Global error:', event.error);
+  // Prevent default error handling to avoid breaking the app
+  event.preventDefault();
+});
+
+// Unhandled promise rejection handler
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('Unhandled promise rejection:', event.reason);
+  event.preventDefault();
+});
+
+// Suppress specific console warnings in production
+if (import.meta.env.PROD) {
+  const originalWarn = console.warn;
+  console.warn = (...args: any[]) => {
+    const msgStr = args.join(' ');
+    // Suppress known harmless warnings
+    if (msgStr.includes('Warning:') && msgStr.includes('ReactDOM.render')) return;
+    if (msgStr.includes('findDOMNode')) return;
+    originalWarn.apply(console, args);
+  };
+}
+
 console.log(`
 %c
  _   _  ____   _____  ____
@@ -19,7 +44,12 @@ console.log(`
   'color: #64748b; font-size: 12px; margin-top: 5px;'
 );
 
-createRoot(document.getElementById('root')!).render(
+const rootElement = document.getElementById('root');
+if (!rootElement) {
+  throw new Error('Root element not found');
+}
+
+createRoot(rootElement).render(
   <StrictMode>
     <App />
   </StrictMode>
