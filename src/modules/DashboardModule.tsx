@@ -187,10 +187,11 @@ export function DashboardModule() {
       const map: Record<string, User[]> = {};
       const selfMap: Record<string, boolean> = {};
 
-      // Helper: filter candidates by manager relationship (strict)
+      // Helper: filter candidates by manager relationship (strict) + campus
       const filterByManagerRelation = async (cands: any[]): Promise<any[]> => {
         if (!user?.id) return [];
         const evaluatorId = user.id;
+        const evaluatorCampus = user.campus || '';
 
         // 1) Collect managed users via `user_managers` table and `users.manager_id`
         const { data: managedRows } = await supabase.from('user_managers').select('user_id').eq('manager_id', evaluatorId);
@@ -201,7 +202,27 @@ export function DashboardModule() {
 
         const managedIds = new Set([...(managedIdsFromTable || []), ...(directManagedIds || [])]);
 
-        return (cands || []).filter((cand) => managedIds.has(cand.id));
+        // 2) Filter by manager relationship
+        const directReports = (cands || []).filter((cand) => managedIds.has(cand.id));
+
+        // 3) Filter by campus - UNLESS evaluator has campus = 'Todos' or 'Todas'
+        const canEvaluateAllCampuses = evaluatorCampus.toLowerCase() === 'todos' ||
+          evaluatorCampus.toLowerCase() === 'todas' ||
+          !evaluatorCampus; // If no campus assigned, allow all
+
+        if (canEvaluateAllCampuses) {
+          console.log(`[Dashboard] Manager ${user.full_name} has campus="${evaluatorCampus}" - can evaluate all campuses`);
+          return directReports;
+        } else {
+          // Filter by same campus
+          const sameCampusReports = directReports.filter(cand => {
+            const candCampus = (cand.campus || '').toString();
+            return candCampus === evaluatorCampus;
+          });
+
+          console.log(`[Dashboard] Manager ${user.full_name} (campus: ${evaluatorCampus}) - filtered ${directReports.length} direct reports to ${sameCampusReports.length} same-campus reports`);
+          return sameCampusReports;
+        }
       };
 
       for (const tpl of availableTemplates) {
