@@ -166,6 +166,8 @@ export function DashboardModule() {
 
       let userRoleNorm = normalizeStr(user.role);
       const userRoleId = user.role_id;
+      let userRoleKey = user.role; // The canonical key from roles table
+      let userRoleLabel = user.role; // The label from roles table
 
       console.log('[Dashboard] ==== ROLE DETECTION ====');
       console.log('[Dashboard] User:', user.full_name);
@@ -173,27 +175,40 @@ export function DashboardModule() {
       console.log('[Dashboard] Normalized role:', userRoleNorm);
       console.log('[Dashboard] Role ID:', userRoleId);
 
-      // Try to canonicalize role key if possible
+      // Try to canonicalize role key if possible AND get both key and label
       try {
-        const { data: allRoles } = await supabase.from('roles').select('key,label');
+        const { data: allRoles } = await supabase.from('roles').select('id,key,label');
         const rolesList = (allRoles || []) as any[];
-        const direct = rolesList.find((r) => r.key === user.role);
-        if (!direct) {
-          const target = normalizeStr(user.role);
-          const found = rolesList.find((rr) => normalizeStr(rr.label) === target || normalizeStr(rr.key) === target);
-          if (found) {
-            userRoleNorm = normalizeStr(found.key);
-            console.log('[Dashboard] Found canonical role key:', found.key, 'from label:', found.label);
+
+        // First try to match by role_id
+        let roleObj = null;
+        if (userRoleId) {
+          roleObj = rolesList.find((r) => r.id === userRoleId);
+        }
+
+        // If not found by ID, try by string match
+        if (!roleObj) {
+          const direct = rolesList.find((r) => r.key === user.role);
+          if (direct) {
+            roleObj = direct;
           } else {
-            console.warn('[Dashboard] ⚠️ Role not found in roles table:', user.role);
+            const target = normalizeStr(user.role);
+            roleObj = rolesList.find((rr) => normalizeStr(rr.label) === target || normalizeStr(rr.key) === target);
           }
+        }
+
+        if (roleObj) {
+          userRoleKey = roleObj.key;
+          userRoleLabel = roleObj.label;
+          userRoleNorm = normalizeStr(roleObj.key);
+          console.log('[Dashboard] ✅ Found role - Key:', roleObj.key, ', Label:', roleObj.label);
         } else {
-          console.log('[Dashboard] ✅ Role found directly:', direct.key);
+          console.warn('[Dashboard] ⚠️ Role not found in roles table:', user.role);
         }
       } catch (e) {
         console.warn('Error fetching roles for normalization', e);
       }
-      console.log('[Dashboard] Final role for matching:', userRoleNorm);
+      console.log('[Dashboard] Final - Key:', userRoleKey, ', Label:', userRoleLabel, ', Normalized:', userRoleNorm);
       console.log('[Dashboard] ============================');
 
       const map: Record<string, User[]> = {};
@@ -288,11 +303,26 @@ export function DashboardModule() {
           // to prevent "Evaluación Líder al equipo" from showing as "Autoevaluación".
           if (rels.length === 0) {
             const ft = formTypeMap[tplTypeKey] || formTypeMap[tpl.type];
-            // Verify user is actually allowed in this form type (check both normalized AND original role)
+            // Verify user is actually allowed in this form type
+            // Check against: role key, role label, normalized role, and original role
             if (ft && ft.roles && Array.isArray(ft.roles)) {
+              const hasRoleKey = ft.roles.some((r: string) => normalizeStr(r) === normalizeStr(userRoleKey));
+              const hasRoleLabel = ft.roles.some((r: string) => normalizeStr(r) === normalizeStr(userRoleLabel));
               const hasNormalizedRole = ft.roles.some((r: string) => normalizeStr(r) === userRoleNorm);
               const hasOriginalRole = ft.roles.some((r: string) => normalizeStr(r) === normalizeStr(user.role));
-              canSelfEval = hasNormalizedRole || hasOriginalRole;
+
+              canSelfEval = hasRoleKey || hasRoleLabel || hasNormalizedRole || hasOriginalRole;
+
+              console.log(`[Dashboard] Self-eval check for ${tpl.name}:`, {
+                hasRoleKey,
+                hasRoleLabel,
+                hasNormalizedRole,
+                hasOriginalRole,
+                canSelfEval,
+                userRoleKey,
+                userRoleLabel,
+                formTypeRoles: ft.roles
+              });
             }
           }
 

@@ -371,8 +371,8 @@ export function EvaluationForm({ evaluation, onClose }: EvaluationFormProps) {
                 type="button"
                 onClick={() => handleResponseChange(question.id, rating)}
                 className={`w-12 h-12 border-2 rounded-lg font-semibold transition-all ${responses[question.id] === rating
-                    ? 'border-blue-500 bg-blue-50 text-blue-700'
-                    : 'border-gray-300 hover:border-blue-300'
+                  ? 'border-blue-500 bg-blue-50 text-blue-700'
+                  : 'border-gray-300 hover:border-blue-300'
                   }`}
               >
                 {rating}
@@ -454,9 +454,42 @@ export function EvaluationForm({ evaluation, onClose }: EvaluationFormProps) {
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-4">Evaluación</h1>
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
             <p className="text-sm text-gray-600">
               Completa todas las preguntas de esta evaluación. Puedes guardar tu progreso y continuar más tarde.
+            </p>
+          </div>
+
+          {/* Rating Scale Instructions */}
+          <div className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded-lg">
+            <h3 className="font-semibold text-amber-900 mb-2">📊 Escala de Calificación</h3>
+            <p className="text-sm text-amber-800 mb-3">
+              Para las preguntas con escala numérica, seleccione de <strong>1 a 5</strong> teniendo en cuenta:
+            </p>
+            <div className="grid grid-cols-5 gap-2 text-center text-xs">
+              <div className="bg-red-100 border border-red-300 rounded p-2">
+                <div className="font-bold text-red-700 text-lg">1</div>
+                <div className="text-red-600 mt-1">Muy Bajo</div>
+              </div>
+              <div className="bg-orange-100 border border-orange-300 rounded p-2">
+                <div className="font-bold text-orange-700 text-lg">2</div>
+                <div className="text-orange-600 mt-1">Bajo</div>
+              </div>
+              <div className="bg-yellow-100 border border-yellow-300 rounded p-2">
+                <div className="font-bold text-yellow-700 text-lg">3</div>
+                <div className="text-yellow-600 mt-1">Medio</div>
+              </div>
+              <div className="bg-lime-100 border border-lime-300 rounded p-2">
+                <div className="font-bold text-lime-700 text-lg">4</div>
+                <div className="text-lime-600 mt-1">Alto</div>
+              </div>
+              <div className="bg-green-100 border border-green-300 rounded p-2">
+                <div className="font-bold text-green-700 text-lg">5</div>
+                <div className="text-green-600 mt-1">Muy Alto</div>
+              </div>
+            </div>
+            <p className="text-xs text-amber-700 mt-3 italic">
+              * Donde <strong>1</strong> es el resultado más bajo y <strong>5</strong> es la calificación más alta
             </p>
           </div>
         </div>
