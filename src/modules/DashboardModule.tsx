@@ -467,12 +467,23 @@ export function DashboardModule() {
 
           if (allowedFormTypeKeys.length > 0) {
             const { data: fts, error: ftsError } = await supabase.from('form_types').select('key,roles,role_ids').in('key', allowedFormTypeKeys);
-            console.log('[Dashboard] Form types with roles:', { fts, ftsError, roleKey });
+            console.log('[Dashboard] Form types with roles:', { fts, ftsError, roleKey, originalRole: user?.role });
 
             const allowedForRole = (fts || []).filter((ft: any) => {
-              const hasRole = Array.isArray(ft.roles) ? ft.roles.includes(roleKey) : false;
-              console.log(`[Dashboard] Form type ${ft.key}: roles=${JSON.stringify(ft.roles)}, includes roleKey(${roleKey})=${hasRole}`);
-              return hasRole;
+              if (!Array.isArray(ft.roles)) return false;
+
+              // Check both normalized roleKey AND original user.role string
+              const hasNormalizedRole = ft.roles.includes(roleKey);
+              const hasOriginalRole = ft.roles.includes(user?.role);
+
+              const allowed = hasNormalizedRole || hasOriginalRole;
+
+              console.log(`[Dashboard] Form type ${ft.key}: roles=${JSON.stringify(ft.roles)}, ` +
+                `includes roleKey(${roleKey})=${hasNormalizedRole}, ` +
+                `includes originalRole(${user?.role})=${hasOriginalRole}, ` +
+                `allowed=${allowed}`);
+
+              return allowed;
             }).map((ft: any) => ft.key);
 
             console.log('[Dashboard] Allowed for role:', allowedForRole);
@@ -480,9 +491,29 @@ export function DashboardModule() {
             // Try explicit relations too
             let relAllowed: string[] = [];
             try {
-              const { data: rels, error: relsError } = await supabase.from('form_type_relations').select('form_type_key,evaluator_role_key').in('form_type_key', allowedFormTypeKeys).eq('evaluator_role_key', roleKey);
-              console.log('[Dashboard] Relations query:', { rels, relsError, roleKey });
-              relAllowed = (rels || []).map((r: any) => r.form_type_key);
+              // Try with normalized roleKey first
+              const { data: rels1, error: relsError1 } = await supabase
+                .from('form_type_relations')
+                .select('form_type_key,evaluator_role_key')
+                .in('form_type_key', allowedFormTypeKeys)
+                .eq('evaluator_role_key', roleKey);
+
+              // Also try with original user.role
+              const { data: rels2, error: relsError2 } = await supabase
+                .from('form_type_relations')
+                .select('form_type_key,evaluator_role_key')
+                .in('form_type_key', allowedFormTypeKeys)
+                .eq('evaluator_role_key', user?.role);
+
+              console.log('[Dashboard] Relations query:', {
+                rels1, relsError1,
+                rels2, relsError2,
+                roleKey,
+                originalRole: user?.role
+              });
+
+              const allRels = [...(rels1 || []), ...(rels2 || [])];
+              relAllowed = Array.from(new Set(allRels.map((r: any) => r.form_type_key)));
             } catch (e) {
               console.debug('[Dashboard] no relations table or query failed', e);
             }
