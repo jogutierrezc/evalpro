@@ -123,6 +123,12 @@ export function DashboardModule() {
       if (!availableTemplates || availableTemplates.length === 0) return;
       if (!user) return;
 
+      // Fetch form types to check roles
+      const tplTypes = Array.from(new Set(availableTemplates.map(t => t.type)));
+      const { data: ftsData } = await supabase.from('form_types').select('key,roles').in('key', tplTypes);
+      const formTypeMap: Record<string, any> = {};
+      (ftsData || []).forEach((ft: any) => { formTypeMap[ft.key] = ft; });
+
       const normalizeStr = (s: any) => (s || '').toString().toLowerCase().normalize('NFD').replace(/[^\w\s-]/g, '').replace(/[\u0300-\u036f]/g, '').trim();
 
       let userRoleNorm = normalizeStr(user.role);
@@ -196,10 +202,10 @@ export function DashboardModule() {
 
           // 2. Determine Self-Eval
           let canSelfEval = false;
-          // A. Direct role assignment in template
-          if (tpl.roles && Array.isArray(tpl.roles) && userRoleNorm) {
-            // check if userRoleNorm matches any of the roles
-            if (tpl.roles.some((r: string) => normalizeStr(r) === userRoleNorm)) {
+          // A. Direct role assignment in form_type (Fixed: check form_type.roles, not tpl.roles)
+          const ft = formTypeMap[tplTypeKey] || formTypeMap[tpl.type];
+          if (ft && ft.roles && Array.isArray(ft.roles) && userRoleNorm) {
+            if (ft.roles.some((r: string) => normalizeStr(r) === userRoleNorm)) {
               canSelfEval = true;
             }
           }

@@ -9,13 +9,13 @@ interface EvaluationFormProps {
 
 export function EvaluationForm({ evaluation, onClose }: EvaluationFormProps) {
   const [questions, setQuestions] = useState<EvaluationQuestion[]>([]);
-    const [groupedSections, setGroupedSections] = useState<{
-      id: string | null;
-      title: string;
-      domain_key?: string | null;
-      category?: string | null;
-      questions: EvaluationQuestion[];
-    }[]>([]);
+  const [groupedSections, setGroupedSections] = useState<{
+    id: string | null;
+    title: string;
+    domain_key?: string | null;
+    category?: string | null;
+    questions: EvaluationQuestion[];
+  }[]>([]);
   const [responses, setResponses] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -39,7 +39,7 @@ export function EvaluationForm({ evaluation, onClose }: EvaluationFormProps) {
       setQuestions(flatQuestions);
 
       // build grouped sections for UI
-  const sectionsData: any[] = sectionsRes.data || [];
+      const sectionsData: any[] = sectionsRes.data || [];
       const sectionsOrder = sectionsData.map((s) => ({ id: s.id, title: s.title || 'Sección', domain_key: s.domain_key || null, category: s.category || null }));
 
       const grouped: { id: string | null; title: string; domain_key?: string | null; category?: string | null; questions: EvaluationQuestion[] }[] = [];
@@ -58,11 +58,27 @@ export function EvaluationForm({ evaluation, onClose }: EvaluationFormProps) {
 
       setGroupedSections(grouped);
 
-  const responsesMap: Record<string, any> = {};
+      const responsesMap: Record<string, any> = {};
       responsesRes.data?.forEach((response) => {
         responsesMap[response.question_id] = response.response_value;
       });
       setResponses(responsesMap);
+
+      // Auto-save restore: Load from localStorage if present and merge
+      // We do this AFTER loading from DB so local changes (if newer/unsaved) take precedence
+      try {
+        const saved = localStorage.getItem(`eval_autosave_${evaluation.id}`);
+        if (saved) {
+          const localResponses = JSON.parse(saved);
+          // Merge: prefer DB if auto-save is empty? No, prefer Local if it exists, assuming user was working on it.
+          // However, if DB has data and Local has data, usually Local is "newer" if they navigated away.
+          // Be safe: Merge local into DB responses.
+          setResponses(prev => ({ ...prev, ...localResponses }));
+          console.log('Restored auto-save data');
+        }
+      } catch (e) {
+        console.warn('Error loading auto-save', e);
+      }
 
       if (evaluation.status === 'pending') {
         await supabase
@@ -77,8 +93,15 @@ export function EvaluationForm({ evaluation, onClose }: EvaluationFormProps) {
     }
   };
 
+  // Auto-save effect
+  useEffect(() => {
+    if (evaluation.id && Object.keys(responses).length > 0) {
+      localStorage.setItem(`eval_autosave_${evaluation.id}`, JSON.stringify(responses));
+    }
+  }, [responses, evaluation.id]);
+
   const handleResponseChange = (questionId: string, value: any) => {
-    setResponses({ ...responses, [questionId]: value });
+    setResponses((prev) => ({ ...prev, [questionId]: value }));
   };
 
   const handleSave = async (complete: boolean = false) => {
@@ -105,7 +128,7 @@ export function EvaluationForm({ evaluation, onClose }: EvaluationFormProps) {
       }
 
       if (complete) {
-  const allAnswered = questions.every((q) => responses[q.id] !== undefined);
+        const allAnswered = questions.every((q) => responses[q.id] !== undefined);
         if (!allAnswered) {
           alert('Por favor responde todas las preguntas antes de completar');
           setSaving(false);
@@ -116,6 +139,9 @@ export function EvaluationForm({ evaluation, onClose }: EvaluationFormProps) {
           .from('evaluations')
           .update({ status: 'completed', completed_at: new Date().toISOString() })
           .eq('id', evaluation.id);
+
+        // Clear auto-save on completion
+        localStorage.removeItem(`eval_autosave_${evaluation.id}`);
 
         // compute overall score: prefer category-weighted (global competencies weights) if possible,
         // otherwise fall back to the existing question-weighted calculation
@@ -243,42 +269,42 @@ export function EvaluationForm({ evaluation, onClose }: EvaluationFormProps) {
 
           // fallback: if no mapping by section title, try to map by question text keywords
 
-            // use weights if provided on questions; otherwise fallback to simple averages
-            const sumsWeighted: Record<string, number> = {};
-            const weightsSum: Record<string, number> = {};
-            const sumsRaw: Record<string, number> = {};
-            const counts: Record<string, number> = {};
+          // use weights if provided on questions; otherwise fallback to simple averages
+          const sumsWeighted: Record<string, number> = {};
+          const weightsSum: Record<string, number> = {};
+          const sumsRaw: Record<string, number> = {};
+          const counts: Record<string, number> = {};
 
-            questions.forEach((q) => {
-              if (q.question_type !== 'rating') return;
-              const qid = q.id;
-              const resp = responses[qid];
-              const num = typeof resp === 'number' ? resp : Number(resp) || 0;
-              const secId = (q as any).section_id;
-              const domainKey = sectionIdToDomainKey[secId] || null;
-              if (!domainKey) return;
+          questions.forEach((q) => {
+            if (q.question_type !== 'rating') return;
+            const qid = q.id;
+            const resp = responses[qid];
+            const num = typeof resp === 'number' ? resp : Number(resp) || 0;
+            const secId = (q as any).section_id;
+            const domainKey = sectionIdToDomainKey[secId] || null;
+            if (!domainKey) return;
 
-              const w = Number((q as any).weight || 0);
-              if (w > 0) {
-                sumsWeighted[domainKey] = (sumsWeighted[domainKey] || 0) + (num * w);
-                weightsSum[domainKey] = (weightsSum[domainKey] || 0) + w;
-              } else {
-                sumsRaw[domainKey] = (sumsRaw[domainKey] || 0) + num;
-                counts[domainKey] = (counts[domainKey] || 0) + 1;
-              }
-            });
+            const w = Number((q as any).weight || 0);
+            if (w > 0) {
+              sumsWeighted[domainKey] = (sumsWeighted[domainKey] || 0) + (num * w);
+              weightsSum[domainKey] = (weightsSum[domainKey] || 0) + w;
+            } else {
+              sumsRaw[domainKey] = (sumsRaw[domainKey] || 0) + num;
+              counts[domainKey] = (counts[domainKey] || 0) + 1;
+            }
+          });
 
-            // populate all domains with computed averages (0 if none)
-            const allDomainKeys = DOMAIN_KEYS.map((d) => d.key);
-            allDomainKeys.forEach((k) => {
-              if (weightsSum[k] && weightsSum[k] > 0) {
-                category_scores[k] = Number((sumsWeighted[k] / weightsSum[k]).toFixed(2));
-              } else if (sumsRaw[k]) {
-                category_scores[k] = Number((sumsRaw[k] / (counts[k] || 1)).toFixed(2));
-              } else {
-                category_scores[k] = 0;
-              }
-            });
+          // populate all domains with computed averages (0 if none)
+          const allDomainKeys = DOMAIN_KEYS.map((d) => d.key);
+          allDomainKeys.forEach((k) => {
+            if (weightsSum[k] && weightsSum[k] > 0) {
+              category_scores[k] = Number((sumsWeighted[k] / weightsSum[k]).toFixed(2));
+            } else if (sumsRaw[k]) {
+              category_scores[k] = Number((sumsRaw[k] / (counts[k] || 1)).toFixed(2));
+            } else {
+              category_scores[k] = 0;
+            }
+          });
 
         } catch (err) {
           console.error('Error computing category scores:', err);
@@ -344,11 +370,10 @@ export function EvaluationForm({ evaluation, onClose }: EvaluationFormProps) {
                 key={rating}
                 type="button"
                 onClick={() => handleResponseChange(question.id, rating)}
-                className={`w-12 h-12 border-2 rounded-lg font-semibold transition-all ${
-                  responses[question.id] === rating
+                className={`w-12 h-12 border-2 rounded-lg font-semibold transition-all ${responses[question.id] === rating
                     ? 'border-blue-500 bg-blue-50 text-blue-700'
                     : 'border-gray-300 hover:border-blue-300'
-                }`}
+                  }`}
               >
                 {rating}
               </button>
