@@ -54,9 +54,34 @@ export function UsersManagement() {
   const signUpPreserveCreator = async (opts: { email: string; password: string }) => {
     const { data: currentSessionData } = await supabase.auth.getSession();
     const previousSession = (currentSessionData as any)?.session || null;
-    try {
+
+    if (!previousSession) {
+      console.warn('[signUpPreserveCreator] No active session found - user may be logged out');
       return await supabase.auth.signUp({ email: opts.email, password: opts.password });
-    } finally {
+    }
+
+    try {
+      // Perform signup
+      const result = await supabase.auth.signUp({ email: opts.email, password: opts.password });
+
+      // IMMEDIATELY restore session (don't wait)
+      setTimeout(async () => {
+        try {
+          await supabase.auth.setSession({
+            access_token: previousSession.access_token,
+            refresh_token: previousSession.refresh_token,
+          } as any);
+          console.log('[signUpPreserveCreator] Session restored after signup');
+        } catch (restoreErr) {
+          console.error('[signUpPreserveCreator] Failed to restore session:', restoreErr);
+          // Force reload as last resort
+          window.location.reload();
+        }
+      }, 100); // 100ms delay
+
+      return result;
+    } catch (err) {
+      // Restore session even on error
       if (previousSession) {
         try {
           await supabase.auth.setSession({
@@ -64,9 +89,10 @@ export function UsersManagement() {
             refresh_token: previousSession.refresh_token,
           } as any);
         } catch (restoreErr) {
-          console.warn('Could not restore previous session after signUp:', restoreErr);
+          console.warn('Could not restore session after signUp error:', restoreErr);
         }
       }
+      throw err;
     }
   };
 
