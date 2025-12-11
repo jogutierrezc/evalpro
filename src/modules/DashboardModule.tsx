@@ -310,14 +310,29 @@ export function DashboardModule() {
           // 2. Determine Self-Eval
           let canSelfEval = false;
 
-          // Only enable Self-Eval card if NO relations are defined (Pure Self-Eval / Survey)
-          // If relations exist (e.g. Leader -> Team, or even Director -> Director), 
-          // it implies a Managed Evaluation (evaluating others), so we hide the Self-Eval card 
-          // to prevent "Evaluación Líder al equipo" from showing as "Autoevaluación".
-          if (rels.length === 0) {
+          // Check if there's a self-evaluation relation (evaluator_role_key == evaluated_role_key == user's role)
+          const selfRelations = (allRels || []).filter((r: any) => {
+            const evalRoleNorm = normalizeStr(r.evaluator_role_key);
+            const evaldRoleNorm = normalizeStr(r.evaluated_role_key);
+            
+            // Must be the same role (self)
+            if (evalRoleNorm !== evaldRoleNorm) return false;
+            
+            // Must match user's role
+            return evalRoleNorm === userRoleNorm || 
+                   evalRoleNorm === normalizeStr(userRoleKey) ||
+                   evalRoleNorm === normalizeStr(userRoleLabel);
+          });
+
+          if (selfRelations.length > 0) {
+            canSelfEval = true;
+            console.log(`[Dashboard] Self-eval ALLOWED via form_type_relations (self-relation) for ${tpl.name}`);
+          }
+
+          // Fallback: If no relations defined at all, check form_types.roles
+          // This handles pure self-eval forms that don't use form_type_relations
+          if (!canSelfEval && rels.length === 0) {
             const ft = formTypeMap[tplTypeKey] || formTypeMap[tpl.type];
-            // Verify user is actually allowed in this form type
-            // Check against: role key, role label, normalized role, and original role
             if (ft && ft.roles && Array.isArray(ft.roles)) {
               const hasRoleKey = ft.roles.some((r: string) => normalizeStr(r) === normalizeStr(userRoleKey));
               const hasRoleLabel = ft.roles.some((r: string) => normalizeStr(r) === normalizeStr(userRoleLabel));
@@ -326,7 +341,7 @@ export function DashboardModule() {
 
               canSelfEval = hasRoleKey || hasRoleLabel || hasNormalizedRole || hasOriginalRole;
 
-              console.log(`[Dashboard] Self-eval check for ${tpl.name}:`, {
+              console.log(`[Dashboard] Self-eval check via form_types.roles for ${tpl.name}:`, {
                 hasRoleKey,
                 hasRoleLabel,
                 hasNormalizedRole,
@@ -338,6 +353,8 @@ export function DashboardModule() {
               });
             }
           }
+
+          console.log(`[Dashboard] Final canSelfEval for ${tpl.name}: ${canSelfEval}`);
 
           selfMap[tpl.id] = canSelfEval;
 

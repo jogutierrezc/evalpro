@@ -372,38 +372,35 @@ export function EvaluationsModule({ onNavigate }: EvaluationsModuleProps) {
 
             for (const tpl of tplList) {
               const evaluatedRoles = relsByFormType[tpl.type] || [];
-              console.debug('[EvaluationsModule] Template:', tpl.name, 'type:', tpl.type, 'evaluatedRoles:', evaluatedRoles);
+              console.debug('[EvaluationsModule] Template:', tpl.name, 'type:', tpl.type, 'evaluatedRoles:', evaluatedRoles, 'canonicalRole:', canonicalRole);
 
               // Determine if self-evaluation is allowed
               let canSelf = false;
               const ft = formTypeMap[tpl.type];
 
-              // 1. Direct role assignment in form_type (The intended way)
-              if (ft && ft.roles && Array.isArray(ft.roles) && canonicalRole) {
-                // Check logical inclusion (ignoring case/accents just to be safe)
-                if (ft.roles.includes(canonicalRole) ||
-                  ft.roles.some((r: string) => normalizeStr(r) === normalizeStr(canonicalRole))) {
-                  canSelf = true;
-                }
-              }
-
-              // 2. Fallback: Self-relation (evaluator role == evaluated role)
-              // Only apply if NOT explicitly defined in roles? Or always?
-              // If it's pure self-eval, #1 usually handles it. 
-              // If it's "Director evaluates Director", #1 might not have it if it's meant for peers.
-              // But if I matched in #1, I am definitely allowed to self-eval.
-
-              if (!canSelf && canonicalRole) {
-                // Check if any of the evaluated roles for this template matches the user's canonical role
-                // Since we are iterating templates where WE are the evaluator (from relsByFormType),
-                // if the evaluated role is also US, then it's a self-eval.
+              // 1. Check form_type_relations for self-evaluation (PRIORITARIO)
+              // Si existe una relación donde evaluator_role_key == evaluated_role_key == user's role
+              // entonces es autoevaluación permitida
+              if (canonicalRole) {
                 const userRoleNorm = normalizeStr(canonicalRole);
                 if (evaluatedRoles.some(r => normalizeStr(r) === userRoleNorm)) {
                   canSelf = true;
+                  console.debug('[EvaluationsModule] Self-eval ALLOWED via form_type_relations for', tpl.name);
+                }
+              }
+
+              // 2. Fallback: Direct role assignment in form_type.roles
+              // Solo si no se encontró en relations, verificar en form_types.roles
+              if (!canSelf && ft && ft.roles && Array.isArray(ft.roles) && canonicalRole) {
+                if (ft.roles.includes(canonicalRole) ||
+                  ft.roles.some((r: string) => normalizeStr(r) === normalizeStr(canonicalRole))) {
+                  canSelf = true;
+                  console.debug('[EvaluationsModule] Self-eval ALLOWED via form_types.roles for', tpl.name);
                 }
               }
 
               selfEvalMap[tpl.id] = canSelf;
+              console.debug('[EvaluationsModule] Final canSelf for', tpl.name, ':', canSelf);
 
               if (evaluatedRoles.length === 0) {
                 candidatesMap[tpl.id] = [];
