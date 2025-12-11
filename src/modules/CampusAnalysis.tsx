@@ -183,8 +183,8 @@ export default function CampusAnalysis({ campusName, results, organizationAverag
     const uniqueTemplates = useMemo(() => {
         const templates = new Set<string>();
         results.forEach(r => {
-            if (r.template?.name) {
-                templates.add(r.template.name);
+            if (r.templateName) {
+                templates.add(r.templateName);
             }
         });
         return Array.from(templates).sort();
@@ -195,7 +195,7 @@ export default function CampusAnalysis({ campusName, results, organizationAverag
         let validResults = results.filter(r => r.avgScore !== null && r.avgScore !== undefined);
 
         if (selectedTemplate !== 'all') {
-            validResults = validResults.filter(r => r.template?.name === selectedTemplate);
+            validResults = validResults.filter(r => r.templateName === selectedTemplate);
         }
 
         if (validResults.length === 0) return null;
@@ -231,7 +231,7 @@ export default function CampusAnalysis({ campusName, results, organizationAverag
         const officeMap: Record<string, { name: string; sum: number; count: number; sections: Record<string, { sum: number; count: number }> }> = {};
 
         validResults.forEach(r => {
-            const officeName = r.office?.name || 'Sin Oficina';
+            const officeName = r.evaluatedOffice || 'Sin Oficina';
             if (!officeMap[officeName]) {
                 officeMap[officeName] = { name: officeName, sum: 0, count: 0, sections: {} };
             }
@@ -553,6 +553,15 @@ export default function CampusAnalysis({ campusName, results, organizationAverag
     }
 
     const { globalScore, strategicScore, campusSections, offices, competenciesAnalysis, intelligentAnalysis, prismaPlan, focusedActions, strategicProposals, predictiveAnalysis, correlationMap } = analysis;
+
+    // Validations to prevent undefined errors
+    if (!strategicScore || strategicScore === undefined) {
+        return (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                <p className="text-red-800">Error: No se pudo calcular el análisis del campus. Verifica que haya datos disponibles.</p>
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-8 animate-in fade-in duration-500">

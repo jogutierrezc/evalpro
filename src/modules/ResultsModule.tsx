@@ -160,124 +160,147 @@ export function ResultsModule() {
     try {
       setLoadingDetailed(true);
 
-      // Use allEvaluations as base
+      // Use allEvaluations as base - only load sections/questions once per UNIQUE template
       const evaluationsToLoad = allEvaluations;
+      const uniqueTemplates = new Set(evaluationsToLoad.map(e => e.template_id));
 
-      // Load in batches of 5 to avoid ERR_INSUFFICIENT_RESOURCES
-      const batchSize = 5;
-      const detailed: ResultWithDetails[] = [];
+      // Step 1: Load all sections and questions for each UNIQUE template (not per evaluation)
+      const templateDataMap = new Map<string, {
+        sections: any[];
+        questions: any[];
+      }>();
 
-      for (let i = 0; i < evaluationsToLoad.length; i += batchSize) {
-        const batch = evaluationsToLoad.slice(i, i + batchSize);
+      const templateDataPromises = Array.from(uniqueTemplates).map(async (templateId) => {
+        const [{ data: sections }, { data: questions }] = await Promise.all([
+          supabase.from('evaluation_sections').select('*').eq('template_id', templateId),
+          supabase.from('evaluation_questions').select('*').eq('template_id', templateId),
+        ]);
+        templateDataMap.set(templateId, { sections: sections || [], questions: questions || [] });
+      });
 
-        const batchResults = await Promise.all(
-          batch.map(async (evalItem) => {
-            // Load sections, questions, and responses for each evaluation
-            const [{ data: sections }, { data: questions }, { data: responses }] = await Promise.all([
-              supabase.from('evaluation_sections').select('*').eq('template_id', evalItem.template_id),
-              supabase.from('evaluation_questions').select('*').eq('template_id', evalItem.template_id),
-              supabase.from('evaluation_responses').select('*').eq('evaluation_id', evalItem.id),
-            ]);
+      await Promise.all(templateDataPromises);
 
-            const sectionsList: any[] = sections || [];
-            const questionsList: any[] = questions || [];
-            const responsesList: any[] = responses || [];
+      // Step 2: Load ALL responses in ONE query
+      const { data: allResponses } = await supabase
+        .from('evaluation_responses')
+        .select('*')
+        .in('evaluation_id', evaluationsToLoad.map(e => e.id));
 
-            // Build response map
-            const respMap: Record<string, any> = {};
-            responsesList.forEach((r) => { respMap[r.question_id] = r.response_value; });
-
-            // Build section summaries
-            const sectionsSummary: SectionSummaryRow[] = sectionsList.map((s) => {
-              const qs = questionsList.filter((q: any) => q.section_id === s.id);
-              const qDetails = qs.map((q: any) => ({
-                id: q.id,
-                text: q.question_text || '',
-                type: q.question_type,
-                weight: Number(q.weight || 0),
-                response: respMap[q.id]
-              }));
-
-              const ratingQs = qDetails.filter((q) => q.type === 'rating' && q.response !== undefined && q.response !== null);
-              const hasWeights = ratingQs.some((q) => Number(q.weight || 0) > 0);
-              
-              let avg: number | null = null;
-              if (ratingQs.length > 0) {
-                if (hasWeights) {
-                  let ssum = 0, wsum = 0;
-                  ratingQs.forEach((q) => {
-                    const v = Number(q.response);
-                    const w = Number(q.weight || 0);
-                    if (!isNaN(v)) { ssum += v * w; wsum += w; }
-                  });
-                  avg = wsum > 0 ? Math.round((ssum / wsum) * 100) / 100 : null;
-                } else {
-                  const vals = ratingQs.map((q) => Number(q.response));
-                  avg = Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100;
-                }
-              }
-
-              const weight = qs.length;
-
-              return {
-                sectionId: s.id,
-                sectionName: s.name || s.title || `Sección ${s.id}`,
-                avg,
-                weight,
-                questions: qDetails
-              };
-            });
-
-            // Normalize weights
-            const totalWeight = sectionsSummary.reduce((sum, s) => sum + s.weight, 0);
-            if (totalWeight > 0) {
-              sectionsSummary.forEach(s => {
-                s.weight = Math.round((s.weight / totalWeight) * 100);
-              });
-            }
-
-            // Calculate global score
-            const allRating = sectionsSummary.flatMap((s) => s.questions.filter((q) => q.type === 'rating'));
-            const anyW = allRating.some((q) => Number(q.weight || 0) > 0);
-            let globalScore = 0;
-            if (allRating.length > 0) {
-              if (anyW) {
-                let ssum = 0, wsum = 0;
-                allRating.forEach((q) => {
-                  const v = Number(q.response);
-                  const w = Number(q.weight || 0);
-                  if (!isNaN(v)) { ssum += v * w; wsum += w; }
-                });
-                globalScore = wsum > 0 ? Math.round((ssum / wsum) * 100) / 100 : 0;
-              } else {
-                const vals = allRating.map((q) => Number(q.response)).filter((v) => !isNaN(v));
-                globalScore = vals.length > 0 ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100 : 0;
-              }
-            }
-
-            return {
-              id: evalItem.id,
-              evaluatedName: evalItem.evaluated_name || 'N/A',
-              evaluatorName: evalItem.evaluator_name || 'N/A',
-              evaluatedOffice: evalItem.evaluated_office || 'N/A',
-              evaluatorOffice: evalItem.evaluator_office || 'N/A',
-              evaluatedCampus: evalItem.evaluated_campus || 'N/A',
-              evaluatorCampus: evalItem.evaluator_campus || 'N/A',
-              templateName: evalItem.template_name || 'N/A',
-              date: evalItem.created_at,
-              avgScore: globalScore,
-              sectionsSummary
-            };
-          })
-        );
-
-        detailed.push(...batchResults);
-
-        // Small delay between batches to avoid throttling
-        if (i + batchSize < evaluationsToLoad.length) {
-          await new Promise(resolve => setTimeout(resolve, 500));
+      const responseMap = new Map<string, any[]>();
+      (allResponses || []).forEach(r => {
+        if (!responseMap.has(r.evaluation_id)) {
+          responseMap.set(r.evaluation_id, []);
         }
-      }
+        responseMap.get(r.evaluation_id)!.push(r);
+      });
+
+      // Step 3: Process each evaluation to build ResultWithDetails
+      const detailed: ResultWithDetails[] = evaluationsToLoad.map((evalItem) => {
+        const templateData = templateDataMap.get(evalItem.template_id);
+        const responses = responseMap.get(evalItem.id) || [];
+
+        if (!templateData) {
+          return {
+            id: evalItem.id,
+            evaluatedName: evalItem.evaluated_name || 'N/A',
+            evaluatorName: evalItem.evaluator_name || 'N/A',
+            evaluatedOffice: evalItem.evaluated_office || 'N/A',
+            evaluatorOffice: evalItem.evaluator_office || 'N/A',
+            evaluatedCampus: evalItem.evaluated_campus || 'N/A',
+            evaluatorCampus: evalItem.evaluator_campus || 'N/A',
+            templateName: evalItem.template_name || 'N/A',
+            date: evalItem.created_at,
+            avgScore: 0,
+            sectionsSummary: []
+          };
+        }
+
+        // Build response map for this evaluation
+        const respMap: Record<string, any> = {};
+        responses.forEach((r) => { respMap[r.question_id] = r.response_value; });
+
+        // Build section summaries
+        const sectionsSummary: SectionSummaryRow[] = templateData.sections.map((s) => {
+          const qs = templateData.questions.filter((q: any) => q.section_id === s.id);
+          const qDetails = qs.map((q: any) => ({
+            id: q.id,
+            text: q.question_text || '',
+            type: q.question_type,
+            weight: Number(q.weight || 0),
+            response: respMap[q.id]
+          }));
+
+          const ratingQs = qDetails.filter((q) => q.type === 'rating' && q.response !== undefined && q.response !== null);
+          const hasWeights = ratingQs.some((q) => Number(q.weight || 0) > 0);
+          
+          let avg: number | null = null;
+          if (ratingQs.length > 0) {
+            if (hasWeights) {
+              let ssum = 0, wsum = 0;
+              ratingQs.forEach((q) => {
+                const v = Number(q.response);
+                const w = Number(q.weight || 0);
+                if (!isNaN(v)) { ssum += v * w; wsum += w; }
+              });
+              avg = wsum > 0 ? Math.round((ssum / wsum) * 100) / 100 : null;
+            } else {
+              const vals = ratingQs.map((q) => Number(q.response));
+              avg = Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100;
+            }
+          }
+
+          const weight = qs.length;
+
+          return {
+            sectionId: s.id,
+            sectionName: s.name || s.title || `Sección ${s.id}`,
+            avg,
+            weight,
+            questions: qDetails
+          };
+        });
+
+        // Normalize weights
+        const totalWeight = sectionsSummary.reduce((sum, s) => sum + s.weight, 0);
+        if (totalWeight > 0) {
+          sectionsSummary.forEach(s => {
+            s.weight = Math.round((s.weight / totalWeight) * 100);
+          });
+        }
+
+        // Calculate global score
+        const allRating = sectionsSummary.flatMap((s) => s.questions.filter((q) => q.type === 'rating'));
+        const anyW = allRating.some((q) => Number(q.weight || 0) > 0);
+        let globalScore = 0;
+        if (allRating.length > 0) {
+          if (anyW) {
+            let ssum = 0, wsum = 0;
+            allRating.forEach((q) => {
+              const v = Number(q.response);
+              const w = Number(q.weight || 0);
+              if (!isNaN(v)) { ssum += v * w; wsum += w; }
+            });
+            globalScore = wsum > 0 ? Math.round((ssum / wsum) * 100) / 100 : 0;
+          } else {
+            const vals = allRating.map((q) => Number(q.response)).filter((v) => !isNaN(v));
+            globalScore = vals.length > 0 ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100 : 0;
+          }
+        }
+
+        return {
+          id: evalItem.id,
+          evaluatedName: evalItem.evaluated_name || 'N/A',
+          evaluatorName: evalItem.evaluator_name || 'N/A',
+          evaluatedOffice: evalItem.evaluated_office || 'N/A',
+          evaluatorOffice: evalItem.evaluator_office || 'N/A',
+          evaluatedCampus: evalItem.evaluated_campus || 'N/A',
+          evaluatorCampus: evalItem.evaluator_campus || 'N/A',
+          templateName: evalItem.template_name || 'N/A',
+          date: evalItem.created_at,
+          avgScore: globalScore,
+          sectionsSummary
+        };
+      });
 
       setDetailedResults(detailed);
     } catch (error) {
@@ -869,9 +892,36 @@ export function ResultsModule() {
             </div>
 
             {/* Campus Analysis con filtro aplicado */}
-            <CampusAnalysis 
-              results={filterFormType ? detailedResults.filter(r => r.templateName === filterFormType) : detailedResults} 
-            />
+            {(() => {
+              const filteredResults = filterFormType ? detailedResults.filter(r => r.templateName === filterFormType) : detailedResults;
+              
+              // Calculate global average for benchmarking
+              const globalAvg = filteredResults.length > 0 
+                ? filteredResults.reduce((sum, r) => sum + (r.avgScore || 0), 0) / filteredResults.length 
+                : 0;
+
+              // Get unique campuses in filtered results
+              const campuses = Array.from(new Set(filteredResults.map(r => r.evaluatedCampus)));
+
+              return campuses.length === 0 ? (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                  <p className="text-yellow-800">No hay datos disponibles para mostrar</p>
+                </div>
+              ) : (
+                <>
+                  {campuses.map(campus => (
+                    <div key={campus} className="mb-6">
+                      <h3 className="text-lg font-bold text-gray-900 mb-4">{campus}</h3>
+                      <CampusAnalysis 
+                        campusName={campus}
+                        results={filteredResults.filter(r => r.evaluatedCampus === campus)}
+                        organizationAverage={globalAvg}
+                      />
+                    </div>
+                  ))}
+                </>
+              );
+            })()}
           </div>
         )
       ) : viewMode === 'university' ? (
