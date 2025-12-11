@@ -220,17 +220,24 @@ export function DashboardModule() {
         const evaluatorId = user.id;
         const evaluatorCampus = user.campus || '';
 
+        console.log(`[Dashboard] filterByManagerRelation - Evaluator ID: ${evaluatorId}`);
+        console.log(`[Dashboard] filterByManagerRelation - Candidates to filter:`, cands.length, cands.map(c => ({ id: c.id, name: c.full_name, role: c.role })));
+
         // 1) Collect managed users via `user_managers` table and `users.manager_id`
         const { data: managedRows } = await supabase.from('user_managers').select('user_id').eq('manager_id', evaluatorId);
         const managedIdsFromTable = (managedRows || []).map((r: any) => r.user_id).filter(Boolean);
+        console.log(`[Dashboard] filterByManagerRelation - IDs from user_managers:`, managedIdsFromTable);
 
         const { data: directManaged } = await supabase.from('users').select('id').eq('manager_id', evaluatorId);
         const directManagedIds = (directManaged || []).map((r: any) => r.id).filter(Boolean);
+        console.log(`[Dashboard] filterByManagerRelation - IDs from users.manager_id:`, directManagedIds);
 
         const managedIds = new Set([...(managedIdsFromTable || []), ...(directManagedIds || [])]);
+        console.log(`[Dashboard] filterByManagerRelation - Combined managed IDs:`, Array.from(managedIds));
 
         // 2) Filter by manager relationship
         const directReports = (cands || []).filter((cand) => managedIds.has(cand.id));
+        console.log(`[Dashboard] filterByManagerRelation - Direct reports after filtering:`, directReports.length, directReports.map(c => c.full_name));
 
         // 3) Filter by campus - UNLESS evaluator has campus = 'Todos' or 'Todas'
         const canEvaluateAllCampuses = evaluatorCampus.toLowerCase() === 'todos' ||
