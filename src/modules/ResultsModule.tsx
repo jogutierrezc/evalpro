@@ -55,6 +55,8 @@ export function ResultsModule() {
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
+  const [officeCurrentPage, setOfficeCurrentPage] = useState(1);
+  const officePageSize = 10;
   
   // Modal for analysis
   const [selectedEvaluation, setSelectedEvaluation] = useState<Evaluation | null>(null);
@@ -161,106 +163,121 @@ export function ResultsModule() {
       // Use allEvaluations as base
       const evaluationsToLoad = allEvaluations;
 
-      const detailed: ResultWithDetails[] = await Promise.all(
-        evaluationsToLoad.map(async (evalItem) => {
-          // Load sections, questions, and responses for each evaluation
-          const [{ data: sections }, { data: questions }, { data: responses }] = await Promise.all([
-            supabase.from('evaluation_sections').select('*').eq('template_id', evalItem.template_id),
-            supabase.from('evaluation_questions').select('*').eq('template_id', evalItem.template_id),
-            supabase.from('evaluation_responses').select('*').eq('evaluation_id', evalItem.id),
-          ]);
+      // Load in batches of 5 to avoid ERR_INSUFFICIENT_RESOURCES
+      const batchSize = 5;
+      const detailed: ResultWithDetails[] = [];
 
-          const sectionsList: any[] = sections || [];
-          const questionsList: any[] = questions || [];
-          const responsesList: any[] = responses || [];
+      for (let i = 0; i < evaluationsToLoad.length; i += batchSize) {
+        const batch = evaluationsToLoad.slice(i, i + batchSize);
 
-          // Build response map
-          const respMap: Record<string, any> = {};
-          responsesList.forEach((r) => { respMap[r.question_id] = r.response_value; });
+        const batchResults = await Promise.all(
+          batch.map(async (evalItem) => {
+            // Load sections, questions, and responses for each evaluation
+            const [{ data: sections }, { data: questions }, { data: responses }] = await Promise.all([
+              supabase.from('evaluation_sections').select('*').eq('template_id', evalItem.template_id),
+              supabase.from('evaluation_questions').select('*').eq('template_id', evalItem.template_id),
+              supabase.from('evaluation_responses').select('*').eq('evaluation_id', evalItem.id),
+            ]);
 
-          // Build section summaries
-          const sectionsSummary: SectionSummaryRow[] = sectionsList.map((s) => {
-            const qs = questionsList.filter((q: any) => q.section_id === s.id);
-            const qDetails = qs.map((q: any) => ({
-              id: q.id,
-              text: q.question_text || '',
-              type: q.question_type,
-              weight: Number(q.weight || 0),
-              response: respMap[q.id]
-            }));
+            const sectionsList: any[] = sections || [];
+            const questionsList: any[] = questions || [];
+            const responsesList: any[] = responses || [];
 
-            const ratingQs = qDetails.filter((q) => q.type === 'rating' && q.response !== undefined && q.response !== null);
-            const hasWeights = ratingQs.some((q) => Number(q.weight || 0) > 0);
-            
-            let avg: number | null = null;
-            if (ratingQs.length > 0) {
-              if (hasWeights) {
+            // Build response map
+            const respMap: Record<string, any> = {};
+            responsesList.forEach((r) => { respMap[r.question_id] = r.response_value; });
+
+            // Build section summaries
+            const sectionsSummary: SectionSummaryRow[] = sectionsList.map((s) => {
+              const qs = questionsList.filter((q: any) => q.section_id === s.id);
+              const qDetails = qs.map((q: any) => ({
+                id: q.id,
+                text: q.question_text || '',
+                type: q.question_type,
+                weight: Number(q.weight || 0),
+                response: respMap[q.id]
+              }));
+
+              const ratingQs = qDetails.filter((q) => q.type === 'rating' && q.response !== undefined && q.response !== null);
+              const hasWeights = ratingQs.some((q) => Number(q.weight || 0) > 0);
+              
+              let avg: number | null = null;
+              if (ratingQs.length > 0) {
+                if (hasWeights) {
+                  let ssum = 0, wsum = 0;
+                  ratingQs.forEach((q) => {
+                    const v = Number(q.response);
+                    const w = Number(q.weight || 0);
+                    if (!isNaN(v)) { ssum += v * w; wsum += w; }
+                  });
+                  avg = wsum > 0 ? Math.round((ssum / wsum) * 100) / 100 : null;
+                } else {
+                  const vals = ratingQs.map((q) => Number(q.response));
+                  avg = Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100;
+                }
+              }
+
+              const weight = qs.length;
+
+              return {
+                sectionId: s.id,
+                sectionName: s.name || s.title || `Sección ${s.id}`,
+                avg,
+                weight,
+                questions: qDetails
+              };
+            });
+
+            // Normalize weights
+            const totalWeight = sectionsSummary.reduce((sum, s) => sum + s.weight, 0);
+            if (totalWeight > 0) {
+              sectionsSummary.forEach(s => {
+                s.weight = Math.round((s.weight / totalWeight) * 100);
+              });
+            }
+
+            // Calculate global score
+            const allRating = sectionsSummary.flatMap((s) => s.questions.filter((q) => q.type === 'rating'));
+            const anyW = allRating.some((q) => Number(q.weight || 0) > 0);
+            let globalScore = 0;
+            if (allRating.length > 0) {
+              if (anyW) {
                 let ssum = 0, wsum = 0;
-                ratingQs.forEach((q) => {
+                allRating.forEach((q) => {
                   const v = Number(q.response);
                   const w = Number(q.weight || 0);
                   if (!isNaN(v)) { ssum += v * w; wsum += w; }
                 });
-                avg = wsum > 0 ? Math.round((ssum / wsum) * 100) / 100 : null;
+                globalScore = wsum > 0 ? Math.round((ssum / wsum) * 100) / 100 : 0;
               } else {
-                const vals = ratingQs.map((q) => Number(q.response));
-                avg = Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100;
+                const vals = allRating.map((q) => Number(q.response)).filter((v) => !isNaN(v));
+                globalScore = vals.length > 0 ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100 : 0;
               }
             }
 
-            const weight = qs.length;
-
             return {
-              sectionId: s.id,
-              sectionName: s.name || s.title || `Sección ${s.id}`,
-              avg,
-              weight,
-              questions: qDetails
+              id: evalItem.id,
+              evaluatedName: evalItem.evaluated_name || 'N/A',
+              evaluatorName: evalItem.evaluator_name || 'N/A',
+              evaluatedOffice: evalItem.evaluated_office || 'N/A',
+              evaluatorOffice: evalItem.evaluator_office || 'N/A',
+              evaluatedCampus: evalItem.evaluated_campus || 'N/A',
+              evaluatorCampus: evalItem.evaluator_campus || 'N/A',
+              templateName: evalItem.template_name || 'N/A',
+              date: evalItem.created_at,
+              avgScore: globalScore,
+              sectionsSummary
             };
-          });
+          })
+        );
 
-          // Normalize weights
-          const totalWeight = sectionsSummary.reduce((sum, s) => sum + s.weight, 0);
-          if (totalWeight > 0) {
-            sectionsSummary.forEach(s => {
-              s.weight = Math.round((s.weight / totalWeight) * 100);
-            });
-          }
+        detailed.push(...batchResults);
 
-          // Calculate global score
-          const allRating = sectionsSummary.flatMap((s) => s.questions.filter((q) => q.type === 'rating'));
-          const anyW = allRating.some((q) => Number(q.weight || 0) > 0);
-          let globalScore = 0;
-          if (allRating.length > 0) {
-            if (anyW) {
-              let ssum = 0, wsum = 0;
-              allRating.forEach((q) => {
-                const v = Number(q.response);
-                const w = Number(q.weight || 0);
-                if (!isNaN(v)) { ssum += v * w; wsum += w; }
-              });
-              globalScore = wsum > 0 ? Math.round((ssum / wsum) * 100) / 100 : 0;
-            } else {
-              const vals = allRating.map((q) => Number(q.response)).filter((v) => !isNaN(v));
-              globalScore = vals.length > 0 ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100 : 0;
-            }
-          }
-
-          return {
-            id: evalItem.id,
-            evaluatedName: evalItem.evaluated_name || 'N/A',
-            evaluatorName: evalItem.evaluator_name || 'N/A',
-            evaluatedOffice: evalItem.evaluated_office || 'N/A',
-            evaluatorOffice: evalItem.evaluator_office || 'N/A',
-            evaluatedCampus: evalItem.evaluated_campus || 'N/A',
-            evaluatorCampus: evalItem.evaluator_campus || 'N/A',
-            templateName: evalItem.template_name || 'N/A',
-            date: evalItem.created_at,
-            avgScore: globalScore,
-            sectionsSummary
-          };
-        })
-      );
+        // Small delay between batches to avoid throttling
+        if (i + batchSize < evaluationsToLoad.length) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
 
       setDetailedResults(detailed);
     } catch (error) {
@@ -525,16 +542,16 @@ export function ResultsModule() {
           {/* Table */}
           <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="min-w-full text-sm">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600">Evaluado</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600">Evaluador</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600">Oficina</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600">Campus</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600">Formulario</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600">Fecha</th>
-                    <th className="px-4 py-3 text-center font-medium text-gray-600">Acciones</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-600 w-48">Evaluado</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-600 w-48">Evaluador</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-600 w-40">Oficina</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-600 w-32">Campus</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-600 w-48">Formulario</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-600 w-32">Fecha</th>
+                    <th className="px-4 py-3 text-center font-medium text-gray-600 w-24">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
@@ -550,11 +567,11 @@ export function ResultsModule() {
                   ) : (
                     paginatedEvaluations.map((evaluation) => (
                       <tr key={evaluation.id} className="hover:bg-gray-50 transition-colors">
-                        <td className="px-4 py-3 font-medium text-gray-900">{evaluation.evaluated_name || 'N/A'}</td>
-                        <td className="px-4 py-3 text-gray-700">{evaluation.evaluator_name || 'N/A'}</td>
-                        <td className="px-4 py-3 text-gray-600">{evaluation.evaluated_office || 'N/A'}</td>
-                        <td className="px-4 py-3 text-gray-600">{evaluation.evaluated_campus || 'N/A'}</td>
-                        <td className="px-4 py-3 text-gray-600">{evaluation.template_name || 'N/A'}</td>
+                        <td className="px-4 py-3 font-medium text-gray-900 truncate max-w-[12rem]" title={evaluation.evaluated_name}>{evaluation.evaluated_name || 'N/A'}</td>
+                        <td className="px-4 py-3 text-gray-700 truncate max-w-[12rem]" title={evaluation.evaluator_name}>{evaluation.evaluator_name || 'N/A'}</td>
+                        <td className="px-4 py-3 text-gray-600 truncate max-w-[10rem]" title={evaluation.evaluated_office}>{evaluation.evaluated_office || 'N/A'}</td>
+                        <td className="px-4 py-3 text-gray-600 truncate max-w-[8rem]" title={evaluation.evaluated_campus}>{evaluation.evaluated_campus || 'N/A'}</td>
+                        <td className="px-4 py-3 text-gray-600 truncate max-w-[12rem]" title={evaluation.template_name}>{evaluation.template_name || 'N/A'}</td>
                         <td className="px-4 py-3 text-gray-600">
                           {new Date(evaluation.created_at).toLocaleDateString('es-CO')}
                         </td>
@@ -673,8 +690,22 @@ export function ResultsModule() {
                 };
               }).sort((a, b) => b.avgScore - a.avgScore);
 
+              // Pagination for office view
+              const officeTotalPages = Math.ceil(officeSummary.length / officePageSize);
+              const officeStart = (officeCurrentPage - 1) * officePageSize;
+              const paginatedOfficeSummary = officeSummary.slice(officeStart, officeStart + officePageSize);
+
               return (
-                <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                <>
+                  {/* Contador */}
+                  <div className="bg-white rounded-lg border border-gray-200 p-4">
+                    <div className="text-xs text-gray-500">
+                      Mostrando {paginatedOfficeSummary.length} de {officeSummary.length} oficinas
+                    </div>
+                  </div>
+                  
+                  {/* Tabla */}
+                  <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead className="bg-gray-50 border-b border-gray-200">
@@ -687,7 +718,7 @@ export function ResultsModule() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-200">
-                        {officeSummary.length === 0 ? (
+                        {paginatedOfficeSummary.length === 0 ? (
                           <tr>
                             <td colSpan={5} className="px-4 py-8 text-center">
                               <div className="flex flex-col items-center gap-2 text-gray-500">
@@ -697,7 +728,7 @@ export function ResultsModule() {
                             </td>
                           </tr>
                         ) : (
-                          officeSummary.map((summary, idx) => (
+                          paginatedOfficeSummary.map((summary) => (
                             <>
                               <tr key={`${summary.office}-${summary.campus}`} className="hover:bg-gray-50 transition-colors">
                                 <td className="px-4 py-3 font-medium text-gray-900">{summary.office}</td>
@@ -769,6 +800,45 @@ export function ResultsModule() {
                     </table>
                   </div>
                 </div>
+                
+                {/* Pagination */}
+                {officeTotalPages > 1 && (
+                  <div className="flex items-center justify-between mt-4">
+                    <button
+                      onClick={() => setOfficeCurrentPage(Math.max(1, officeCurrentPage - 1))}
+                      disabled={officeCurrentPage === 1}
+                      className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                      Anterior
+                    </button>
+
+                    <div className="flex gap-1">
+                      {Array.from({ length: officeTotalPages }, (_, i) => i + 1).map(page => (
+                        <button
+                          key={page}
+                          onClick={() => setOfficeCurrentPage(page)}
+                          className={`px-3 py-2 rounded-lg transition-colors ${officeCurrentPage === page
+                            ? 'bg-blue-600 text-white'
+                            : 'border border-gray-200 hover:bg-gray-50'
+                            }`}
+                        >
+                          {page}
+                        </button>
+                      ))}
+                    </div>
+
+                    <button
+                      onClick={() => setOfficeCurrentPage(Math.min(officeTotalPages, officeCurrentPage + 1))}
+                      disabled={officeCurrentPage === officeTotalPages}
+                      className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Siguiente
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+              </>
               );
             })()}
           </div>
