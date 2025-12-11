@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import { supabase, Evaluation } from '../lib/supabase';
 import {
   X,
@@ -9,12 +9,7 @@ import {
   ChevronDown,
   ChevronUp,
   Award,
-  FileText,
-  Target,
-  ArrowUpRight,
-  AlertTriangle,
-  Users,
-  BarChart3
+  FileText
 } from 'lucide-react';
 
 interface Props {
@@ -93,7 +88,7 @@ export const RadarChart = ({ data, size = 300, comparisonScore }: { data: Sectio
         })}
 
         {/* Axes */}
-        {data.map((d, i) => {
+        {data.map((_, i) => {
           const coords = getCoordinates(5, i);
           return (
             <line
@@ -109,7 +104,7 @@ export const RadarChart = ({ data, size = 300, comparisonScore }: { data: Sectio
         })}
 
         {/* Axis labels */}
-        {data.map((d, i) => {
+        {data.map((_, i) => {
           const angle = i * angleSlice - Math.PI / 2;
           const labelRadius = radius + 25;
           const x = center + labelRadius * Math.cos(angle);
@@ -128,7 +123,7 @@ export const RadarChart = ({ data, size = 300, comparisonScore }: { data: Sectio
               textAnchor={anchor}
               dominantBaseline="middle"
             >
-              {d.sectionName.length > 15 ? d.sectionName.substring(0, 12) + '...' : d.sectionName}
+              {data[i].sectionName.length > 15 ? data[i].sectionName.substring(0, 12) + '...' : data[i].sectionName}
             </text>
           );
         })}

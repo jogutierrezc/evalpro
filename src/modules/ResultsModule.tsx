@@ -1,384 +1,367 @@
-
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { supabase, EvaluationResult, Evaluation, User, Office, EvaluationTemplate } from '../lib/supabase';
-import { Building2, BarChart3, ChevronRight, ChevronDown } from 'lucide-react';
-import SectionAnalysis from './SectionAnalysis';
+import { supabase, Evaluation } from '../lib/supabase';
+import { BarChart3, Eye, Trash2, X, Search, Filter, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
+import SectionAnalysis, { SectionSummaryRow } from './SectionAnalysis';
 import OfficeAnalysis from './OfficeAnalysis';
 import CampusAnalysis from './CampusAnalysis';
 import UniversityAnalysis from './UniversityAnalysis';
 
-export interface ResultWithDetails extends EvaluationResult {
-  evaluation?: Evaluation;
-  evaluated?: User;
-  evaluator?: User;
-  template?: EvaluationTemplate;
-  office?: Office;
-  hasResult?: boolean;
-  sectionsSummary?: Array<{
-    sectionId: string | null;
-    sectionName: string;
-    avg: number | null;
-    questions: Array<{ id: string; text: string; type: string; weight?: number; response?: any }>;
-  }>;
-  avgScore?: number | null;
+interface EvaluationListItem {
+  id: string;
+  evaluator_id: string;
+  evaluated_id: string;
+  template_id: string;
+  created_at: string;
+  completed: boolean;
+  evaluator_name?: string;
+  evaluated_name?: string;
+  evaluator_office?: string;
+  evaluated_office?: string;
+  evaluator_campus?: string;
+  evaluated_campus?: string;
+  template_name?: string;
+}
+
+export interface ResultWithDetails {
+  id: string;
+  evaluatedName: string;
+  evaluatorName: string;
+  evaluatedOffice: string;
+  evaluatorOffice: string;
+  evaluatedCampus: string;
+  evaluatorCampus: string;
+  templateName: string;
+  date: string;
+  avgScore: number | null;
+  sectionsSummary?: SectionSummaryRow[];
 }
 
 export function ResultsModule() {
   const { user } = useAuth();
-  const [results, setResults] = useState<ResultWithDetails[]>([]);
-  const [groupedByOffice, setGroupedByOffice] = useState<Record<string, ResultWithDetails[]>>({});
-  const [groupedByCampus, setGroupedByCampus] = useState<Record<string, ResultWithDetails[]>>({});
-  const [expandedOffices, setExpandedOffices] = useState<Set<string>>(new Set());
-  const [expandedCampuses, setExpandedCampuses] = useState<Set<string>>(new Set());
+  const [allEvaluations, setAllEvaluations] = useState<EvaluationListItem[]>([]);
+  const [detailedResults, setDetailedResults] = useState<ResultWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingDetailed, setLoadingDetailed] = useState(false);
   const [viewMode, setViewMode] = useState<'individual' | 'office' | 'campus' | 'university'>('individual');
-  const [selectedResultForAnalysis, setSelectedResultForAnalysis] = useState<ResultWithDetails | null>(null);
-
-  const [allOffices, setAllOffices] = useState<Office[]>([]);
-  const [groupedByParent, setGroupedByParent] = useState<Record<string, { parent: Office; results: ResultWithDetails[]; subOffices: Record<string, ResultWithDetails[]> }>>({});
-  const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
+  
+  // Filters
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterOffice, setFilterOffice] = useState('');
+  const [filterCampus, setFilterCampus] = useState('');
+  const [filterEvaluator, setFilterEvaluator] = useState('');
+  const [filterFormType, setFilterFormType] = useState('');
+  
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 10;
+  
+  // Modal for analysis
+  const [selectedEvaluation, setSelectedEvaluation] = useState<Evaluation | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  
+  // Expanded office details
+  const [expandedOffice, setExpandedOffice] = useState<string | null>(null);
 
   useEffect(() => {
-    loadResults();
+    loadEvaluations();
   }, [user]);
 
-  const loadResults = async () => {
+  // Load detailed results when switching to aggregate views
+  useEffect(() => {
+    if (viewMode !== 'individual' && detailedResults.length === 0) {
+      loadDetailedResults();
+    }
+  }, [viewMode]);
+
+  // OPTIMIZED: Load only evaluation basics without sections/questions/responses
+  const loadEvaluations = async () => {
     try {
       setLoading(true);
-      // Fetch all offices for hierarchy
-      const { data: officesData } = await supabase.from('offices').select('*');
-      setAllOffices(officesData || []);
-      const officeMap = new Map((officesData || []).map(o => [o.id, o]));
 
-      // load existing evaluation results
-      const { data: resultsData, error } = await supabase.from('evaluation_results').select('*');
+      // Get evaluations with basic info only
+      const { data: evals, error } = await supabase
+        .from('evaluations')
+        .select('id, evaluator_id, evaluated_id, template_id, created_at, status')
+        .order('created_at', { ascending: false });
+
       if (error) throw error;
 
-      const resultsWithDetails = await Promise.all(
-        (resultsData || []).map(async (result) => {
-          const { data: evaluation } = await supabase
-            .from('evaluations')
-            .select('*')
-            .eq('id', result.evaluation_id)
-            .single();
+      // Batch fetch all related users and templates
+      const userIds = new Set([
+        ...(evals || []).map(e => e.evaluator_id),
+        ...(evals || []).map(e => e.evaluated_id)
+      ]);
 
-          if (!evaluation) return { ...(result as any), hasResult: true };
+      const templateIds = new Set((evals || []).map(e => e.template_id));
 
-          const [evaluatedRes, evaluatorRes, templateRes] = await Promise.all([
-            supabase.from('users').select('*').eq('id', evaluation.evaluated_id).single(),
-            supabase.from('users').select('*').eq('id', evaluation.evaluator_id).single(),
-            supabase.from('evaluation_templates').select('*').eq('id', evaluation.template_id).single(),
-          ]);
+      const [{ data: users }, { data: templates }] = await Promise.all([
+        supabase.from('users').select('id, full_name, office_id, campus').in('id', Array.from(userIds)),
+        supabase.from('evaluation_templates').select('id, name').in('id', Array.from(templateIds))
+      ]);
 
-          // fetch sections, questions and responses for per-section breakdown
-          const [sectionsRes, questionsRes, responsesRes] = await Promise.all([
-            supabase.from('evaluation_sections').select('*').eq('template_id', evaluation.template_id),
-            supabase.from('evaluation_questions').select('*').eq('template_id', evaluation.template_id),
-            supabase.from('evaluation_responses').select('*').eq('evaluation_id', evaluation.id),
-          ]);
+      // Batch fetch offices for all users
+      const officeIds = new Set((users || []).map(u => u.office_id).filter(Boolean));
+      const { data: offices } = await supabase.from('offices').select('id, name').in('id', Array.from(officeIds));
 
-          const sectionsList: any[] = sectionsRes.data || [];
-          const questionsList: any[] = questionsRes.data || [];
-          const responsesList: any[] = responsesRes.data || [];
+      // Create lookup maps
+      const userMap = new Map((users || []).map(u => [u.id, u]));
+      const templateMap = new Map((templates || []).map(t => [t.id, t]));
+      const officeMap = new Map((offices || []).map(o => [o.id, o]));
 
-          const respMap: Record<string, any> = {};
-          responsesList.forEach((r: any) => { respMap[r.question_id] = r.response_value; });
+      // Transform data
+      const evaluations: EvaluationListItem[] = (evals || []).map((e: any) => {
+        const evaluator = userMap.get(e.evaluator_id);
+        const evaluated = userMap.get(e.evaluated_id);
+        const template = templateMap.get(e.template_id);
+        const evaluatorOffice = evaluator?.office_id ? officeMap.get(evaluator.office_id) : null;
+        const evaluatedOffice = evaluated?.office_id ? officeMap.get(evaluated.office_id) : null;
 
-          const sectionsSummary = (sectionsList || []).map((s) => {
-            const qs = (questionsList || []).filter((q: any) => q.section_id === s.id);
-            const qDetails = qs.map((q: any) => ({ id: q.id, text: q.question_text || '', type: q.question_type, weight: Number(q.weight || 0), response: respMap[q.id] }));
-            const ratingQs = qDetails.filter((q: any) => q.type === 'rating' && q.response !== undefined && q.response !== null);
-            const hasWeights = ratingQs.some((q: any) => Number(q.weight || 0) > 0);
-            let avg: number | null = null;
-            if (ratingQs.length > 0) {
-              if (hasWeights) {
-                let ssum = 0; let wsum = 0;
-                ratingQs.forEach((q: any) => { const v = Number(q.response); const w = Number(q.weight || 0); if (!isNaN(v)) { ssum += v * w; wsum += w; } });
-                avg = wsum > 0 ? Math.round((ssum / wsum) * 100) / 100 : null;
-              } else {
-                const ratingVals = ratingQs.map((q: any) => Number(q.response));
-                avg = Math.round((ratingVals.reduce((a: number, b: number) => a + b, 0) / ratingVals.length) * 100) / 100;
-              }
-            }
-            return { sectionId: s.id, sectionName: s.name || s.title || `Sección ${s.id}`, avg, questions: qDetails };
-          });
+        return {
+          id: e.id,
+          evaluator_id: e.evaluator_id,
+          evaluated_id: e.evaluated_id,
+          template_id: e.template_id,
+          created_at: e.created_at,
+          completed: e.status === 'completed',
+          evaluator_name: evaluator?.full_name,
+          evaluated_name: evaluated?.full_name,
+          evaluator_office: evaluatorOffice?.name,
+          evaluated_office: evaluatedOffice?.name,
+          evaluator_campus: evaluator?.campus,
+          evaluated_campus: evaluated?.campus,
+          template_name: template?.name,
+        };
+      });
 
-          // compute overall average for the exam using rating questions across all sections
-          const allRatingQs = sectionsSummary.flatMap((sec) => (sec.questions || []).filter((q: any) => q.type === 'rating' && q.response !== undefined && q.response !== null));
-          let avgScore: number | null = null;
-          if (allRatingQs.length > 0) {
-            const hasWeightsAll = allRatingQs.some((q: any) => Number(q.weight || 0) > 0);
-            if (hasWeightsAll) {
-              let ssum = 0; let wsum = 0;
-              allRatingQs.forEach((q: any) => { const v = Number(q.response); const w = Number(q.weight || 0); if (!isNaN(v)) { ssum += v * w; wsum += w; } });
-              avgScore = wsum > 0 ? Math.round((ssum / wsum) * 100) / 100 : null;
-            } else {
-              const vals = allRatingQs.map((q: any) => Number(q.response)).filter((v: number) => !isNaN(v));
-              avgScore = vals.length > 0 ? Math.round((vals.reduce((a: number, b: number) => a + b, 0) / vals.length) * 100) / 100 : null;
-            }
-          } else {
-            avgScore = (typeof (result as any).overall_score === 'number') ? Number((result as any).overall_score) : null;
-          }
-
-          let targetOfficeId = evaluatedRes.data?.office_id;
-
-          // Si el evaluador es un jefe de oficina, usamos su oficina para el contexto del resultado
-          // Esto maneja el caso de colaboradores con múltiples oficinas/jefes
-          if (evaluatorRes.data?.role === 'office_manager' && evaluatorRes.data?.office_id) {
-            targetOfficeId = evaluatorRes.data.office_id;
-          } else if (templateRes.data?.type === 'manager_to_employee' && evaluatorRes.data?.office_id) {
-            targetOfficeId = evaluatorRes.data.office_id;
-          }
-
-          let office = null;
-          if (targetOfficeId) {
-            // Use the map we fetched earlier instead of individual queries if possible, 
-            // but for now let's stick to the existing logic or use the map if consistent.
-            // The existing logic fetches it individually. To be safe and consistent with existing code structure:
-            office = officeMap.get(targetOfficeId) || null;
-          }
-
-          return {
-            ...result,
-            evaluation,
-            evaluated: evaluatedRes.data,
-            evaluator: evaluatorRes.data,
-            template: templateRes.data,
-            office,
-            hasResult: true,
-            sectionsSummary,
-            avgScore,
-          };
-        })
-      );
-
-      // load evaluations that don't have a result yet so the UI can show "in progress / assigned" items
-      const { data: allEvals } = await supabase.from('evaluations').select('*').order('created_at', { ascending: false });
-      const evalIdsWithResults = new Set((resultsData || []).map((r: any) => r.evaluation_id));
-      const evalsNoResults = (allEvals || []).filter((e: any) => !evalIdsWithResults.has(e.id));
-
-      const evalsNoResultWithDetails = await Promise.all(
-        evalsNoResults.map(async (evaluation: any) => {
-          const [evaluatedRes, evaluatorRes, templateRes] = await Promise.all([
-            supabase.from('users').select('*').eq('id', evaluation.evaluated_id).single(),
-            supabase.from('users').select('*').eq('id', evaluation.evaluator_id).single(),
-            supabase.from('evaluation_templates').select('*').eq('id', evaluation.template_id).single(),
-          ]);
-
-          let targetOfficeId = evaluatedRes.data?.office_id;
-
-          // Si el evaluador es un jefe de oficina, usamos su oficina para el contexto del resultado
-          if (evaluatorRes.data?.role === 'office_manager' && evaluatorRes.data?.office_id) {
-            targetOfficeId = evaluatorRes.data.office_id;
-          } else if (templateRes.data?.type === 'manager_to_employee' && evaluatorRes.data?.office_id) {
-            targetOfficeId = evaluatorRes.data.office_id;
-          }
-
-          let office = null;
-          if (targetOfficeId) {
-            office = officeMap.get(targetOfficeId) || null;
-          }
-
-          // fetch sections, questions, and responses to compute partial averages for in-progress evaluations
-          const [sectionsRes, questionsRes, responsesRes] = await Promise.all([
-            supabase.from('evaluation_sections').select('*').eq('template_id', evaluation.template_id),
-            supabase.from('evaluation_questions').select('*').eq('template_id', evaluation.template_id),
-            supabase.from('evaluation_responses').select('*').eq('evaluation_id', evaluation.id),
-          ]);
-          const sectionsList: any[] = sectionsRes.data || [];
-          const questionsList: any[] = questionsRes.data || [];
-          const responsesList: any[] = responsesRes.data || [];
-
-          const respMap: Record<string, any> = {};
-          (responsesList || []).forEach((r: any) => { respMap[r.question_id] = r.response_value; });
-
-          const sectionsSummary = (sectionsList || []).map((s) => {
-            const qs = (questionsList || []).filter((q: any) => q.section_id === s.id);
-            const qDetails = qs.map((q: any) => ({ id: q.id, text: q.question_text || '', type: q.question_type, weight: Number(q.weight || 0), response: respMap[q.id] ?? null }));
-            // compute weighted avg if there are responses
-            const ratingQs = qDetails.filter((q: any) => q.type === 'rating' && q.response !== undefined && q.response !== null);
-            let avg: number | null = null;
-            if (ratingQs.length > 0) {
-              const hasWeights = ratingQs.some((q: any) => Number(q.weight || 0) > 0);
-              if (hasWeights) {
-                let ssum = 0; let wsum = 0;
-                ratingQs.forEach((q: any) => { const v = Number(q.response); const w = Number(q.weight || 0); if (!isNaN(v)) { ssum += v * w; wsum += w; } });
-                avg = wsum > 0 ? Math.round((ssum / wsum) * 100) / 100 : null;
-              } else {
-                const vals = ratingQs.map((q: any) => Number(q.response)).filter((v: number) => !isNaN(v));
-                avg = vals.length > 0 ? Math.round((vals.reduce((a: number, b: number) => a + b, 0) / vals.length) * 100) / 100 : null;
-              }
-            }
-            return { sectionId: s.id, sectionName: s.name || s.title || `Sección ${s.id}`, avg, questions: qDetails };
-          });
-
-          // compute exam-level avg from any current responses
-          const allRatingQs = sectionsSummary.flatMap((sec) => (sec.questions || []).filter((q: any) => q.type === 'rating' && q.response !== undefined && q.response !== null));
-          let avgScore: number | null = null;
-          if (allRatingQs.length > 0) {
-            const hasWeightsAll = allRatingQs.some((q: any) => Number(q.weight || 0) > 0);
-            if (hasWeightsAll) {
-              let ssum = 0; let wsum = 0;
-              allRatingQs.forEach((q: any) => { const v = Number(q.response); const w = Number(q.weight || 0); if (!isNaN(v)) { ssum += v * w; wsum += w; } });
-              avgScore = wsum > 0 ? Math.round((ssum / wsum) * 100) / 100 : null;
-            } else {
-              const vals = allRatingQs.map((q: any) => Number(q.response)).filter((v: number) => !isNaN(v));
-              avgScore = vals.length > 0 ? Math.round((vals.reduce((a: number, b: number) => a + b, 0) / vals.length) * 100) / 100 : null;
-            }
-          }
-
-          return {
-            // use a string id to avoid collision with numeric evaluation_result ids
-            id: `eval-${evaluation.id}`,
-            evaluation,
-            evaluated: evaluatedRes.data,
-            evaluator: evaluatorRes.data,
-            template: templateRes.data,
-            office,
-            hasResult: false,
-            overall_score: null,
-            created_at: evaluation.created_at,
-            sectionsSummary,
-            avgScore,
-          } as any;
-        })
-      );
-
-      let merged = [...resultsWithDetails, ...evalsNoResultWithDetails];
-
-      let filteredResults = merged;
-
+      // Filter by role
       const roleLower = (user?.role || '').toLowerCase();
       const isAdmin = roleLower === 'admin' || roleLower.includes('administrador');
-      const isOfficeManager = roleLower === 'office_manager' || roleLower.includes('jefe') || roleLower.includes('manager') || roleLower.includes('oficina') || roleLower.includes('coordinador') || roleLower.includes('director') || roleLower.includes('lider');
 
+      let filtered = evaluations;
       if (!isAdmin) {
-        if (isOfficeManager) {
-          filteredResults = merged.filter(
-            (r) => r.evaluated?.office_id === user?.office_id
-          );
-        } else {
-          // Default for employees and others: only see own results
-          filteredResults = merged.filter(
-            (r) => r.evaluation?.evaluated_id === user?.id || (r.evaluated && r.evaluated.id === user?.id)
-          );
-        }
+        filtered = evaluations.filter(
+          (e) => e.evaluated_id === user?.id || e.evaluator_id === user?.id
+        );
       }
 
-      setResults(filteredResults as ResultWithDetails[]);
-
-      // Group by Office (Standard)
-      const grouped: Record<string, ResultWithDetails[]> = {};
-      filteredResults.forEach((result) => {
-        const officeId = result.office?.id || 'sin-oficina';
-        if (!grouped[officeId]) {
-          grouped[officeId] = [];
-        }
-        grouped[officeId].push(result);
-      });
-      setGroupedByOffice(grouped);
-
-      // Group by Parent (Hierarchy)
-      const groupedParent: Record<string, { parent: Office; results: ResultWithDetails[]; subOffices: Record<string, ResultWithDetails[]> }> = {};
-
-      filteredResults.forEach((result) => {
-        const office = result.office;
-        if (!office) return; // Skip if no office
-
-        // Determine Parent
-        let parentId = office.parent_id;
-        let parentOffice = parentId ? officeMap.get(parentId) : office;
-
-        // Fallback if parent not found in map (shouldn't happen if integrity is good)
-        if (!parentOffice) parentOffice = office;
-        parentId = parentOffice.id;
-
-        if (!groupedParent[parentId]) {
-          groupedParent[parentId] = {
-            parent: parentOffice,
-            results: [],
-            subOffices: {}
-          };
-        }
-
-        // Add to total results for this parent group
-        groupedParent[parentId].results.push(result);
-
-        // Add to sub-office bucket
-        const subOfficeId = office.id;
-        if (!groupedParent[parentId].subOffices[subOfficeId]) {
-          groupedParent[parentId].subOffices[subOfficeId] = [];
-        }
-        groupedParent[parentId].subOffices[subOfficeId].push(result);
-      });
-      setGroupedByParent(groupedParent);
-
-
-      const groupedCampus: Record<string, ResultWithDetails[]> = {};
-      filteredResults.forEach((result) => {
-        const campus = result.evaluated?.campus || 'Sin Campus';
-        if (!groupedCampus[campus]) {
-          groupedCampus[campus] = [];
-        }
-        groupedCampus[campus].push(result);
-      });
-      setGroupedByCampus(groupedCampus);
+      setAllEvaluations(filtered);
     } catch (error) {
-      console.error('Error loading results:', error);
+      console.error('Error loading evaluations:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const toggleOfficeExpand = (officeId: string) => {
-    const newExpanded = new Set(expandedOffices);
-    if (newExpanded.has(officeId)) {
-      newExpanded.delete(officeId);
-    } else {
-      newExpanded.add(officeId);
+  // Load detailed results with sections/questions/responses for aggregate views
+  const loadDetailedResults = async () => {
+    try {
+      setLoadingDetailed(true);
+
+      // Use allEvaluations as base
+      const evaluationsToLoad = allEvaluations;
+
+      const detailed: ResultWithDetails[] = await Promise.all(
+        evaluationsToLoad.map(async (evalItem) => {
+          // Load sections, questions, and responses for each evaluation
+          const [{ data: sections }, { data: questions }, { data: responses }] = await Promise.all([
+            supabase.from('evaluation_sections').select('*').eq('template_id', evalItem.template_id),
+            supabase.from('evaluation_questions').select('*').eq('template_id', evalItem.template_id),
+            supabase.from('evaluation_responses').select('*').eq('evaluation_id', evalItem.id),
+          ]);
+
+          const sectionsList: any[] = sections || [];
+          const questionsList: any[] = questions || [];
+          const responsesList: any[] = responses || [];
+
+          // Build response map
+          const respMap: Record<string, any> = {};
+          responsesList.forEach((r) => { respMap[r.question_id] = r.response_value; });
+
+          // Build section summaries
+          const sectionsSummary: SectionSummaryRow[] = sectionsList.map((s) => {
+            const qs = questionsList.filter((q: any) => q.section_id === s.id);
+            const qDetails = qs.map((q: any) => ({
+              id: q.id,
+              text: q.question_text || '',
+              type: q.question_type,
+              weight: Number(q.weight || 0),
+              response: respMap[q.id]
+            }));
+
+            const ratingQs = qDetails.filter((q) => q.type === 'rating' && q.response !== undefined && q.response !== null);
+            const hasWeights = ratingQs.some((q) => Number(q.weight || 0) > 0);
+            
+            let avg: number | null = null;
+            if (ratingQs.length > 0) {
+              if (hasWeights) {
+                let ssum = 0, wsum = 0;
+                ratingQs.forEach((q) => {
+                  const v = Number(q.response);
+                  const w = Number(q.weight || 0);
+                  if (!isNaN(v)) { ssum += v * w; wsum += w; }
+                });
+                avg = wsum > 0 ? Math.round((ssum / wsum) * 100) / 100 : null;
+              } else {
+                const vals = ratingQs.map((q) => Number(q.response));
+                avg = Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100;
+              }
+            }
+
+            const weight = qs.length;
+
+            return {
+              sectionId: s.id,
+              sectionName: s.name || s.title || `Sección ${s.id}`,
+              avg,
+              weight,
+              questions: qDetails
+            };
+          });
+
+          // Normalize weights
+          const totalWeight = sectionsSummary.reduce((sum, s) => sum + s.weight, 0);
+          if (totalWeight > 0) {
+            sectionsSummary.forEach(s => {
+              s.weight = Math.round((s.weight / totalWeight) * 100);
+            });
+          }
+
+          // Calculate global score
+          const allRating = sectionsSummary.flatMap((s) => s.questions.filter((q) => q.type === 'rating'));
+          const anyW = allRating.some((q) => Number(q.weight || 0) > 0);
+          let globalScore = 0;
+          if (allRating.length > 0) {
+            if (anyW) {
+              let ssum = 0, wsum = 0;
+              allRating.forEach((q) => {
+                const v = Number(q.response);
+                const w = Number(q.weight || 0);
+                if (!isNaN(v)) { ssum += v * w; wsum += w; }
+              });
+              globalScore = wsum > 0 ? Math.round((ssum / wsum) * 100) / 100 : 0;
+            } else {
+              const vals = allRating.map((q) => Number(q.response)).filter((v) => !isNaN(v));
+              globalScore = vals.length > 0 ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100 : 0;
+            }
+          }
+
+          return {
+            id: evalItem.id,
+            evaluatedName: evalItem.evaluated_name || 'N/A',
+            evaluatorName: evalItem.evaluator_name || 'N/A',
+            evaluatedOffice: evalItem.evaluated_office || 'N/A',
+            evaluatorOffice: evalItem.evaluator_office || 'N/A',
+            evaluatedCampus: evalItem.evaluated_campus || 'N/A',
+            evaluatorCampus: evalItem.evaluator_campus || 'N/A',
+            templateName: evalItem.template_name || 'N/A',
+            date: evalItem.created_at,
+            avgScore: globalScore,
+            sectionsSummary
+          };
+        })
+      );
+
+      setDetailedResults(detailed);
+    } catch (error) {
+      console.error('Error loading detailed results:', error);
+    } finally {
+      setLoadingDetailed(false);
     }
-    setExpandedOffices(newExpanded);
   };
 
-  const toggleParentExpand = (parentId: string) => {
-    const newExpanded = new Set(expandedParents);
-    if (newExpanded.has(parentId)) {
-      newExpanded.delete(parentId);
-    } else {
-      newExpanded.add(parentId);
+  // Extract unique filter values
+  const uniqueOffices = useMemo(() => {
+    const offices = new Set(allEvaluations.map(e => e.evaluated_office).filter(Boolean));
+    return Array.from(offices).sort();
+  }, [allEvaluations]);
+
+  const uniqueCampuses = useMemo(() => {
+    const campuses = new Set(allEvaluations.map(e => e.evaluated_campus).filter(Boolean));
+    return Array.from(campuses).sort();
+  }, [allEvaluations]);
+
+  const uniqueEvaluators = useMemo(() => {
+    const evaluators = new Set(allEvaluations.map(e => e.evaluator_name).filter(Boolean));
+    return Array.from(evaluators).sort();
+  }, [allEvaluations]);
+
+  const uniqueFormTypes = useMemo(() => {
+    const types = new Set(allEvaluations.map(e => e.template_name).filter(Boolean));
+    return Array.from(types).sort();
+  }, [allEvaluations]);
+
+  // Filter evaluations based on current filters
+  const filteredEvaluations = useMemo(() => {
+    return allEvaluations.filter(e => {
+      const matchesSearch = !searchTerm ||
+        e.evaluated_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        e.evaluator_name?.toLowerCase().includes(searchTerm.toLowerCase());
+
+      const matchesOffice = !filterOffice || e.evaluated_office === filterOffice;
+      const matchesCampus = !filterCampus || e.evaluated_campus === filterCampus;
+      const matchesEvaluator = !filterEvaluator || e.evaluator_name === filterEvaluator;
+      const matchesFormType = !filterFormType || e.template_name === filterFormType;
+
+      return matchesSearch && matchesOffice && matchesCampus && matchesEvaluator && matchesFormType;
+    });
+  }, [allEvaluations, searchTerm, filterOffice, filterCampus, filterEvaluator, filterFormType]);
+
+  // Pagination
+  const paginatedEvaluations = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredEvaluations.slice(start, start + pageSize);
+  }, [filteredEvaluations, currentPage, pageSize]);
+
+  const totalPages = Math.ceil(filteredEvaluations.length / pageSize);
+
+  // Load full evaluation for analysis
+  const handleViewAnalysis = async (evalId: string) => {
+    try {
+      const { data: evaluation } = await supabase
+        .from('evaluations')
+        .select('*')
+        .eq('id', evalId)
+        .single();
+
+      if (evaluation) {
+        setSelectedEvaluation(evaluation);
+      }
+    } catch (error) {
+      console.error('Error loading evaluation:', error);
     }
-    setExpandedParents(newExpanded);
   };
 
-  const toggleCampusExpand = (campus: string) => {
-    const newExpanded = new Set(expandedCampuses);
-    if (newExpanded.has(campus)) {
-      newExpanded.delete(campus);
-    } else {
-      newExpanded.add(campus);
+  // Delete evaluation
+  const handleDelete = async (evalId: string) => {
+    try {
+      const { error } = await supabase
+        .from('evaluations')
+        .delete()
+        .eq('id', evalId);
+
+      if (error) throw error;
+
+      setDeleteConfirm(null);
+      loadEvaluations();
+    } catch (error) {
+      console.error('Error deleting evaluation:', error);
+      alert('Error al eliminar la evaluación');
     }
-    setExpandedCampuses(newExpanded);
   };
 
-  const calculateOfficeAverage = (officeResults: ResultWithDetails[]) => {
-    if (officeResults.length === 0) return 0;
-    const valid = officeResults.map((r) => (typeof r.avgScore === 'number' ? Number(r.avgScore) : (typeof r.overall_score === 'number' ? Number(r.overall_score) : 0)));
-    const total = valid.reduce((sum, v) => sum + (Number(v) || 0), 0);
-    return (total / officeResults.length).toFixed(2);
+  // Clear filters
+  const clearFilters = () => {
+    setSearchTerm('');
+    setFilterOffice('');
+    setFilterCampus('');
+    setFilterEvaluator('');
+    setFilterFormType('');
+    setCurrentPage(1);
   };
 
-  const getScoreColor = (score: number) => {
-    if (score >= 4) return 'text-green-600';
-    if (score >= 3) return 'text-yellow-600';
-    return 'text-red-600';
-  };
-
-  const getScoreBgColor = (score: number) => {
-    if (score >= 4) return 'bg-green-100';
-    if (score >= 3) return 'bg-yellow-100';
-    return 'bg-red-100';
-  };
+  const activeFiltersCount = [filterOffice, filterCampus, filterEvaluator, filterFormType]
+    .filter(Boolean).length;
 
   if (loading) {
     return (
@@ -387,8 +370,6 @@ export function ResultsModule() {
       </div>
     );
   }
-
-
 
   return (
     <div>
@@ -400,13 +381,16 @@ export function ResultsModule() {
       {user?.role !== 'employee' && (
         <div className="mb-6 flex gap-2">
           <button
-            onClick={() => setViewMode('individual')}
+            onClick={() => {
+              setViewMode('individual');
+              setCurrentPage(1);
+            }}
             className={`px-4 py-2 rounded-lg font-medium transition-colors ${viewMode === 'individual'
               ? 'bg-blue-600 text-white'
               : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
               }`}
           >
-            Vista Individual
+            Vista de Lista
           </button>
           <button
             onClick={() => setViewMode('office')}
@@ -418,296 +402,479 @@ export function ResultsModule() {
             Vista por Oficina
           </button>
           {user?.role === 'admin' && (
-            <button
-              onClick={() => setViewMode('campus')}
-              className={`px-4 py-2 rounded-lg font-medium transition-colors ${viewMode === 'campus'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                }`}
-            >
-              Vista por Campus
-            </button>
-          )}
-          {user?.role === 'admin' && (
-            <button
-              onClick={() => setViewMode('university')}
-              className={`px-4 py-2 rounded-lg font-medium transition-colors ${viewMode === 'university'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                }`}
-            >
-              Vista General
-            </button>
+            <>
+              <button
+                onClick={() => setViewMode('campus')}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${viewMode === 'campus'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+              >
+                Vista por Campus
+              </button>
+              <button
+                onClick={() => setViewMode('university')}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${viewMode === 'university'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+              >
+                Vista General
+              </button>
+            </>
           )}
         </div>
       )}
-
-      {viewMode === 'university' && user?.role === 'admin' ? (
-        <UniversityAnalysis results={results} />
-      ) : null}
-
-      {viewMode === 'campus' && user?.role !== 'employee' ? (
-        <div className="space-y-4">
-          {Object.entries(groupedByCampus).map(([campusName, campusResults]) => {
-            const average = Number(calculateOfficeAverage(campusResults));
-            const isExpanded = expandedCampuses.has(campusName);
-            // Calculate global average for comparison
-            const allResults = Object.values(groupedByCampus).flat();
-            const globalAverage = Number(calculateOfficeAverage(allResults));
-
-            return (
-              <div key={campusName} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-                <button
-                  onClick={() => toggleCampusExpand(campusName)}
-                  className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
-                >
-                  <div className="flex items-center gap-4">
-                    <Building2 className="w-6 h-6 text-indigo-600" />
-                    <div className="text-left">
-                      <h3 className="font-semibold text-gray-900">{campusName}</h3>
-                      <p className="text-sm text-gray-600">
-                        {campusResults.length} evaluación{campusResults.length !== 1 ? 'es' : ''}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <div className="text-right">
-                      <p className="text-sm text-gray-600">Promedio</p>
-                      <p className={`text-2xl font-bold ${getScoreColor(average)}`}>
-                        {average}
-                      </p>
-                    </div>
-                    {isExpanded ? (
-                      <ChevronDown className="w-5 h-5 text-gray-400" />
-                    ) : (
-                      <ChevronRight className="w-5 h-5 text-gray-400" />
-                    )}
-                  </div>
-                </button>
-
-                {isExpanded && (
-                  <div className="border-t border-gray-200 p-6 bg-gray-50">
-                    <CampusAnalysis
-                      campusName={campusName}
-                      results={campusResults}
-                      organizationAverage={globalAverage}
-                    />
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      ) : null}
-
-      {viewMode === 'office' && user?.role !== 'employee' ? (
-        <div className="space-y-4">
-          {user?.role === 'admin' ? (
-            // Admin View: Hierarchical (Grouped by Parent)
-            Object.entries(groupedByParent).map(([parentId, group]) => {
-              const parentName = group.parent.name;
-              const average = Number(calculateOfficeAverage(group.results));
-              const isExpanded = expandedParents.has(parentId);
-              const subOfficesCount = Object.keys(group.subOffices).length;
-
-              return (
-                <div key={parentId} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-                  <button
-                    onClick={() => toggleParentExpand(parentId)}
-                    className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
-                  >
-                    <div className="flex items-center gap-4">
-                      <Building2 className="w-6 h-6 text-blue-600" />
-                      <div className="text-left">
-                        <h3 className="font-semibold text-gray-900">{parentName}</h3>
-                        <p className="text-sm text-gray-600">
-                          {group.results.length} evaluaciones · {subOfficesCount} dependencias
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <div className="text-right">
-                        <p className="text-sm text-gray-600">Promedio Global</p>
-                        <p className={`text-2xl font-bold ${getScoreColor(average)}`}>
-                          {average}
-                        </p>
-                      </div>
-                      {isExpanded ? (
-                        <ChevronDown className="w-5 h-5 text-gray-400" />
-                      ) : (
-                        <ChevronRight className="w-5 h-5 text-gray-400" />
-                      )}
-                    </div>
-                  </button>
-
-                  {isExpanded && (
-                    <div className="border-t border-gray-200 bg-gray-50">
-                      {/* List of Sub-offices */}
-                      <div className="divide-y divide-gray-200">
-                        {Object.entries(group.subOffices).map(([subOfficeId, subResults]) => {
-                          const subOfficeName = subResults[0]?.office?.name || 'Sin Nombre';
-                          const subAverage = Number(calculateOfficeAverage(subResults));
-                          const isSubExpanded = expandedOffices.has(subOfficeId);
-
-                          return (
-                            <div key={subOfficeId} className="bg-white">
-                              <button
-                                onClick={() => toggleOfficeExpand(subOfficeId)}
-                                className="w-full px-6 py-3 flex items-center justify-between hover:bg-blue-50/50 transition-colors pl-12"
-                              >
-                                <div className="flex items-center gap-3">
-                                  <div className="w-2 h-2 rounded-full bg-blue-400"></div>
-                                  <div className="text-left">
-                                    <h4 className="font-medium text-gray-800">{subOfficeName}</h4>
-                                    <p className="text-xs text-gray-500">{subResults.length} evaluaciones</p>
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-4">
-                                  <span className={`font-bold ${getScoreColor(subAverage)}`}>{subAverage}</span>
-                                  {isSubExpanded ? (
-                                    <ChevronDown className="w-4 h-4 text-gray-400" />
-                                  ) : (
-                                    <ChevronRight className="w-4 h-4 text-gray-400" />
-                                  )}
-                                </div>
-                              </button>
-                              {isSubExpanded && (
-                                <div className="border-t border-gray-100 p-4 bg-gray-50 pl-12">
-                                  <OfficeAnalysis officeName={subOfficeName} results={subResults} />
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })
-          ) : (
-            // Non-Admin View: Flat List (Existing behavior)
-            Object.entries(groupedByOffice).map(([officeId, officeResults]) => {
-              const officeName = officeResults[0]?.office?.name || 'Sin Oficina';
-              const average = Number(calculateOfficeAverage(officeResults));
-              const isExpanded = expandedOffices.has(officeId);
-
-              return (
-                <div key={officeId} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-                  <button
-                    onClick={() => toggleOfficeExpand(officeId)}
-                    className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
-                  >
-                    <div className="flex items-center gap-4">
-                      <Building2 className="w-6 h-6 text-blue-600" />
-                      <div className="text-left">
-                        <h3 className="font-semibold text-gray-900">{officeName}</h3>
-                        <p className="text-sm text-gray-600">
-                          {officeResults.length} evaluación{officeResults.length !== 1 ? 'es' : ''}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <div className="text-right">
-                        <p className="text-sm text-gray-600">Promedio</p>
-                        <p className={`text-2xl font-bold ${getScoreColor(average)}`}>
-                          {average}
-                        </p>
-                      </div>
-                      {isExpanded ? (
-                        <ChevronDown className="w-5 h-5 text-gray-400" />
-                      ) : (
-                        <ChevronRight className="w-5 h-5 text-gray-400" />
-                      )}
-                    </div>
-                  </button>
-
-                  {isExpanded && (
-                    <div className="border-t border-gray-200 p-6 bg-gray-50">
-                      <OfficeAnalysis officeName={officeName} results={officeResults} />
-                    </div>
-                  )}
-                </div>
-              );
-            })
-          )}
-        </div>
-      ) : null}
 
       {viewMode === 'individual' || user?.role === 'employee' ? (
-        <div className="grid grid-cols-1 gap-4">
-          {results.map((result) => (
-            <div key={result.id} className="bg-white rounded-lg border border-gray-200 p-6">
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex-1">
-                  <h3 className="text-xl font-semibold text-gray-900 mb-1">
-                    {result.template?.name}
-                  </h3>
-                  <p className="text-gray-600 mb-2">
-                    Evaluado: <span className="font-medium">{result.evaluated?.full_name}</span>
-                  </p>
-                  <p className="text-sm text-gray-500">
-                    Evaluador: {result.evaluator?.full_name}
-                  </p>
-                  {result.office && (
-                    <p className="text-sm text-gray-500">Oficina: {result.office.name}</p>
-                  )}
-                </div>
-                <div className={`flex items-center justify-center w-20 h-20 rounded-full ${getScoreBgColor(Number(result.avgScore || result.overall_score || 0))}`}>
-                  <span className={`text-3xl font-bold ${getScoreColor(Number(result.avgScore || result.overall_score || 0))}`}>
-                    {(result.avgScore ?? result.overall_score ?? 0) as any}
-                  </span>
-                </div>
-              </div>
-
-              {result.ai_analysis && (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                  <h4 className="font-semibold text-gray-900 mb-2">Análisis IA</h4>
-                  <p className="text-sm text-gray-700">{result.ai_analysis}</p>
-                </div>
-              )}
-
-              {result.recommendations && (
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                  <h4 className="font-semibold text-gray-900 mb-2">Recomendaciones</h4>
-                  <ul className="text-sm text-gray-700 space-y-1">
-                    {Array.isArray(result.recommendations)
-                      ? result.recommendations.map((rec: string, idx: number) => (
-                        <li key={idx}>• {rec}</li>
-                      ))
-                      : null}
-                  </ul>
-                </div>
-              )}
-
-              {/* Se retira el desglose por sección en vista individual según solicitud */}
-
-              <div className="mt-4 pt-4 border-t border-gray-200">
-                <p className="text-xs text-gray-500">
-                  Evaluación completada el {new Date(result.created_at).toLocaleString()}
-                </p>
-                <div className="mt-3">
-                  <button
-                    onClick={() => setSelectedResultForAnalysis(result)}
-                    className="px-3 py-2 bg-blue-600 text-white rounded-md"
-                  >
-                    Ver Análisis
-                  </button>
-                </div>
-              </div>
+        <div className="space-y-4">
+          {/* Filters */}
+          <div className="bg-white rounded-lg border border-gray-200 p-4 space-y-4">
+            <div className="flex items-center gap-2 text-sm font-medium text-gray-600">
+              <Filter className="w-4 h-4" />
+              <span>Filtros {activeFiltersCount > 0 && `(${activeFiltersCount})`}</span>
             </div>
-          ))}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Buscar..."
+                  value={searchTerm}
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                />
+              </div>
+
+              <select
+                value={filterOffice}
+                onChange={(e) => {
+                  setFilterOffice(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              >
+                <option value="">Todas las oficinas</option>
+                {uniqueOffices.map(office => (
+                  <option key={office} value={office}>{office}</option>
+                ))}
+              </select>
+
+              <select
+                value={filterCampus}
+                onChange={(e) => {
+                  setFilterCampus(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              >
+                <option value="">Todos los campus</option>
+                {uniqueCampuses.map(campus => (
+                  <option key={campus} value={campus}>{campus}</option>
+                ))}
+              </select>
+
+              <select
+                value={filterEvaluator}
+                onChange={(e) => {
+                  setFilterEvaluator(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              >
+                <option value="">Todos los evaluadores</option>
+                {uniqueEvaluators.map(evaluator => (
+                  <option key={evaluator} value={evaluator}>{evaluator}</option>
+                ))}
+              </select>
+
+              <select
+                value={filterFormType}
+                onChange={(e) => {
+                  setFilterFormType(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              >
+                <option value="">Todos los formularios</option>
+                {uniqueFormTypes.map(type => (
+                  <option key={type} value={type}>{type}</option>
+                ))}
+              </select>
+            </div>
+
+            {activeFiltersCount > 0 && (
+              <button
+                onClick={clearFilters}
+                className="flex items-center gap-1 px-3 py-1 text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
+              >
+                <X className="w-3 h-3" />
+                Limpiar filtros
+              </button>
+            )}
+
+            <div className="text-xs text-gray-500">
+              Mostrando {paginatedEvaluations.length} de {filteredEvaluations.length} evaluaciones
+            </div>
+          </div>
+
+          {/* Table */}
+          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-medium text-gray-600">Evaluado</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-600">Evaluador</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-600">Oficina</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-600">Campus</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-600">Formulario</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-600">Fecha</th>
+                    <th className="px-4 py-3 text-center font-medium text-gray-600">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {paginatedEvaluations.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-8 text-center">
+                        <div className="flex flex-col items-center gap-2 text-gray-500">
+                          <AlertCircle className="w-8 h-8 text-gray-400" />
+                          <p>No hay evaluaciones disponibles</p>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    paginatedEvaluations.map((evaluation) => (
+                      <tr key={evaluation.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-4 py-3 font-medium text-gray-900">{evaluation.evaluated_name || 'N/A'}</td>
+                        <td className="px-4 py-3 text-gray-700">{evaluation.evaluator_name || 'N/A'}</td>
+                        <td className="px-4 py-3 text-gray-600">{evaluation.evaluated_office || 'N/A'}</td>
+                        <td className="px-4 py-3 text-gray-600">{evaluation.evaluated_campus || 'N/A'}</td>
+                        <td className="px-4 py-3 text-gray-600">{evaluation.template_name || 'N/A'}</td>
+                        <td className="px-4 py-3 text-gray-600">
+                          {new Date(evaluation.created_at).toLocaleDateString('es-CO')}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center justify-center gap-2">
+                            <button
+                              onClick={() => handleViewAnalysis(evaluation.id)}
+                              className="p-2 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                              title="Ver análisis"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => setDeleteConfirm(evaluation.id)}
+                              className="p-2 text-red-600 hover:bg-red-50 rounded transition-colors"
+                              title="Eliminar"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between">
+              <button
+                onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                disabled={currentPage === 1}
+                className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                Anterior
+              </button>
+
+              <div className="flex gap-1">
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                  <button
+                    key={page}
+                    onClick={() => setCurrentPage(page)}
+                    className={`px-3 py-2 rounded-lg transition-colors ${currentPage === page
+                      ? 'bg-blue-600 text-white'
+                      : 'border border-gray-200 hover:bg-gray-50'
+                      }`}
+                  >
+                    {page}
+                  </button>
+                ))}
+              </div>
+
+              <button
+                onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                disabled={currentPage === totalPages}
+                className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Siguiente
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          )}
         </div>
+      ) : viewMode === 'office' ? (
+        loadingDetailed ? (
+          <div className="flex items-center justify-center h-64">
+            <div className="text-gray-500">Cargando análisis detallado...</div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {/* Filtro por Campus */}
+            <div className="bg-white rounded-lg border border-gray-200 p-4">
+              <div className="flex items-center gap-2 text-sm font-medium text-gray-600 mb-3">
+                <Filter className="w-4 h-4" />
+                <span>Filtros</span>
+              </div>
+              <select
+                value={filterCampus}
+                onChange={(e) => setFilterCampus(e.target.value)}
+                className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm w-full md:w-64"
+              >
+                <option value="">Todos los campus</option>
+                {uniqueCampuses.map(campus => (
+                  <option key={campus} value={campus}>{campus}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Tabla Resumen por Oficina */}
+            {(() => {
+              const filteredByOffice = detailedResults.filter(r => 
+                !filterCampus || r.evaluatedCampus === filterCampus
+              );
+
+              const officeGroups = filteredByOffice.reduce((acc, r) => {
+                const office = r.evaluatedOffice;
+                const campus = r.evaluatedCampus;
+                const key = `${office}|${campus}`;
+                if (!acc[key]) acc[key] = { office, campus, results: [] };
+                acc[key].results.push(r);
+                return acc;
+              }, {} as Record<string, { office: string; campus: string; results: ResultWithDetails[] }>);
+
+              const officeSummary = Object.values(officeGroups).map(group => {
+                const avgScore = group.results.reduce((sum, r) => sum + (r.avgScore || 0), 0) / group.results.length;
+                return {
+                  office: group.office,
+                  campus: group.campus,
+                  count: group.results.length,
+                  avgScore: avgScore,
+                  results: group.results
+                };
+              }).sort((a, b) => b.avgScore - a.avgScore);
+
+              return (
+                <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          <th className="px-4 py-3 text-left font-medium text-gray-600">Oficina</th>
+                          <th className="px-4 py-3 text-left font-medium text-gray-600">Campus</th>
+                          <th className="px-4 py-3 text-center font-medium text-gray-600">No. Evaluaciones</th>
+                          <th className="px-4 py-3 text-center font-medium text-gray-600">Promedio Acumulado</th>
+                          <th className="px-4 py-3 text-center font-medium text-gray-600">Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {officeSummary.length === 0 ? (
+                          <tr>
+                            <td colSpan={5} className="px-4 py-8 text-center">
+                              <div className="flex flex-col items-center gap-2 text-gray-500">
+                                <AlertCircle className="w-8 h-8 text-gray-400" />
+                                <p>No hay datos disponibles</p>
+                              </div>
+                            </td>
+                          </tr>
+                        ) : (
+                          officeSummary.map((summary, idx) => (
+                            <>
+                              <tr key={`${summary.office}-${summary.campus}`} className="hover:bg-gray-50 transition-colors">
+                                <td className="px-4 py-3 font-medium text-gray-900">{summary.office}</td>
+                                <td className="px-4 py-3 text-gray-700">{summary.campus}</td>
+                                <td className="px-4 py-3 text-center text-gray-900 font-semibold">{summary.count}</td>
+                                <td className="px-4 py-3 text-center">
+                                  <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-bold ${
+                                    summary.avgScore >= 4.5 ? 'bg-green-100 text-green-700' :
+                                    summary.avgScore >= 3.5 ? 'bg-blue-100 text-blue-700' :
+                                    'bg-orange-100 text-orange-700'
+                                  }`}>
+                                    {summary.avgScore.toFixed(2)}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <div className="flex items-center justify-center">
+                                    <button
+                                      onClick={() => setExpandedOffice(expandedOffice === `${summary.office}-${summary.campus}` ? null : `${summary.office}-${summary.campus}`)}
+                                      className="flex items-center gap-1 px-3 py-1 text-blue-600 hover:bg-blue-50 rounded transition-colors text-xs font-medium"
+                                    >
+                                      <Eye className="w-4 h-4" />
+                                      {expandedOffice === `${summary.office}-${summary.campus}` ? 'Ocultar' : 'Ampliar'}
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                              
+                              {/* Expanded Details */}
+                              {expandedOffice === `${summary.office}-${summary.campus}` && (
+                                <tr>
+                                  <td colSpan={5} className="bg-slate-50 p-6">
+                                    <div className="space-y-4">
+                                      {/* Colaboradores */}
+                                      <div>
+                                        <h4 className="text-sm font-semibold text-gray-600 mb-2">Colaboradores Evaluados:</h4>
+                                        <div className="flex flex-wrap gap-2">
+                                          {Array.from(new Set(summary.results.map(r => r.evaluatedName))).map(name => (
+                                            <span key={name} className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-medium">
+                                              {name}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      </div>
+
+                                      {/* Tipos de Exámenes */}
+                                      <div>
+                                        <h4 className="text-sm font-semibold text-gray-600 mb-2">Tipos de Evaluación:</h4>
+                                        <div className="flex flex-wrap gap-2">
+                                          {Array.from(new Set(summary.results.map(r => r.templateName))).map(template => (
+                                            <span key={template} className="px-3 py-1 bg-green-50 text-green-700 rounded-full text-xs font-medium">
+                                              {template}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      </div>
+
+                                      {/* Análisis Completo */}
+                                      <div className="mt-6 border-t border-gray-200 pt-6">
+                                        <OfficeAnalysis officeName={summary.office} results={summary.results} />
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        )
+      ) : viewMode === 'campus' ? (
+        loadingDetailed ? (
+          <div className="flex items-center justify-center h-64">
+            <div className="text-gray-500">Cargando análisis detallado...</div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {/* Filtro por Tipo de Formulario */}
+            <div className="bg-white rounded-lg border border-gray-200 p-4">
+              <div className="flex items-center gap-2 text-sm font-medium text-gray-600 mb-3">
+                <Filter className="w-4 h-4" />
+                <span>Filtros</span>
+              </div>
+              <select
+                value={filterFormType}
+                onChange={(e) => setFilterFormType(e.target.value)}
+                className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm w-full md:w-64"
+              >
+                <option value="">Todos los tipos de formulario</option>
+                {uniqueFormTypes.map(type => (
+                  <option key={type} value={type}>{type}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Campus Analysis con filtro aplicado */}
+            <CampusAnalysis 
+              results={filterFormType ? detailedResults.filter(r => r.templateName === filterFormType) : detailedResults} 
+            />
+          </div>
+        )
+      ) : viewMode === 'university' ? (
+        loadingDetailed ? (
+          <div className="flex items-center justify-center h-64">
+            <div className="text-gray-500">Cargando análisis detallado...</div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {/* Filtro por Tipo de Formulario */}
+            <div className="bg-white rounded-lg border border-gray-200 p-4">
+              <div className="flex items-center gap-2 text-sm font-medium text-gray-600 mb-3">
+                <Filter className="w-4 h-4" />
+                <span>Filtros</span>
+              </div>
+              <select
+                value={filterFormType}
+                onChange={(e) => setFilterFormType(e.target.value)}
+                className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm w-full md:w-64"
+              >
+                <option value="">Todos los tipos de formulario</option>
+                {uniqueFormTypes.map(type => (
+                  <option key={type} value={type}>{type}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* University Analysis con filtro aplicado */}
+            <UniversityAnalysis 
+              results={filterFormType ? detailedResults.filter(r => r.templateName === filterFormType) : detailedResults} 
+            />
+          </div>
+        )
       ) : null}
 
-      {selectedResultForAnalysis && selectedResultForAnalysis.evaluation && (
-        <SectionAnalysis evaluation={selectedResultForAnalysis.evaluation as any} onClose={() => setSelectedResultForAnalysis(null)} />
+      {/* Analysis Modal */}
+      {selectedEvaluation && (
+        <SectionAnalysis
+          evaluation={selectedEvaluation}
+          onClose={() => setSelectedEvaluation(null)}
+        />
       )}
 
-      {results.length === 0 && (
-        <div className="text-center py-12 bg-white rounded-lg border border-gray-200">
-          <BarChart3 className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-          <p className="text-gray-500">No hay resultados disponibles</p>
+      {/* Delete Confirmation Modal */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-md w-full p-6 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                <AlertCircle className="w-6 h-6 text-red-600" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-gray-900">Confirmar eliminación</h3>
+                <p className="mt-2 text-sm text-gray-600">
+                  ¿Está seguro de que desea eliminar esta evaluación? Esta acción no se puede deshacer.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => handleDelete(deleteConfirm)}
+                className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700"
+              >
+                Eliminar
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
