@@ -81,10 +81,11 @@ export function ResultsModule() {
     try {
       setLoading(true);
 
-      // Get evaluations with basic info only
+      // Get evaluations with basic info only - FILTER BY COMPLETED STATUS ONLY
       const { data: evals, error } = await supabase
         .from('evaluations')
         .select('id, evaluator_id, evaluated_id, template_id, created_at, status')
+        .eq('status', 'completed')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -219,7 +220,7 @@ export function ResultsModule() {
         const respMap: Record<string, any> = {};
         responses.forEach((r) => { respMap[r.question_id] = r.response_value; });
 
-        // Build section summaries
+        // Build section summaries with proper weight-based averages
         const sectionsSummary: SectionSummaryRow[] = templateData.sections.map((s) => {
           const qs = templateData.questions.filter((q: any) => q.section_id === s.id);
           const qDetails = qs.map((q: any) => ({
@@ -230,61 +231,73 @@ export function ResultsModule() {
             response: respMap[q.id]
           }));
 
+          // Get only rating questions with valid responses
           const ratingQs = qDetails.filter((q) => q.type === 'rating' && q.response !== undefined && q.response !== null);
           const hasWeights = ratingQs.some((q) => Number(q.weight || 0) > 0);
           
           let avg: number | null = null;
+          let sectionWeight = 0;
+
           if (ratingQs.length > 0) {
             if (hasWeights) {
+              // Weighted average using question weights
               let ssum = 0, wsum = 0;
               ratingQs.forEach((q) => {
                 const v = Number(q.response);
                 const w = Number(q.weight || 0);
-                if (!isNaN(v)) { ssum += v * w; wsum += w; }
+                if (!isNaN(v) && w > 0) { 
+                  ssum += v * w; 
+                  wsum += w; 
+                }
               });
               avg = wsum > 0 ? Math.round((ssum / wsum) * 100) / 100 : null;
+              // Section weight = sum of question weights
+              sectionWeight = wsum;
             } else {
-              const vals = ratingQs.map((q) => Number(q.response));
-              avg = Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100;
+              // Simple arithmetic mean if no weights defined
+              const vals = ratingQs.map((q) => Number(q.response)).filter(v => !isNaN(v));
+              avg = vals.length > 0 ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100 : null;
+              // If no explicit weights, use number of questions as implicit weight
+              sectionWeight = ratingQs.length;
             }
           }
-
-          const weight = qs.length;
 
           return {
             sectionId: s.id,
             sectionName: s.name || s.title || `Sección ${s.id}`,
             avg,
-            weight,
+            weight: sectionWeight,
             questions: qDetails
           };
         });
 
-        // Normalize weights
+        // Normalize weights to percentages (for display)
         const totalWeight = sectionsSummary.reduce((sum, s) => sum + s.weight, 0);
-        if (totalWeight > 0) {
-          sectionsSummary.forEach(s => {
-            s.weight = Math.round((s.weight / totalWeight) * 100);
-          });
-        }
+        const originalWeights = sectionsSummary.map(s => s.weight); // Store original weights before normalization
+        sectionsSummary.forEach(s => {
+          s.weight = totalWeight > 0 ? Math.round((s.weight / totalWeight) * 100) : 0;
+        });
 
-        // Calculate global score
-        const allRating = sectionsSummary.flatMap((s) => s.questions.filter((q) => q.type === 'rating'));
-        const anyW = allRating.some((q) => Number(q.weight || 0) > 0);
+        // Calculate global score as weighted average of section scores
         let globalScore = 0;
-        if (allRating.length > 0) {
-          if (anyW) {
-            let ssum = 0, wsum = 0;
-            allRating.forEach((q) => {
-              const v = Number(q.response);
-              const w = Number(q.weight || 0);
-              if (!isNaN(v)) { ssum += v * w; wsum += w; }
-            });
-            globalScore = wsum > 0 ? Math.round((ssum / wsum) * 100) / 100 : 0;
-          } else {
-            const vals = allRating.map((q) => Number(q.response)).filter((v) => !isNaN(v));
-            globalScore = vals.length > 0 ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100 : 0;
-          }
+        const validSections = sectionsSummary.filter(s => s.avg !== null && s.avg !== undefined);
+        
+        if (validSections.length > 0 && totalWeight > 0) {
+          // Use original weights for calculation, normalized weights just for display
+          let ssum = 0, wsum = 0;
+          validSections.forEach((s, idx) => {
+            const sectionScore = Number(s.avg) || 0;
+            const sectionWeight = originalWeights[sectionsSummary.indexOf(s)];
+            if (!isNaN(sectionScore) && sectionWeight > 0) {
+              ssum += sectionScore * sectionWeight;
+              wsum += sectionWeight;
+            }
+          });
+          globalScore = wsum > 0 ? Math.round((ssum / wsum) * 100) / 100 : 0;
+        } else if (validSections.length > 0) {
+          // Fallback to simple average if no weights defined
+          const scores = validSections.map(s => Number(s.avg)).filter(v => !isNaN(v));
+          globalScore = scores.length > 0 ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 100) / 100 : 0;
         }
 
         return {
