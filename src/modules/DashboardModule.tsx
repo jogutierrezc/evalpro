@@ -236,8 +236,14 @@ export function DashboardModule() {
         console.log(`[Dashboard] filterByManagerRelation - Combined managed IDs:`, Array.from(managedIds));
 
         // 2) Filter by manager relationship
-        const directReports = (cands || []).filter((cand) => managedIds.has(cand.id));
-        console.log(`[Dashboard] filterByManagerRelation - Direct reports after filtering:`, directReports.length, directReports.map(c => c.full_name));
+        const directReports = (cands || []).filter((cand) => {
+          const hasMatch = managedIds.has(cand.id);
+          if (managedIds.size <= 5 && cands.length <= 10) {
+            console.log(`[Dashboard] Checking candidate ${cand.full_name} (ID: ${cand.id}): ${hasMatch ? 'MATCH' : 'NO MATCH'}`);
+          }
+          return hasMatch;
+        });
+        console.log(`[Dashboard] filterByManagerRelation - Direct reports after filtering:`, directReports.length, directReports.map(c => ({ name: c.full_name, id: c.id })));
 
         // 3) Filter by campus - UNLESS evaluator has campus = 'Todos' or 'Todas'
         const canEvaluateAllCampuses = evaluatorCampus.toLowerCase() === 'todos' ||
