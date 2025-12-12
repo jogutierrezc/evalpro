@@ -82,44 +82,27 @@ export function ResultsModule() {
       setLoading(true);
 
       // Get evaluations with basic info only - FILTER BY COMPLETED STATUS ONLY
+      // Use joins to avoid 400 error with too many IDs in .in() filter
       const { data: evals, error } = await supabase
         .from('evaluations')
-        .select('id, evaluator_id, evaluated_id, template_id, created_at, status')
+        .select(`
+          id, 
+          evaluator_id, 
+          evaluated_id, 
+          template_id, 
+          created_at, 
+          status,
+          evaluator:users!evaluator_id ( full_name, campus, office:offices ( name ) ),
+          evaluated:users!evaluated_id ( full_name, campus, office:offices ( name ) ),
+          template:evaluation_templates ( name )
+        `)
         .eq('status', 'completed')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
 
-      // Batch fetch all related users and templates
-      const userIds = new Set([
-        ...(evals || []).map(e => e.evaluator_id),
-        ...(evals || []).map(e => e.evaluated_id)
-      ]);
-
-      const templateIds = new Set((evals || []).map(e => e.template_id));
-
-      const [{ data: users }, { data: templates }] = await Promise.all([
-        supabase.from('users').select('id, full_name, office_id, campus').in('id', Array.from(userIds)),
-        supabase.from('evaluation_templates').select('id, name').in('id', Array.from(templateIds))
-      ]);
-
-      // Batch fetch offices for all users
-      const officeIds = new Set((users || []).map(u => u.office_id).filter(Boolean));
-      const { data: offices } = await supabase.from('offices').select('id, name').in('id', Array.from(officeIds));
-
-      // Create lookup maps
-      const userMap = new Map((users || []).map(u => [u.id, u]));
-      const templateMap = new Map((templates || []).map(t => [t.id, t]));
-      const officeMap = new Map((offices || []).map(o => [o.id, o]));
-
       // Transform data
       const evaluations: EvaluationListItem[] = (evals || []).map((e: any) => {
-        const evaluator = userMap.get(e.evaluator_id);
-        const evaluated = userMap.get(e.evaluated_id);
-        const template = templateMap.get(e.template_id);
-        const evaluatorOffice = evaluator?.office_id ? officeMap.get(evaluator.office_id) : null;
-        const evaluatedOffice = evaluated?.office_id ? officeMap.get(evaluated.office_id) : null;
-
         return {
           id: e.id,
           evaluator_id: e.evaluator_id,
@@ -127,13 +110,13 @@ export function ResultsModule() {
           template_id: e.template_id,
           created_at: e.created_at,
           completed: e.status === 'completed',
-          evaluator_name: evaluator?.full_name,
-          evaluated_name: evaluated?.full_name,
-          evaluator_office: evaluatorOffice?.name,
-          evaluated_office: evaluatedOffice?.name,
-          evaluator_campus: evaluator?.campus,
-          evaluated_campus: evaluated?.campus,
-          template_name: template?.name,
+          evaluator_name: e.evaluator?.full_name,
+          evaluated_name: e.evaluated?.full_name,
+          evaluator_office: e.evaluator?.office?.name,
+          evaluated_office: e.evaluated?.office?.name,
+          evaluator_campus: e.evaluator?.campus,
+          evaluated_campus: e.evaluated?.campus,
+          template_name: e.template?.name,
         };
       });
 
@@ -181,11 +164,25 @@ export function ResultsModule() {
 
       await Promise.all(templateDataPromises);
 
-      // Step 2: Load ALL responses in ONE query
-      const { data: allResponses } = await supabase
-        .from('evaluation_responses')
-        .select('*')
-        .in('evaluation_id', evaluationsToLoad.map(e => e.id));
+      // Step 2: Load ALL responses in chunks to avoid 400 error
+      const evaluationIds = evaluationsToLoad.map(e => e.id);
+      const chunks = [];
+      const chunkSize = 50;
+      for (let i = 0; i < evaluationIds.length; i += chunkSize) {
+        chunks.push(evaluationIds.slice(i, i + chunkSize));
+      }
+
+      let allResponses: any[] = [];
+      for (const chunk of chunks) {
+        const { data } = await supabase
+          .from('evaluation_responses')
+          .select('*')
+          .in('evaluation_id', chunk);
+        
+        if (data) {
+          allResponses = [...allResponses, ...data];
+        }
+      }
 
       const responseMap = new Map<string, any[]>();
       (allResponses || []).forEach(r => {
