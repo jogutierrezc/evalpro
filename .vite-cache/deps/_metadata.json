@@ -1,55 +1,61 @@
 {
-  "hash": "483f5d87",
+  "hash": "ddbe92fa",
   "configHash": "ae63f32e",
-  "lockfileHash": "064a64f4",
-  "browserHash": "e3d3988e",
+  "lockfileHash": "722a749f",
+  "browserHash": "d4c788f5",
   "optimized": {
     "react": {
       "src": "../../node_modules/react/index.js",
       "file": "react.js",
-      "fileHash": "943e2eff",
+      "fileHash": "3c64199c",
       "needsInterop": true
     },
     "react/jsx-dev-runtime": {
       "src": "../../node_modules/react/jsx-dev-runtime.js",
       "file": "react_jsx-dev-runtime.js",
-      "fileHash": "86d6156e",
+      "fileHash": "f624b7a4",
       "needsInterop": true
     },
     "react/jsx-runtime": {
       "src": "../../node_modules/react/jsx-runtime.js",
       "file": "react_jsx-runtime.js",
-      "fileHash": "b17de116",
+      "fileHash": "3ea79074",
       "needsInterop": true
+    },
+    "@google/generative-ai": {
+      "src": "../../node_modules/@google/generative-ai/dist/index.mjs",
+      "file": "@google_generative-ai.js",
+      "fileHash": "a19b22d8",
+      "needsInterop": false
     },
     "@lottiefiles/dotlottie-react": {
       "src": "../../node_modules/@lottiefiles/dotlottie-react/dist/browser/index.js",
       "file": "@lottiefiles_dotlottie-react.js",
-      "fileHash": "32bfc720",
+      "fileHash": "8a8275bd",
       "needsInterop": false
     },
     "@supabase/supabase-js": {
       "src": "../../node_modules/@supabase/supabase-js/dist/module/index.js",
       "file": "@supabase_supabase-js.js",
-      "fileHash": "f515667e",
+      "fileHash": "69078d3c",
       "needsInterop": false
     },
     "react-dom/client": {
       "src": "../../node_modules/react-dom/client.js",
       "file": "react-dom_client.js",
-      "fileHash": "2ba27762",
+      "fileHash": "67693716",
       "needsInterop": true
     },
     "recharts": {
       "src": "../../node_modules/recharts/es6/index.js",
       "file": "recharts.js",
-      "fileHash": "ab457c83",
+      "fileHash": "dfc249da",
       "needsInterop": false
     },
     "xlsx": {
       "src": "../../node_modules/xlsx/xlsx.mjs",
       "file": "xlsx.js",
-      "fileHash": "0a9aa8f3",
+      "fileHash": "4bd52676",
       "needsInterop": false
     }
   },

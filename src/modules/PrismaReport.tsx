@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { User, TrendingUp, Shield, Zap, Target, BookOpen, AlertCircle, CheckCircle, ChevronDown, ChevronUp, BarChart2, Briefcase, Brain, Layout, Users } from 'lucide-react';
+import { User, TrendingUp, Shield, Zap, Target, BookOpen, AlertCircle, CheckCircle, ChevronDown, ChevronUp, BarChart2, Briefcase, Brain, Layout, Users, Sparkles } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useEvaluationReport } from '../hooks/useEvaluationReport';
 import { PrismaBrain, AnalysisResult } from '../lib/prisma-engine';
@@ -144,6 +144,8 @@ const PrismaReport = () => {
     const { user } = useAuth();
     const { rawEvaluation, loading } = useEvaluationReport({ userId: user?.id });
     const [expandedSection, setExpandedSection] = useState<string | null>(null);
+    const [aiResults, setAiResults] = useState<AnalysisResult[] | null>(null);
+    const [isEnhancing, setIsEnhancing] = useState(false);
 
     const analysisResults = useMemo(() => {
         if (!rawEvaluation || !rawEvaluation.responses) return [];
@@ -251,11 +253,33 @@ const PrismaReport = () => {
         return results;
     }, [rawEvaluation]);
 
+    const displayResults = aiResults || analysisResults;
+
     const globalScore = useMemo(() => {
-        return analysisResults.length > 0
-            ? (analysisResults.reduce((acc, curr) => acc + curr.score, 0) / analysisResults.length).toFixed(1)
+        return displayResults.length > 0
+            ? (displayResults.reduce((acc, curr) => acc + curr.score, 0) / displayResults.length).toFixed(1)
             : "0.0";
-    }, [analysisResults]);
+    }, [displayResults]);
+
+    const handleEnhanceWithAi = async () => {
+        if (isEnhancing) return;
+        setIsEnhancing(true);
+        try {
+            // Process sequentially to avoid Rate Limits (429) on free tier
+            const enhanced = [];
+            for (const res of analysisResults) {
+                // Add a small delay between requests
+                await new Promise(resolve => setTimeout(resolve, 500));
+                const enriched = await PrismaBrain.enrichWithAi(res);
+                enhanced.push(enriched);
+            }
+            setAiResults(enhanced);
+        } catch (error) {
+            console.error("Error enhancing with AI", error);
+        } finally {
+            setIsEnhancing(false);
+        }
+    };
 
     const toggleSection = (section: string) => {
         setExpandedSection(expandedSection === section ? null : section);
@@ -279,7 +303,7 @@ const PrismaReport = () => {
         );
     }
 
-    if (!analysisResults.length) {
+    if (!displayResults.length) {
         return (
             <div className="min-h-screen bg-slate-50 flex items-center justify-center">
                 <div className="text-center max-w-md mx-auto p-6">
@@ -308,10 +332,30 @@ const PrismaReport = () => {
                                 <span>Informe de Inteligencia Conductual</span>
                             </div>
                             <h1 className="text-3xl md:text-4xl font-bold mb-2">Mi Resultado Prisma</h1>
-                            <p className="text-indigo-200 text-lg max-w-2xl">
+                            <p className="text-indigo-200 text-lg max-w-2xl mb-4">
                                 Hola {user?.full_name?.split(' ')[0]}, hemos analizado tu perfil profesional basándonos en
-                                {analysisResults.length} dimensiones clave de desempeño.
+                                {displayResults.length} dimensiones clave de desempeño.
                             </p>
+
+                            {!aiResults && (
+                                <button 
+                                    onClick={handleEnhanceWithAi}
+                                    disabled={isEnhancing}
+                                    className="inline-flex items-center px-4 py-2 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-100 border border-indigo-400/30 rounded-full text-sm font-medium transition-all disabled:opacity-50 backdrop-blur-sm"
+                                >
+                                    {isEnhancing ? (
+                                        <>
+                                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2"></div>
+                                            Analizando con IA...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Sparkles className="w-4 h-4 mr-2 text-amber-300" />
+                                            Enriquecer con IA
+                                        </>
+                                    )}
+                                </button>
+                            )}
                         </div>
 
                         <div className="flex items-center gap-4">
@@ -336,9 +380,9 @@ const PrismaReport = () => {
                                 Mapa de Competencias
                             </h3>
                             <div className="aspect-square relative">
-                                {analysisResults.length > 0 ? (
+                                {displayResults.length > 0 ? (
                                     <RadarChart
-                                        data={analysisResults}
+                                        data={displayResults}
                                     />
                                 ) : (
                                     <div className="h-48 flex items-center justify-center text-slate-400 text-sm">
@@ -365,7 +409,7 @@ const PrismaReport = () => {
                                 Top Fortalezas
                             </h3>
                             <div className="space-y-4">
-                                {analysisResults
+                                {[...displayResults]
                                     .sort((a, b) => b.score - a.score)
                                     .slice(0, 3)
                                     .map((res, idx) => (
@@ -390,7 +434,7 @@ const PrismaReport = () => {
 
                         {/* Categories List */}
                         <div className="space-y-4">
-                            {analysisResults.map((result, idx) => (
+                            {displayResults.map((result, idx) => (
                                 <div key={idx} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition-shadow">
                                     <div className="p-5">
                                         <div className="flex justify-between items-start mb-3">

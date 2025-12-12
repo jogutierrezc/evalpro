@@ -11,6 +11,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.app.json"
   },
   "dependencies": {
+    "@google/genai": "^1.33.0",
+    "@google/generative-ai": "^0.24.1",
     "@lottiefiles/dotlottie-react": "^0.17.8",
     "@supabase/supabase-js": "^2.57.4",
     "@types/xlsx": "^0.0.35",

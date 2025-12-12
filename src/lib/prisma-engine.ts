@@ -1,3 +1,5 @@
+import { GoogleGenerativeAI } from "@google/generative-ai";
+
 /**
  * 🧠 PRISMA ENGINE - Core Logic & Narrative System
  * Módulo independiente que contiene la lógica matemática y el generador de reportes.
@@ -481,5 +483,123 @@ export class PrismaBrain {
 
     static getCategories(): string[] {
         return Object.keys(PRISMA_KNOWLEDGE_BASE);
+    }
+
+    static async enrichWithAi(result: AnalysisResult): Promise<AnalysisResult> {
+        const apiKey = import.meta.env.VITE_GOOGLE_AI_KEY;
+        if (!apiKey) {
+            console.warn('Google AI API Key not found');
+            return result;
+        }
+
+        // 1. Retrieve Context from Knowledge Base
+        // Find the key in PRISMA_KNOWLEDGE_BASE that matches the result category name
+        const categoryKey = Object.keys(PRISMA_KNOWLEDGE_BASE).find(key => 
+            PRISMA_KNOWLEDGE_BASE[key].name === result.category
+        ) || 'default';
+        
+        const config = PRISMA_KNOWLEDGE_BASE[categoryKey];
+        const questionsContext = config ? config.questions.map(q => `- ${q.text} (Peso: ${q.weight})`).join('\n') : '';
+
+        try {
+            const prompt = `
+            Actúa como un consultor experto en Desarrollo Organizacional y Psicometría Laboral.
+            Tu tarea es refinar el análisis de desempeño para la competencia: "${result.category}".
+            
+            CONTEXTO DEL MODELO PRISMA (Guía de Evaluación):
+            Esta competencia evalúa los siguientes comportamientos observables:
+            ${questionsContext}
+
+            RESULTADOS DEL EVALUADO:
+            - Puntaje Obtenido: ${result.score} / 5.0
+            - Nivel de Riesgo Detectado: ${result.nivelRiesgo}
+            - Arquetipo Preliminar: ${result.arquetipo}
+            ${result.anchorFailed ? `- FALLA CRÍTICA (ANCLA ROTA) en: "${result.anchorQuestionText}". Esto indica una debilidad estructural grave.` : ''}
+            
+            INSTRUCCIONES:
+            1. Genera un "Análisis" profundo que explique POR QUÉ este puntaje es relevante considerando los comportamientos evaluados. Evita obviedades.
+            2. Propone una "Acción Sugerida" de alto impacto, práctica y realizable en el corto plazo.
+            
+            FORMATO DE RESPUESTA (JSON PURO):
+            {
+                "analisis": "Texto del análisis (máx 60 palabras)",
+                "accionSugerida": "Acción concreta (máx 25 palabras)"
+            }
+            `;
+
+            const genAI = new GoogleGenerativeAI(apiKey);
+            const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+            
+            const resultAI = await model.generateContent(prompt);
+            const response = await resultAI.response;
+            const content = response.text();
+            
+            if (content) {
+                // Clean markdown code blocks if present
+                const cleanContent = content.replace(/```json\n|\n```/g, '').trim();
+                const aiData = JSON.parse(cleanContent);
+                return {
+                    ...result,
+                    analisis: aiData.analisis || result.analisis,
+                    accionSugerida: aiData.accionSugerida || result.accionSugerida,
+                    arquetipo: `${result.arquetipo} ✨`
+                };
+            }
+        } catch (error) {
+            console.error('Error enriching with AI:', error);
+        }
+
+        return result;
+    }
+
+    static async generateExecutiveReport(stats: {
+        globalAverage: number;
+        campusStats: { name: string; avg: number }[];
+        topStrengths: { name: string; avg: number }[];
+        criticalAreas: { name: string; avg: number }[];
+        totalEvaluations: number;
+    }): Promise<string> {
+        const apiKey = import.meta.env.VITE_GOOGLE_AI_KEY;
+        if (!apiKey) return "Error: API Key no configurada.";
+
+        try {
+            const prompt = `
+            Actúa como un Director de Talento Humano presentando un informe a la Rectoría de la Universidad.
+            Analiza los siguientes datos consolidados de la evaluación de desempeño institucional (Modelo PRISMA).
+
+            DATOS GENERALES:
+            - Promedio Global Universidad: ${stats.globalAverage.toFixed(2)} / 5.0
+            - Total Evaluaciones: ${stats.totalEvaluations}
+
+            DESEMPEÑO POR CAMPUS:
+            ${stats.campusStats.map(c => `- ${c.name}: ${c.avg.toFixed(2)}`).join('\n')}
+
+            FORTALEZAS (Top Competencias):
+            ${stats.topStrengths.map(s => `- ${s.name}: ${s.avg.toFixed(2)}`).join('\n')}
+
+            ÁREAS CRÍTICAS (Oportunidades de Mejora):
+            ${stats.criticalAreas.map(s => `- ${s.name}: ${s.avg.toFixed(2)}`).join('\n')}
+
+            INSTRUCCIONES:
+            Redacta un "Resumen Ejecutivo" de 3 párrafos:
+            1. Diagnóstico General: Interpretación del promedio global y la salud organizacional.
+            2. Análisis Comparativo: Breve comentario sobre las diferencias entre campus (si las hay).
+            3. Recomendación Estratégica: Una iniciativa clave para abordar las áreas críticas basándote en las fortalezas detectadas.
+
+            Tono: Corporativo, estratégico y constructivo.
+            Formato: Markdown (usa negritas para resaltar puntos clave).
+            `;
+
+            const genAI = new GoogleGenerativeAI(apiKey);
+            const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+            const resultAI = await model.generateContent(prompt);
+            const response = await resultAI.response;
+            return response.text() || "No se pudo generar el reporte.";
+
+        } catch (error) {
+            console.error("Error generating executive report:", error);
+            return "Error al conectar con el servicio de IA.";
+        }
     }
 }

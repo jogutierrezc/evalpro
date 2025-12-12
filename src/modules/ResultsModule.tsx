@@ -16,6 +16,7 @@ interface EvaluationListItem {
   completed: boolean;
   evaluator_name?: string;
   evaluated_name?: string;
+  evaluated_role?: string;
   evaluator_office?: string;
   evaluated_office?: string;
   evaluator_campus?: string;
@@ -25,7 +26,9 @@ interface EvaluationListItem {
 
 export interface ResultWithDetails {
   id: string;
+  evaluatedId: string;
   evaluatedName: string;
+  evaluatedRole?: string;
   evaluatorName: string;
   evaluatedOffice: string;
   evaluatorOffice: string;
@@ -65,6 +68,14 @@ export function ResultsModule() {
   // Expanded office details
   const [expandedOffice, setExpandedOffice] = useState<string | null>(null);
 
+  // Helper to normalize campus
+  const normalizeCampus = (campus: string | null | undefined) => {
+    if (!campus || campus.trim() === '') return 'Bucaramanga';
+    const c = campus.toLowerCase().trim();
+    if (c === 'todos' || c === 'todas' || c === 'sin campus') return 'Bucaramanga';
+    return campus;
+  };
+
   useEffect(() => {
     loadEvaluations();
   }, [user]);
@@ -92,8 +103,8 @@ export function ResultsModule() {
           template_id, 
           created_at, 
           status,
-          evaluator:users!evaluator_id ( full_name, campus, office:offices ( name ) ),
-          evaluated:users!evaluated_id ( full_name, campus, office:offices ( name ) ),
+          evaluator:users!evaluator_id ( full_name, campus, role, office:offices ( name ) ),
+          evaluated:users!evaluated_id ( full_name, campus, role, office:offices ( name ) ),
           template:evaluation_templates ( name )
         `)
         .eq('status', 'completed')
@@ -112,10 +123,11 @@ export function ResultsModule() {
           completed: e.status === 'completed',
           evaluator_name: e.evaluator?.full_name,
           evaluated_name: e.evaluated?.full_name,
+          evaluated_role: e.evaluated?.role,
           evaluator_office: e.evaluator?.office?.name,
           evaluated_office: e.evaluated?.office?.name,
-          evaluator_campus: e.evaluator?.campus,
-          evaluated_campus: e.evaluated?.campus,
+          evaluator_campus: normalizeCampus(e.evaluator?.campus),
+          evaluated_campus: normalizeCampus(e.evaluated?.campus),
           template_name: e.template?.name,
         };
       });
@@ -198,19 +210,7 @@ export function ResultsModule() {
         const responses = responseMap.get(evalItem.id) || [];
 
         if (!templateData) {
-          return {
-            id: evalItem.id,
-            evaluatedName: evalItem.evaluated_name || 'N/A',
-            evaluatorName: evalItem.evaluator_name || 'N/A',
-            evaluatedOffice: evalItem.evaluated_office || 'N/A',
-            evaluatorOffice: evalItem.evaluator_office || 'N/A',
-            evaluatedCampus: evalItem.evaluated_campus || 'N/A',
-            evaluatorCampus: evalItem.evaluator_campus || 'N/A',
-            templateName: evalItem.template_name || 'N/A',
-            date: evalItem.created_at,
-            avgScore: 0,
-            sectionsSummary: []
-          };
+          return null; // Skip if no template data
         }
 
         // Build response map for this evaluation
@@ -297,20 +297,25 @@ export function ResultsModule() {
           globalScore = scores.length > 0 ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 100) / 100 : 0;
         }
 
+        // Filter out results with 0 score if they are considered incomplete
+        if (globalScore === 0) return null;
+
         return {
           id: evalItem.id,
+          evaluatedId: evalItem.evaluated_id,
           evaluatedName: evalItem.evaluated_name || 'N/A',
+          evaluatedRole: evalItem.evaluated_role,
           evaluatorName: evalItem.evaluator_name || 'N/A',
           evaluatedOffice: evalItem.evaluated_office || 'N/A',
           evaluatorOffice: evalItem.evaluator_office || 'N/A',
-          evaluatedCampus: evalItem.evaluated_campus || 'N/A',
-          evaluatorCampus: evalItem.evaluator_campus || 'N/A',
+          evaluatedCampus: normalizeCampus(evalItem.evaluated_campus) || 'Bucaramanga',
+          evaluatorCampus: normalizeCampus(evalItem.evaluator_campus) || 'Bucaramanga',
           templateName: evalItem.template_name || 'N/A',
           date: evalItem.created_at,
           avgScore: globalScore,
           sectionsSummary
         };
-      });
+      }).filter(Boolean) as ResultWithDetails[];
 
       setDetailedResults(detailed);
     } catch (error) {

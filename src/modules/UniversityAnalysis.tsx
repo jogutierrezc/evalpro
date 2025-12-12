@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { ResultWithDetails } from './ResultsModule';
+import { PrismaBrain } from '../lib/prisma-engine';
 import {
     Award,
     BrainCircuit,
@@ -14,7 +15,8 @@ import {
     AlertTriangle,
     ChevronDown,
     ChevronUp,
-    Filter
+    Filter,
+    Sparkles
 } from 'lucide-react';
 
 interface Props {
@@ -171,6 +173,8 @@ const MultiRadarChart = ({ data, campuses, colors }: { data: RadarDataPoint[], c
 export default function UniversityAnalysis({ results }: Props) {
     const [expandedProposals, setExpandedProposals] = useState<Record<number, boolean>>({});
     const [selectedTemplate, setSelectedTemplate] = useState<string>('all');
+    const [aiReport, setAiReport] = useState<string | null>(null);
+    const [isGeneratingAi, setIsGeneratingAi] = useState(false);
 
     const toggleProposal = (idx: number) => {
         setExpandedProposals(prev => ({
@@ -182,8 +186,8 @@ export default function UniversityAnalysis({ results }: Props) {
     const uniqueTemplates = useMemo(() => {
         const templates = new Set<string>();
         results.forEach(r => {
-            if (r.template?.name) {
-                templates.add(r.template.name);
+            if (r.templateName) {
+                templates.add(r.templateName);
             }
         });
         return Array.from(templates).sort();
@@ -193,7 +197,7 @@ export default function UniversityAnalysis({ results }: Props) {
         let validResults = results.filter(r => r.avgScore !== null && r.avgScore !== undefined);
 
         if (selectedTemplate !== 'all') {
-            validResults = validResults.filter(r => r.template?.name === selectedTemplate);
+            validResults = validResults.filter(r => r.templateName === selectedTemplate);
         }
 
         if (validResults.length === 0) return null;
@@ -215,8 +219,8 @@ export default function UniversityAnalysis({ results }: Props) {
         const allSectionNames = new Set<string>();
 
         validResults.forEach(r => {
-            const campusName = r.evaluated?.campus || 'Sin Campus';
-            const officeName = r.office?.name || 'Sin Oficina';
+            const campusName = r.evaluatedCampus || 'Bucaramanga';
+            const officeName = r.evaluatedOffice || 'Sin Oficina';
 
             if (!campusMap[campusName]) {
                 campusMap[campusName] = { name: campusName, sum: 0, count: 0, sections: {}, offices: {} };
@@ -301,19 +305,19 @@ export default function UniversityAnalysis({ results }: Props) {
         const workerScores: Record<string, { name: string, office: string, campus: string, score: number, count: number, role: string }> = {};
 
         validResults.forEach(r => {
-            if (r.evaluated?.id) {
-                if (!workerScores[r.evaluated.id]) {
-                    workerScores[r.evaluated.id] = {
-                        name: r.evaluated.full_name,
-                        office: r.office?.name || 'Sin Oficina',
-                        campus: r.evaluated.campus || 'Sin Campus',
+            if (r.evaluatedId) {
+                if (!workerScores[r.evaluatedId]) {
+                    workerScores[r.evaluatedId] = {
+                        name: r.evaluatedName,
+                        office: r.evaluatedOffice || 'Sin Oficina',
+                        campus: r.evaluatedCampus || 'Bucaramanga',
                         score: 0,
                         count: 0,
-                        role: r.evaluated.role || ''
+                        role: r.evaluatedRole || ''
                     };
                 }
-                workerScores[r.evaluated.id].score += (Number(r.avgScore) || 0);
-                workerScores[r.evaluated.id].count += 1;
+                workerScores[r.evaluatedId].score += (Number(r.avgScore) || 0);
+                workerScores[r.evaluatedId].count += 1;
             }
         });
 
@@ -599,6 +603,28 @@ export default function UniversityAnalysis({ results }: Props) {
         };
     }, [results, selectedTemplate]);
 
+    const handleGenerateReport = async () => {
+        if (!analysis || isGeneratingAi) return;
+        setIsGeneratingAi(true);
+        try {
+            // Sort sections by UniversityAvg to find strengths and weaknesses
+            const sorted = [...analysis.radarData].sort((a, b) => b.UniversityAvg - a.UniversityAvg);
+            
+            const report = await PrismaBrain.generateExecutiveReport({
+                globalAverage: analysis.globalAverage,
+                campusStats: analysis.campuses.map(c => ({ name: c.name, avg: c.avg })),
+                topStrengths: sorted.slice(0, 3).map(s => ({ name: s.sectionName, avg: s.UniversityAvg })),
+                criticalAreas: sorted.slice(-3).reverse().map(s => ({ name: s.sectionName, avg: s.UniversityAvg })),
+                totalEvaluations: results.length
+            });
+            setAiReport(report);
+        } catch (error) {
+            console.error(error);
+        } finally {
+            setIsGeneratingAi(false);
+        }
+    };
+
     if (!analysis) return <div className="p-8 text-center text-slate-500">Cargando análisis universitario...</div>;
 
     const { globalAverage, campuses, radarData, topOffices, intelligentAnalysis, hrPlan, focusedActions, strategicProposals, predictiveAnalysis, correlationMap, top10Workers, bottom10Workers } = analysis;
@@ -657,6 +683,41 @@ export default function UniversityAnalysis({ results }: Props) {
                             <span className="block text-xs text-white/60 mb-1">Oficinas Totales</span>
                             <span className="text-xl font-bold">{topOffices.length} +</span>
                         </div>
+                    </div>
+
+                    {/* AI Executive Report Section */}
+                    <div className="mt-8">
+                        {!aiReport ? (
+                            <button
+                                onClick={handleGenerateReport}
+                                disabled={isGeneratingAi}
+                                className="flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white rounded-xl font-bold shadow-lg shadow-orange-900/20 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+                            >
+                                {isGeneratingAi ? (
+                                    <>
+                                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                                        Generando Análisis Ejecutivo...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Sparkles className="w-5 h-5" />
+                                        Generar Resumen Ejecutivo con IA
+                                    </>
+                                )}
+                            </button>
+                        ) : (
+                            <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-6 text-white animate-in fade-in slide-in-from-bottom-4 duration-700">
+                                <div className="flex items-center gap-3 mb-4">
+                                    <div className="p-2 bg-amber-500/20 rounded-lg">
+                                        <Sparkles className="w-6 h-6 text-amber-400" />
+                                    </div>
+                                    <h3 className="text-xl font-bold">Resumen Ejecutivo (IA)</h3>
+                                </div>
+                                <div className="prose prose-invert max-w-none text-sm leading-relaxed text-indigo-100">
+                                    <div dangerouslySetInnerHTML={{ __html: aiReport.replace(/\n/g, '<br/>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
