@@ -10,7 +10,8 @@ import {
   X,
   BookOpen,
   BrainCircuit,
-  User
+  User,
+  Users
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -28,7 +29,8 @@ export function Layout({ children, activeModule, onModuleChange }: LayoutProps) 
     { id: 'evaluations', label: 'Evaluaciones', icon: FileText, roles: ['admin'] },
     { id: 'results', label: 'Resultados', icon: BarChart3, roles: ['admin'] },
     { id: 'reports', label: 'Informes', icon: FileText, roles: ['admin'] },
-    { id: 'self-report', label: 'Mi Resultado Prisma', icon: BrainCircuit, roles: ['admin'] }, // Temporalmente solo admin
+    { id: 'self-report', label: 'Mi Resultado Prisma', icon: BrainCircuit, roles: ['*'] },
+    { id: 'my-collaborators', label: 'Mis Colaboradores', icon: Users, roles: ['office_manager', 'admin'] },
     { id: 'admin', label: 'Administración', icon: Settings, roles: ['admin'] },
     { id: 'guide', label: 'Ayuda', icon: BookOpen, roles: ['*'] },
   ];
@@ -73,6 +75,7 @@ export function Layout({ children, activeModule, onModuleChange }: LayoutProps) 
       {/* Sidebar */}
       <aside
         className={`
+          no-print
           fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-200 transform transition-transform duration-200 ease-in-out md:translate-x-0 md:static md:inset-auto md:flex md:flex-col
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
         `}
@@ -146,7 +149,7 @@ export function Layout({ children, activeModule, onModuleChange }: LayoutProps) 
       {/* Main Content Wrapper */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Mobile Header */}
-        <header className="md:hidden bg-white border-b border-gray-200 flex items-center justify-between px-4 h-16 sticky top-0 z-30">
+        <header className="no-print md:hidden bg-white border-b border-gray-200 flex items-center justify-between px-4 h-16 sticky top-0 z-30">
           <div className="flex items-center gap-3">
             <button
               onClick={() => setSidebarOpen(true)}

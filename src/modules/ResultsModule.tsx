@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, Evaluation } from '../lib/supabase';
-import { BarChart3, Eye, Trash2, X, Search, Filter, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { BarChart3, Eye, Trash2, X, Search, Filter, AlertCircle, ChevronLeft, ChevronRight, Building2 } from 'lucide-react';
 import SectionAnalysis, { SectionSummaryRow } from './SectionAnalysis';
 import OfficeAnalysis from './OfficeAnalysis';
 import CampusAnalysis from './CampusAnalysis';
@@ -40,6 +40,16 @@ export interface ResultWithDetails {
   sectionsSummary?: SectionSummaryRow[];
 }
 
+// Helper for pagination
+const getVisiblePages = (current: number, total: number) => {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  
+  if (current <= 4) return [1, 2, 3, 4, 5, '...', total];
+  if (current >= total - 3) return [1, '...', total - 4, total - 3, total - 2, total - 1, total];
+  
+  return [1, '...', current - 1, current, current + 1, '...', total];
+};
+
 export function ResultsModule() {
   const { user } = useAuth();
   const [allEvaluations, setAllEvaluations] = useState<EvaluationListItem[]>([]);
@@ -67,6 +77,9 @@ export function ResultsModule() {
   
   // Expanded office details
   const [expandedOffice, setExpandedOffice] = useState<string | null>(null);
+  
+  // Selected Campus for detailed view
+  const [selectedCampus, setSelectedCampus] = useState<string | null>(null);
 
   // Helper to normalize campus
   const normalizeCampus = (campus: string | null | undefined) => {
@@ -85,6 +98,8 @@ export function ResultsModule() {
     if (viewMode !== 'individual' && detailedResults.length === 0) {
       loadDetailedResults();
     }
+    // Reset sub-selections when changing main view
+    setSelectedCampus(null);
   }, [viewMode]);
 
   // OPTIMIZED: Load only evaluation basics without sections/questions/responses
@@ -652,17 +667,21 @@ export function ResultsModule() {
               </button>
 
               <div className="flex gap-1">
-                {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                  <button
-                    key={page}
-                    onClick={() => setCurrentPage(page)}
-                    className={`px-3 py-2 rounded-lg transition-colors ${currentPage === page
-                      ? 'bg-blue-600 text-white'
-                      : 'border border-gray-200 hover:bg-gray-50'
-                      }`}
-                  >
-                    {page}
-                  </button>
+                {getVisiblePages(currentPage, totalPages).map((page, idx) => (
+                  typeof page === 'number' ? (
+                    <button
+                      key={page}
+                      onClick={() => setCurrentPage(page)}
+                      className={`px-3 py-2 rounded-lg transition-colors ${currentPage === page
+                        ? 'bg-blue-600 text-white'
+                        : 'border border-gray-200 hover:bg-gray-50'
+                        }`}
+                    >
+                      {page}
+                    </button>
+                  ) : (
+                    <span key={`ellipsis-${idx}`} className="px-2 py-2 text-gray-400">...</span>
+                  )
                 ))}
               </div>
 
@@ -715,7 +734,7 @@ export function ResultsModule() {
                 if (!acc[key]) acc[key] = { office, campus, results: [] };
                 acc[key].results.push(r);
                 return acc;
-              }, {} as Record<string, { office: string; campus: string; results: ResultWithDetails[] }>);
+              }, {} as Record<string, { office: string; campus: string; results: ResultWithDetails }>);
 
               const officeSummary = Object.values(officeGroups).map(group => {
                 const avgScore = group.results.reduce((sum, r) => sum + (r.avgScore || 0), 0) / group.results.length;
@@ -852,17 +871,21 @@ export function ResultsModule() {
                     </button>
 
                     <div className="flex gap-1">
-                      {Array.from({ length: officeTotalPages }, (_, i) => i + 1).map(page => (
-                        <button
-                          key={page}
-                          onClick={() => setOfficeCurrentPage(page)}
-                          className={`px-3 py-2 rounded-lg transition-colors ${officeCurrentPage === page
-                            ? 'bg-blue-600 text-white'
-                            : 'border border-gray-200 hover:bg-gray-50'
-                            }`}
-                        >
-                          {page}
-                        </button>
+                      {getVisiblePages(officeCurrentPage, officeTotalPages).map((page, idx) => (
+                        typeof page === 'number' ? (
+                          <button
+                            key={page}
+                            onClick={() => setOfficeCurrentPage(page)}
+                            className={`px-3 py-2 rounded-lg transition-colors ${officeCurrentPage === page
+                              ? 'bg-blue-600 text-white'
+                              : 'border border-gray-200 hover:bg-gray-50'
+                              }`}
+                          >
+                            {page}
+                          </button>
+                        ) : (
+                          <span key={`ellipsis-${idx}`} className="px-2 py-2 text-gray-400">...</span>
+                        )
                       ))}
                     </div>
 
@@ -916,25 +939,79 @@ export function ResultsModule() {
                 : 0;
 
               // Get unique campuses in filtered results
-              const campuses = Array.from(new Set(filteredResults.map(r => r.evaluatedCampus)));
+              const campuses = Array.from(new Set(filteredResults.map(r => r.evaluatedCampus))).sort();
 
-              return campuses.length === 0 ? (
-                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                  <p className="text-yellow-800">No hay datos disponibles para mostrar</p>
-                </div>
-              ) : (
-                <>
-                  {campuses.map(campus => (
-                    <div key={campus} className="mb-6">
-                      <h3 className="text-lg font-bold text-gray-900 mb-4">{campus}</h3>
-                      <CampusAnalysis 
-                        campusName={campus}
-                        results={filteredResults.filter(r => r.evaluatedCampus === campus)}
-                        organizationAverage={globalAvg}
-                      />
+              if (campuses.length === 0) {
+                return (
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                    <p className="text-yellow-800">No hay datos disponibles para mostrar</p>
+                  </div>
+                );
+              }
+
+              // DETAIL VIEW
+              if (selectedCampus) {
+                 return (
+                    <div className="animate-in fade-in slide-in-from-right-4 duration-300">
+                        <button 
+                            onClick={() => setSelectedCampus(null)}
+                            className="mb-6 flex items-center gap-2 text-slate-500 hover:text-slate-800 transition-colors font-medium"
+                        >
+                            <ChevronLeft className="w-5 h-5" />
+                            Volver a lista de Campus
+                        </button>
+                        
+                        <h3 className="text-2xl font-bold text-gray-900 mb-6">{selectedCampus}</h3>
+                        
+                        <CampusAnalysis 
+                            campusName={selectedCampus}
+                            results={filteredResults.filter(r => r.evaluatedCampus === selectedCampus)}
+                            organizationAverage={globalAvg}
+                        />
                     </div>
-                  ))}
-                </>
+                 );
+              }
+
+              // LIST VIEW
+              return (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {campuses.map(campus => {
+                    const campusResults = filteredResults.filter(r => r.evaluatedCampus === campus);
+                    const avg = campusResults.reduce((sum, r) => sum + (r.avgScore || 0), 0) / campusResults.length;
+                    const officesCount = new Set(campusResults.map(r => r.evaluatedOffice)).size;
+                    
+                    return (
+                        <div 
+                            key={campus}
+                            onClick={() => setSelectedCampus(campus)}
+                            className="bg-white rounded-xl p-6 shadow-sm border border-slate-200 hover:shadow-md hover:border-indigo-300 transition-all cursor-pointer group"
+                        >
+                            <div className="flex justify-between items-start mb-4">
+                                <div className="w-12 h-12 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+                                    <Building2 className="w-6 h-6" />
+                                </div>
+                                <div className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${avg >= 4.5 ? 'bg-emerald-100 text-emerald-700' : avg >= 4.0 ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'}`}>
+                                    {avg.toFixed(1)}
+                                </div>
+                            </div>
+                            
+                            <h3 className="text-lg font-bold text-slate-800 mb-1 group-hover:text-indigo-700 transition-colors">{campus}</h3>
+                            <p className="text-sm text-slate-500 mb-4">Sede Universitaria</p>
+                            
+                            <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-100">
+                                <div>
+                                    <span className="block text-xs text-slate-400 uppercase tracking-wider">Evaluaciones</span>
+                                    <span className="font-semibold text-slate-700">{campusResults.length}</span>
+                                </div>
+                                <div>
+                                    <span className="block text-xs text-slate-400 uppercase tracking-wider">Oficinas</span>
+                                    <span className="font-semibold text-slate-700">{officesCount}</span>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                  })}
+                </div>
               );
             })()}
           </div>

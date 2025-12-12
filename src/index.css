@@ -1,3 +1,37 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  
+  /* Hide sidebar and top navigation usually found in Layout */
+  /* Adjust selectors based on your Layout component structure */
+  .sidebar, .navbar, aside, nav {
+    display: none !important;
+  }
+
+  /* Ensure the main content takes full width */
+  main {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+  }
+
+  /* Ensure background colors and shadows are printed */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  
+  /* Page breaks */
+  .page-break {
+    page-break-before: always;
+  }
+  
+  .avoid-break {
+    page-break-inside: avoid;
+  }
+}

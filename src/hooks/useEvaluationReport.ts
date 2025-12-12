@@ -30,6 +30,7 @@ export function useEvaluationReport({ evaluationId, userId }: UseEvaluationRepor
                         evaluated:users!evaluated_id(full_name, role),
                         evaluator:users!evaluator_id(full_name, role),
                         template:evaluation_templates(name, type),
+                        results:evaluation_results(ai_analysis),
                         responses:evaluation_responses(
                             response_value,
                             question:evaluation_questions(
@@ -54,6 +55,7 @@ export function useEvaluationReport({ evaluationId, userId }: UseEvaluationRepor
                         created_at,
                         evaluated:users!evaluated_id(full_name, role),
                         template:evaluation_templates(name, type),
+                        results:evaluation_results(ai_analysis),
                         responses:evaluation_responses(
                             response_value,
                             question:evaluation_questions(

@@ -1,9 +1,12 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { User, TrendingUp, Shield, Zap, Target, BookOpen, AlertCircle, CheckCircle, ChevronDown, ChevronUp, BarChart2, Briefcase, Brain, Layout, Users, Sparkles } from 'lucide-react';
+import { User, TrendingUp, Shield, Zap, Target, BookOpen, AlertCircle, CheckCircle, ChevronDown, ChevronUp, BarChart2, Briefcase, Brain, Layout, Users, Sparkles, Printer } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useEvaluationReport } from '../hooks/useEvaluationReport';
 import { PrismaBrain, AnalysisResult } from '../lib/prisma-engine';
 import { supabase } from '../lib/supabase';
+import { GoogleAiReport } from '../components/GoogleAiReport';
+import { PrismaLoader } from '../components/PrismaLoader';
+import { PrintableReport } from '../components/PrintableReport';
 
 // --- RADAR CHART COMPONENT (Adapted from SectionAnalysis) ---
 const RadarChart = ({ data, size = 300, comparisonScore }: { data: AnalysisResult[]; size?: number; comparisonScore?: number }) => {
@@ -140,12 +143,37 @@ const RadarChart = ({ data, size = 300, comparisonScore }: { data: AnalysisResul
     );
 };
 
-const PrismaReport = () => {
+interface PrismaReportProps {
+    targetUserId?: string;
+    evaluationId?: string;
+    viewMode?: 'self' | 'manager';
+    targetUserName?: string;
+}
+
+const PrismaReport: React.FC<PrismaReportProps> = ({ targetUserId, evaluationId, viewMode = 'self', targetUserName }) => {
     const { user } = useAuth();
-    const { rawEvaluation, loading } = useEvaluationReport({ userId: user?.id });
-    const [expandedSection, setExpandedSection] = useState<string | null>(null);
+    const userIdToFetch = targetUserId || user?.id;
+    const { rawEvaluation, loading } = useEvaluationReport({ userId: userIdToFetch, evaluationId });
     const [aiResults, setAiResults] = useState<AnalysisResult[] | null>(null);
     const [isEnhancing, setIsEnhancing] = useState(false);
+
+    // Reset AI results when user changes
+    useEffect(() => {
+        setAiResults(null);
+    }, [userIdToFetch]);
+
+    // Load saved AI results if available
+    useEffect(() => {
+        if (rawEvaluation?.results?.[0]?.ai_analysis) {
+            try {
+                const parsed = JSON.parse(rawEvaluation.results[0].ai_analysis);
+                console.log("Loaded saved AI analysis from DB");
+                setAiResults(parsed);
+            } catch (e) {
+                console.error("Failed to parse saved AI analysis", e);
+            }
+        }
+    }, [rawEvaluation]);
 
     const analysisResults = useMemo(() => {
         if (!rawEvaluation || !rawEvaluation.responses) return [];
@@ -256,10 +284,36 @@ const PrismaReport = () => {
     const displayResults = aiResults || analysisResults;
 
     const globalScore = useMemo(() => {
+        // Calculate true global score from all rating responses to match the list view
+        // This avoids the "Average of Averages" discrepancy
+        if (rawEvaluation?.responses?.length) {
+            let total = 0;
+            let count = 0;
+            
+            rawEvaluation.responses.forEach((r: any) => {
+                // Check for question type if available
+                const qType = r.question?.question_type || r.question?.type;
+                
+                // If we have type info, only include rating/scale
+                // If we don't have type info, check if value is numeric
+                if (!qType || qType === 'rating' || qType === 'scale') {
+                    const val = parseFloat(r.response_value);
+                    if (!isNaN(val)) {
+                        total += val;
+                        count++;
+                    }
+                }
+            });
+
+            if (count > 0) {
+                return (total / count).toFixed(1);
+            }
+        }
+
         return displayResults.length > 0
             ? (displayResults.reduce((acc, curr) => acc + curr.score, 0) / displayResults.length).toFixed(1)
             : "0.0";
-    }, [displayResults]);
+    }, [displayResults, rawEvaluation]);
 
     const handleEnhanceWithAi = async () => {
         if (isEnhancing) return;
@@ -270,19 +324,58 @@ const PrismaReport = () => {
             for (const res of analysisResults) {
                 // Add a small delay between requests
                 await new Promise(resolve => setTimeout(resolve, 500));
-                const enriched = await PrismaBrain.enrichWithAi(res);
+                
+                let enriched;
+                if (viewMode === 'manager') {
+                    enriched = await PrismaBrain.enrichWithAiForManager(res, targetUserName || 'Colaborador');
+                } else {
+                    enriched = await PrismaBrain.enrichWithAi(res);
+                }
+                
                 enhanced.push(enriched);
             }
             setAiResults(enhanced);
+
+            // Save to database
+            if (rawEvaluation?.id) {
+                try {
+                    const score = enhanced.length > 0 
+                        ? (enhanced.reduce((acc: any, curr: any) => acc + curr.score, 0) / enhanced.length)
+                        : 0;
+
+                    const payload = {
+                        evaluation_id: rawEvaluation.id,
+                        ai_analysis: JSON.stringify(enhanced),
+                        overall_score: score,
+                        updated_at: new Date().toISOString()
+                    };
+
+                    const { data: existingResult } = await supabase
+                        .from('evaluation_results')
+                        .select('id')
+                        .eq('evaluation_id', rawEvaluation.id)
+                        .maybeSingle();
+
+                    if (existingResult) {
+                        await supabase
+                            .from('evaluation_results')
+                            .update(payload)
+                            .eq('id', existingResult.id);
+                    } else {
+                        await supabase
+                            .from('evaluation_results')
+                            .insert(payload);
+                    }
+                    console.log("AI Analysis saved to DB");
+                } catch (err) {
+                    console.error("Error saving AI results", err);
+                }
+            }
         } catch (error) {
             console.error("Error enhancing with AI", error);
         } finally {
             setIsEnhancing(false);
         }
-    };
-
-    const toggleSection = (section: string) => {
-        setExpandedSection(expandedSection === section ? null : section);
     };
 
     if (loading) {
@@ -316,9 +409,10 @@ const PrismaReport = () => {
     }
 
     return (
-        <div className="min-h-screen bg-slate-50 pb-20">
-            {/* Header / Hero Section */}
-            <div className="bg-indigo-900 text-white pt-12 pb-24 px-4 relative overflow-hidden">
+        <>
+            <div className="print:hidden min-h-screen bg-slate-50 pb-20">
+                {/* Header / Hero Section */}
+                <div className="bg-indigo-900 text-white pt-12 pb-24 px-4 relative overflow-hidden">
                 <div className="absolute top-0 left-0 w-full h-full opacity-10">
                     <div className="absolute top-10 left-10 w-64 h-64 bg-indigo-500 rounded-full blur-3xl"></div>
                     <div className="absolute bottom-10 right-10 w-96 h-96 bg-purple-500 rounded-full blur-3xl"></div>
@@ -329,36 +423,26 @@ const PrismaReport = () => {
                         <div>
                             <div className="inline-flex items-center gap-2 bg-indigo-800/50 px-3 py-1 rounded-full text-indigo-200 text-sm mb-4 border border-indigo-700/50">
                                 <Brain size={16} />
-                                <span>Informe de Inteligencia Conductual</span>
+                                <span>{viewMode === 'manager' ? 'Informe de Gestión de Talento' : 'Informe de Inteligencia Conductual'}</span>
                             </div>
-                            <h1 className="text-3xl md:text-4xl font-bold mb-2">Mi Resultado Prisma</h1>
+                            <h1 className="text-3xl md:text-4xl font-bold mb-2">{viewMode === 'manager' ? `Reporte: ${targetUserName}` : 'Mi Resultado Prisma'}</h1>
                             <p className="text-indigo-200 text-lg max-w-2xl mb-4">
-                                Hola {user?.full_name?.split(' ')[0]}, hemos analizado tu perfil profesional basándonos en
-                                {displayResults.length} dimensiones clave de desempeño.
+                                {viewMode === 'manager' 
+                                    ? `Análisis de desempeño y guía de coaching para ${targetUserName}.`
+                                    : `Hola ${user?.full_name?.split(' ')[0]}, hemos analizado tu perfil profesional basándonos en ${displayResults.length} dimensiones clave de desempeño.`
+                                }
                             </p>
-
-                            {!aiResults && (
-                                <button 
-                                    onClick={handleEnhanceWithAi}
-                                    disabled={isEnhancing}
-                                    className="inline-flex items-center px-4 py-2 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-100 border border-indigo-400/30 rounded-full text-sm font-medium transition-all disabled:opacity-50 backdrop-blur-sm"
-                                >
-                                    {isEnhancing ? (
-                                        <>
-                                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2"></div>
-                                            Analizando con IA...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Sparkles className="w-4 h-4 mr-2 text-amber-300" />
-                                            Enriquecer con IA
-                                        </>
-                                    )}
-                                </button>
-                            )}
                         </div>
 
                         <div className="flex items-center gap-4">
+                            <button 
+                                onClick={() => window.print()}
+                                className="no-print flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg transition-colors backdrop-blur-sm border border-white/10"
+                            >
+                                <Printer size={18} />
+                                <span className="hidden sm:inline">Imprimir</span>
+                            </button>
+
                             <div className="bg-white/10 backdrop-blur-sm p-4 rounded-xl border border-white/10 text-center min-w-[100px]">
                                 <span className="block text-3xl font-bold">{globalScore}</span>
                                 <span className="text-xs text-indigo-200 uppercase tracking-wider">Global</span>
@@ -369,20 +453,21 @@ const PrismaReport = () => {
             </div>
 
             <div className="max-w-5xl mx-auto px-4 -mt-16 relative z-20">
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div className="space-y-8">
 
-                    {/* Left Column: Radar & Core Stats */}
-                    <div className="lg:col-span-1 space-y-6">
+                    {/* Top Section: Visuals (Radar + Strengths) */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                         {/* Radar Chart Widget */}
-                        <div className="bg-white rounded-2xl shadow-xl shadow-slate-200/50 p-6 border border-slate-100">
+                        <div className="bg-white rounded-2xl shadow-xl shadow-slate-200/50 p-6 border border-slate-100 flex flex-col">
                             <h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2">
                                 <Target size={18} className="text-indigo-600" />
                                 Mapa de Competencias
                             </h3>
-                            <div className="aspect-square relative">
+                            <div className="aspect-square relative flex-1 flex items-center justify-center">
                                 {displayResults.length > 0 ? (
                                     <RadarChart
                                         data={displayResults}
+                                        size={350}
                                     />
                                 ) : (
                                     <div className="h-48 flex items-center justify-center text-slate-400 text-sm">
@@ -396,32 +481,33 @@ const PrismaReport = () => {
                                     <span className="w-2 h-2 rounded-full bg-blue-600"></span> Tu Puntaje
                                 </div>
                             </div>
-
-                            <div className="mt-4 text-xs text-slate-500 text-center leading-relaxed">
-                                Visualización radial de tus competencias clave.
-                            </div>
                         </div>
 
                         {/* Resumen de Fortalezas */}
-                        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-                            <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
+                        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col">
+                            <h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2">
                                 <Zap size={18} className="text-amber-500" />
                                 Top Fortalezas
                             </h3>
-                            <div className="space-y-4">
+                            <div className="space-y-6 flex-1">
                                 {[...displayResults]
                                     .sort((a, b) => b.score - a.score)
-                                    .slice(0, 3)
+                                    .slice(0, 5)
                                     .map((res, idx) => (
-                                        <div key={idx} className="flex items-start gap-3">
-                                            <div className="mt-1 bg-green-100 text-green-700 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0">
+                                        <div key={idx} className="flex items-center gap-4 p-3 rounded-xl hover:bg-slate-50 transition-colors">
+                                            <div className="bg-green-100 text-green-700 w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shrink-0">
                                                 {idx + 1}
                                             </div>
-                                            <div>
-                                                <h4 className="text-sm font-bold text-slate-700">{res.category}</h4>
-                                                <p className="text-xs text-slate-500 line-clamp-2">{res.arquetipo}</p>
+                                            <div className="flex-1">
+                                                <h4 className="text-base font-bold text-slate-700">{res.category}</h4>
+                                                <p className="text-xs text-slate-500">{res.arquetipo}</p>
                                             </div>
-                                            <span className="text-sm font-bold text-slate-700 ml-auto">{res.score}</span>
+                                            <div className="text-right">
+                                                <span className="text-lg font-bold text-slate-700 block">{res.score}</span>
+                                                <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden mt-1">
+                                                    <div className="h-full bg-green-500" style={{ width: `${(res.score / 5) * 100}%` }}></div>
+                                                </div>
+                                            </div>
                                         </div>
                                     ))
                                 }
@@ -429,71 +515,78 @@ const PrismaReport = () => {
                         </div>
                     </div>
 
-                    {/* Right Column: Detailed Analysis */}
-                    <div className="lg:col-span-2 space-y-6">
-
-                        {/* Categories List */}
-                        <div className="space-y-4">
-                            {displayResults.map((result, idx) => (
-                                <div key={idx} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition-shadow">
-                                    <div className="p-5">
-                                        <div className="flex justify-between items-start mb-3">
-                                            <div>
-                                                <h3 className="text-lg font-bold text-slate-800">{result.category}</h3>
-                                                <div className="flex items-center gap-2 mt-1">
-                                                    <span className={`px-2 py-0.5 rounded text-xs font-bold ${result.nivelRiesgo === 'Bajo' ? 'bg-green-100 text-green-700' :
-                                                        result.nivelRiesgo === 'Medio' ? 'bg-amber-100 text-amber-700' :
-                                                            'bg-red-100 text-red-700'
-                                                        }`}>
-                                                        Riesgo {result.nivelRiesgo}
-                                                    </span>
-                                                    <span className="text-xs text-slate-400">•</span>
-                                                    <span className="text-xs text-slate-500 font-medium">{result.arquetipo}</span>
-                                                </div>
-                                            </div>
-                                            <div className="text-right">
-                                                <span className="text-2xl font-bold text-indigo-600">{result.score}</span>
-                                                <span className="text-xs text-slate-400 block">/ 5.0</span>
-                                            </div>
-                                        </div>
-
-                                        <div className="relative h-2 bg-slate-100 rounded-full mb-4 overflow-hidden">
-                                            <div
-                                                className={`absolute top-0 left-0 h-full rounded-full transition-all duration-1000 ${result.score >= 4 ? 'bg-green-500' :
-                                                    result.score >= 3 ? 'bg-amber-500' : 'bg-red-500'
-                                                    }`}
-                                                style={{ width: `${result.percentage}%` }}
-                                            ></div>
-                                        </div>
-
-                                        <div className="grid md:grid-cols-2 gap-6 text-sm">
-                                            <div className="bg-slate-50 p-3 rounded-lg">
-                                                <h4 className="font-bold text-slate-700 mb-1 flex items-center gap-1">
-                                                    <Brain size={14} className="text-slate-400" /> Análisis
-                                                </h4>
-                                                <p className="text-slate-600 leading-relaxed text-xs">
-                                                    {result.analisis}
-                                                </p>
-                                            </div>
-                                            <div className="bg-indigo-50 p-3 rounded-lg border border-indigo-100">
-                                                <h4 className="font-bold text-indigo-800 mb-1 flex items-center gap-1">
-                                                    <Briefcase size={14} className="text-indigo-500" /> Acción Sugerida
-                                                </h4>
-                                                <p className="text-indigo-700 leading-relaxed text-xs">
-                                                    {result.accionSugerida}
-                                                </p>
-                                            </div>
-                                        </div>
-                                    </div>
+                    {/* Bottom Section: AI Results or CTA */}
+                    <div>
+                        {isEnhancing ? (
+                            <div className="bg-white rounded-2xl p-12 shadow-xl border border-slate-100">
+                                <PrismaLoader />
+                            </div>
+                        ) : aiResults ? (
+                            <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
+                                <GoogleAiReport 
+                                    results={displayResults} 
+                                    globalScore={globalScore} 
+                                    userName={user?.full_name} 
+                                />
+                                <div className="mt-8 text-center text-xs text-slate-400 border-t border-slate-200 pt-6">
+                                    <p className="flex items-center justify-center gap-2">
+                                        <Sparkles className="w-3 h-3" />
+                                        Este informe se construyó con el Motor de Prisma AI de la Universidad de Santander y Potenciado por Google Gemini.
+                                    </p>
                                 </div>
-                            ))}
+                            </div>
+                        ) : (
+                            /* Call to Action for AI Enhancement */
+                            <div className="bg-gradient-to-br from-indigo-900 to-slate-900 rounded-2xl p-12 text-white shadow-xl relative overflow-hidden flex flex-col justify-center items-center text-center">
+                                {/* Background Effects */}
+                                <div className="absolute top-0 left-0 w-full h-full opacity-20">
+                                    <div className="absolute top-10 right-10 w-64 h-64 bg-indigo-500 rounded-full blur-3xl"></div>
+                                    <div className="absolute bottom-10 left-10 w-64 h-64 bg-purple-500 rounded-full blur-3xl"></div>
+                                </div>
 
+                                <div className="relative z-10 max-w-2xl">
+                                    <div className="w-20 h-20 bg-white/10 backdrop-blur-md rounded-2xl flex items-center justify-center mx-auto mb-8 border border-white/20 shadow-lg">
+                                        <Sparkles className="w-10 h-10 text-amber-300" />
+                                    </div>
+                                    
+                                    <h3 className="text-3xl font-bold mb-4">Potenciar Reporte con Prisma AI</h3>
+                                    <p className="text-indigo-200 mb-10 text-lg leading-relaxed">
+                                        Obtén una perspectiva constructiva y personalizada de tu perfil. 
+                                        Nuestra inteligencia artificial analizará tus resultados para ofrecerte una guía de crecimiento profesional, 
+                                        identificando oportunidades de evolución de manera reflexiva y sutil.
+                                    </p>
 
-                        </div>
+                                    <button 
+                                        onClick={handleEnhanceWithAi}
+                                        disabled={isEnhancing}
+                                        className="group relative inline-flex items-center justify-center px-8 py-4 font-bold text-white transition-all duration-200 bg-indigo-600 font-pj rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-600 hover:bg-indigo-500 disabled:opacity-70 disabled:cursor-not-allowed text-lg shadow-lg shadow-indigo-900/50"
+                                    >
+                                        {isEnhancing ? (
+                                            <>
+                                                <div className="animate-spin rounded-full h-6 w-6 border-2 border-white border-t-transparent mr-3"></div>
+                                                Generando Análisis...
+                                            </>
+                                        ) : (
+                                            <>
+                                                Generar Reporte Inteligente
+                                                <div className="absolute -inset-3 rounded-xl bg-indigo-400 opacity-20 group-hover:opacity-40 blur-lg transition-opacity duration-200" />
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
-        </div>
+            </div>
+            
+            <PrintableReport 
+                userName={viewMode === 'manager' ? (targetUserName || 'Colaborador') : (user?.full_name || 'Usuario')}
+                globalScore={globalScore}
+                results={displayResults}
+            />
+        </>
     );
 };
 

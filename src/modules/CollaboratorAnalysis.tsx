@@ -1,6 +1,8 @@
 import { useEffect, useState, Fragment } from 'react';
 import { supabase, Evaluation } from '../lib/supabase';
-import { X } from 'lucide-react';
+import { X, Printer } from 'lucide-react';
+import { PrismaLoader } from '../components/PrismaLoader';
+import { PrintableReport } from '../components/PrintableReport';
 
 interface Props {
   evaluation: Evaluation;
@@ -103,15 +105,18 @@ export default function CollaboratorAnalysis({ evaluation, onClose }: Props) {
       const respMap: Record<string, any> = {};
       responsesList.forEach((r) => { respMap[r.question_id] = r.response_value; });
 
-      // If there are no raw responses, try to use stored evaluation_results as a fallback
+      // Try to use stored evaluation_results first
       let storedResult: any = null;
-      if ((responsesList || []).length === 0) {
-        try {
-          const { data: resultsData } = await supabase.from('evaluation_results').select('overall_score,category_scores').eq('evaluation_id', evaluation.id).limit(1);
-          if (resultsData && resultsData.length > 0) storedResult = resultsData[0];
-        } catch (err) {
-          console.error('Error loading stored evaluation_results fallback:', err);
-        }
+      try {
+        const { data: resultsData } = await supabase.from('evaluation_results').select('overall_score,category_scores').eq('evaluation_id', evaluation.id).limit(1);
+        if (resultsData && resultsData.length > 0) storedResult = resultsData[0];
+      } catch (err) {
+        console.error('Error loading stored evaluation_results:', err);
+      }
+
+      // If we have a stored result with category scores, use it directly to avoid recalculation
+      if (storedResult && storedResult.category_scores) {
+        // ... logic to use stored result ...
       }
 
       // load template categories if present to match stored category keys strictly
@@ -179,8 +184,8 @@ export default function CollaboratorAnalysis({ evaluation, onClose }: Props) {
         if ((list || []).some((qq) => Number(qq.weight || 0) > 0)) anyWeights = true;
       }
 
-      // If storedResult exists and no raw responses, build breakdown from stored category_scores
-      if (storedResult && (!responsesList || responsesList.length === 0)) {
+      // If storedResult exists, build breakdown from stored category_scores
+      if (storedResult && storedResult.category_scores) {
         const catObj = storedResult.category_scores || {};
 
   // derive raw weights per template category from questions (sum weights or counts)
@@ -300,9 +305,37 @@ export default function CollaboratorAnalysis({ evaluation, onClose }: Props) {
 
       const finalGlobal = Math.round(globalSum * 100) / 100;
 
+      // Save calculated results to DB if not already stored or if different
+      if (!storedResult || Math.abs((storedResult.overall_score || 0) - finalGlobal) > 0.01) {
+        try {
+          const categoryScores: Record<string, number> = {};
+          breakdownArr.forEach(b => {
+            categoryScores[b.category] = b.avg;
+          });
+
+          const payload = {
+            evaluation_id: evaluation.id,
+            overall_score: finalGlobal,
+            category_scores: categoryScores,
+            updated_at: new Date().toISOString()
+          };
+
+          const { data: existing } = await supabase.from('evaluation_results').select('id').eq('evaluation_id', evaluation.id).maybeSingle();
+          
+          if (existing) {
+            await supabase.from('evaluation_results').update(payload).eq('id', existing.id);
+          } else {
+            await supabase.from('evaluation_results').insert(payload);
+          }
+          console.log('Saved collaborator analysis to DB');
+        } catch (err) {
+          console.error('Error saving collaborator analysis', err);
+        }
+      }
+
       // include mapping details in debug info for easier troubleshooting
       const debugExtras: any = {};
-      if (storedResult && (!responsesList || responsesList.length === 0)) {
+      if (storedResult && storedResult.category_scores) {
         debugExtras.templateCategories = templateCategories || null;
         debugExtras.catQs = Object.keys(catQs || {}).slice(0, 50);
         debugExtras.rawWeightsFromQs = rawWeightsFromQs || {};
@@ -334,10 +367,17 @@ export default function CollaboratorAnalysis({ evaluation, onClose }: Props) {
     a.href = url; a.download = `collab_analysis_${evaluation.id}.csv`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
   };
 
-  if (loading) return <div className="text-center py-8">Cargando informe para colaboradores...</div>;
+  if (loading) return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40 p-4">
+      <div className="bg-white w-full max-w-3xl rounded-lg shadow-lg p-8">
+        <PrismaLoader />
+      </div>
+    </div>
+  );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black bg-opacity-40 p-2 sm:p-4">
+    <>
+    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black bg-opacity-40 p-2 sm:p-4 print:hidden">
       <div className="bg-white w-full max-w-3xl rounded-lg shadow-lg overflow-auto max-h-[95vh] p-4">
         <div className="flex items-center justify-between border-b pb-3 mb-4">
           <div>
@@ -352,6 +392,9 @@ export default function CollaboratorAnalysis({ evaluation, onClose }: Props) {
             )}
           </div>
           <div className="flex items-center gap-2">
+            <button onClick={() => window.print()} className="px-3 py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded text-sm flex items-center gap-2">
+                <Printer size={16} /> Imprimir
+            </button>
             <button onClick={exportCSV} className="px-3 py-2 bg-gray-100 rounded text-sm">Exportar CSV</button>
             <button onClick={onClose} className="p-2 rounded hover:bg-gray-100"><X className="w-5 h-5" /></button>
           </div>
@@ -456,5 +499,19 @@ export default function CollaboratorAnalysis({ evaluation, onClose }: Props) {
         </div>
       </div>
     </div>
+    
+    {/* Printable Version */}
+    <PrintableReport 
+        userName={collaborator?.full_name || 'Colaborador'}
+        globalScore={global.toFixed(2)}
+        results={breakdown.map(b => ({
+            category: b.category,
+            score: b.avg,
+            // Map impact to analysis text if needed, or leave empty
+            analisis: `Impacto en el resultado global: ${b.impacto.toFixed(2)}. Peso relativo: ${b.weightPercent}%`,
+            arquetipo: b.avg >= 4.5 ? 'Sobresaliente' : b.avg >= 3.5 ? 'Competente' : 'En Desarrollo'
+        }))}
+    />
+    </>
   );
 }

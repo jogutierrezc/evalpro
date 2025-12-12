@@ -446,15 +446,16 @@ export class PrismaBrain {
                 return kNorm.includes(qTextNorm) || qTextNorm.includes(kNorm);
             });
 
-            const score = matchedKey ? userAnswers[matchedKey] : 0;
+            if (matchedKey) {
+                const score = userAnswers[matchedKey];
+                weightedSum += score * q.weight;
+                totalWeight += q.weight;
 
-            weightedSum += score * q.weight;
-            totalWeight += q.weight;
-
-            // Detectar Ancla Rota (Umbral estricto: <= 3.0 en pregunta crítica)
-            if (q.isAnchor && score <= 3.0) {
-                anchorFailed = true;
-                anchorQuestionText = q.text;
+                // Detectar Ancla Rota (Umbral estricto: <= 3.0 en pregunta crítica)
+                if (q.isAnchor && score <= 3.0) {
+                    anchorFailed = true;
+                    anchorQuestionText = q.text;
+                }
             }
         });
 
@@ -503,27 +504,31 @@ export class PrismaBrain {
 
         try {
             const prompt = `
-            Actúa como un consultor experto en Desarrollo Organizacional y Psicometría Laboral.
-            Tu tarea es refinar el análisis de desempeño para la competencia: "${result.category}".
+            Actúa como un Mentor de Desarrollo Profesional y Coach Ejecutivo empático.
+            Tu tarea es interpretar los resultados de una autoevaluación de desempeño (Modelo PRISMA) para la competencia: "${result.category}".
             
-            CONTEXTO DEL MODELO PRISMA (Guía de Evaluación):
-            Esta competencia evalúa los siguientes comportamientos observables:
+            CONTEXTO DEL MODELO PRISMA:
+            Comportamientos evaluados:
             ${questionsContext}
 
-            RESULTADOS DEL EVALUADO:
-            - Puntaje Obtenido: ${result.score} / 5.0
-            - Nivel de Riesgo Detectado: ${result.nivelRiesgo}
-            - Arquetipo Preliminar: ${result.arquetipo}
-            ${result.anchorFailed ? `- FALLA CRÍTICA (ANCLA ROTA) en: "${result.anchorQuestionText}". Esto indica una debilidad estructural grave.` : ''}
+            RESULTADOS DEL USUARIO (Autoevaluación):
+            - Puntaje: ${result.score} / 5.0
+            - Nivel: ${result.nivelRiesgo}
+            - Arquetipo: ${result.arquetipo}
             
-            INSTRUCCIONES:
-            1. Genera un "Análisis" profundo que explique POR QUÉ este puntaje es relevante considerando los comportamientos evaluados. Evita obviedades.
-            2. Propone una "Acción Sugerida" de alto impacto, práctica y realizable en el corto plazo.
+            INSTRUCCIONES DE TONO Y ESTILO (CRÍTICO):
+            - Tono: Constructivo, reflexivo, suave y motivador. NUNCA uses un lenguaje punitivo, crítico o negativo.
+            - Enfoque: Psicología positiva. Si el puntaje es bajo, enmárcalo como una "oportunidad latente de crecimiento" o un "área por descubrir", no como una falla.
+            - Objetivo: Que el usuario sienta que este es un espejo para mejorar, no un juicio. Usa frases como "Podrías explorar...", "Te invitamos a reflexionar sobre...", "Una forma de potenciar esto es...".
+
+            TAREA:
+            1. "Reflexión": Un breve párrafo (máx 50 palabras) que invite al usuario a pensar sobre su desempeño actual en esta área de forma amable.
+            2. "Invitación a la Acción": Una sugerencia práctica y sencilla (máx 25 palabras) para empezar a fortalecer esta competencia mañana mismo.
             
-            FORMATO DE RESPUESTA (JSON PURO):
+            FORMATO JSON:
             {
-                "analisis": "Texto del análisis (máx 60 palabras)",
-                "accionSugerida": "Acción concreta (máx 25 palabras)"
+                "analisis": "Texto de la reflexión",
+                "accionSugerida": "Texto de la invitación a la acción"
             }
             `;
 
@@ -547,6 +552,70 @@ export class PrismaBrain {
             }
         } catch (error) {
             console.error('Error enriching with AI:', error);
+        }
+
+        return result;
+    }
+
+    static async enrichWithAiForManager(result: AnalysisResult, evaluatedName: string): Promise<AnalysisResult> {
+        const apiKey = import.meta.env.VITE_GOOGLE_AI_KEY;
+        if (!apiKey) return result;
+
+        const categoryKey = Object.keys(PRISMA_KNOWLEDGE_BASE).find(key => 
+            PRISMA_KNOWLEDGE_BASE[key].name === result.category
+        ) || '';
+        
+        const config = PRISMA_KNOWLEDGE_BASE[categoryKey];
+        const questionsContext = config ? config.questions.map(q => `- ${q.text} (Peso: ${q.weight})`).join('\n') : '';
+
+        try {
+            const prompt = `
+            Actúa como un Consultor Senior de Liderazgo y Gestión de Talento.
+            Tu tarea es proporcionar una guía estratégica para un LÍDER (Jefe) sobre cómo gestionar y potenciar a su colaborador: "${evaluatedName}" en la competencia: "${result.category}".
+            
+            CONTEXTO DEL MODELO PRISMA:
+            Comportamientos evaluados:
+            ${questionsContext}
+
+            RESULTADOS DEL COLABORADOR:
+            - Puntaje: ${result.score} / 5.0
+            - Nivel: ${result.nivelRiesgo}
+            - Arquetipo: ${result.arquetipo}
+            
+            INSTRUCCIONES PARA EL LÍDER:
+            - Tono: Profesional, estratégico y orientado a la acción directiva.
+            - Objetivo: Darle herramientas al jefe para que tenga una conversación de feedback efectiva y establezca un plan de desarrollo.
+
+            TAREA:
+            1. "Diagnóstico para el Líder": Explica brevemente qué significa este puntaje en términos de impacto en el equipo y el trabajo diario.
+            2. "Guía de Coaching": Sugiere una acción concreta o pregunta poderosa que el jefe puede usar en su próxima reunión 1 a 1 para desarrollar esta competencia en el colaborador.
+            
+            FORMATO JSON:
+            {
+                "analisis": "Texto del diagnóstico para el líder (máx 50 palabras)",
+                "accionSugerida": "Acción de coaching sugerida (máx 30 palabras)"
+            }
+            `;
+
+            const genAI = new GoogleGenerativeAI(apiKey);
+            const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+            
+            const resultAI = await model.generateContent(prompt);
+            const response = await resultAI.response;
+            const content = response.text();
+            
+            if (content) {
+                const cleanContent = content.replace(/```json\n|\n```/g, '').trim();
+                const aiData = JSON.parse(cleanContent);
+                return {
+                    ...result,
+                    analisis: aiData.analisis || result.analisis,
+                    accionSugerida: aiData.accionSugerida || result.accionSugerida,
+                    arquetipo: `${result.arquetipo} 👥`
+                };
+            }
+        } catch (error) {
+            console.error('Error enriching with AI for manager:', error);
         }
 
         return result;
@@ -600,6 +669,146 @@ export class PrismaBrain {
         } catch (error) {
             console.error("Error generating executive report:", error);
             return "Error al conectar con el servicio de IA.";
+        }
+    }
+
+    static async generateCampusReport(campusName: string, stats: {
+        globalScore: number;
+        organizationAverage: number;
+        strongestSection: { name: string; score: number };
+        weakestSection: { name: string; score: number };
+        officesCount: number;
+        peopleCount: number; // Approximate or actual
+    }): Promise<any> {
+        const apiKey = import.meta.env.VITE_GOOGLE_AI_KEY;
+        if (!apiKey) return null;
+
+        try {
+            const prompt = `
+            Actúa como un Evaluador Profesional de Desarrollo Organizacional y Talento Humano (Rol: Consultor Senior).
+            Genera un reporte estratégico para el Campus "${campusName}" de la Universidad.
+            
+            DATOS DEL CAMPUS:
+            - Puntaje Global: ${stats.globalScore.toFixed(2)} / 5.0
+            - Promedio Organización: ${stats.organizationAverage.toFixed(2)} / 5.0
+            - Fortaleza Principal: ${stats.strongestSection.name} (${stats.strongestSection.score.toFixed(2)})
+            - Área de Mejora: ${stats.weakestSection.name} (${stats.weakestSection.score.toFixed(2)})
+            - Alcance: ${stats.officesCount} oficinas evaluadas.
+
+            INSTRUCCIONES:
+            Genera un análisis JSON con el siguiente formato estricto.
+            El tono debe ser CONSTRUCTIVO, RESOLUTIVO y PROPOSITIVO. Enfócate en soluciones y crecimiento.
+            
+            {
+                "executiveSummary": "Resumen ejecutivo de 2-3 oraciones sobre el estado del campus.",
+                "strategicDiagnosis": "Análisis más profundo (1 párrafo) comparando con la organización y destacando la cultura.",
+                "strengths": ["Punto fuerte 1", "Punto fuerte 2", "Punto fuerte 3"],
+                "weaknesses": ["Oportunidad de mejora 1", "Oportunidad de mejora 2"],
+                "recommendations": [
+                    { "title": "Nombre Acción 1", "description": "Descripción detallada", "impact": "Impacto esperado" },
+                    { "title": "Nombre Acción 2", "description": "Descripción detallada", "impact": "Impacto esperado" },
+                    { "title": "Nombre Acción 3", "description": "Descripción detallada", "impact": "Impacto esperado" }
+                ],
+                "actionPlan": {
+                    "shortTerm": ["Acción inmediata 1", "Acción inmediata 2"],
+                    "mediumTerm": ["Acción a 6 meses 1", "Acción a 6 meses 2"],
+                    "longTerm": ["Acción a 1 año 1", "Acción a 1 año 2"]
+                }
+            }
+            
+            Responde SOLO con el JSON válido.
+            `;
+
+            const genAI = new GoogleGenerativeAI(apiKey);
+            const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+            const resultAI = await model.generateContent(prompt);
+            const response = await resultAI.response;
+            const text = response.text();
+            
+            const cleanText = text.replace(/```json\n|\n```/g, '').trim();
+            return JSON.parse(cleanText);
+
+        } catch (error) {
+            console.error("Error generating campus report:", error);
+            return null;
+        }
+    }
+
+    static async generateUniversityReport(stats: {
+        globalAverage: number;
+        campuses: { name: string; avg: number }[];
+        topOffices: { name: string; avg: number }[];
+        lowPerformingOffices: { name: string; avg: number }[];
+        topStrengths: { name: string; avg: number }[];
+        criticalAreas: { name: string; avg: number }[];
+    }): Promise<any> {
+        const apiKey = import.meta.env.VITE_GOOGLE_AI_KEY;
+        if (!apiKey) return null;
+
+        try {
+            const prompt = `
+            Actúa como un Evaluador Profesional de Desarrollo Organizacional y Talento Humano (Rol: Consultor Senior).
+            Genera un "Reporte General Avanzado" para toda la Universidad (Nivel Nacional/Multicampus).
+            
+            DATOS GENERALES:
+            - Promedio Global Universidad: ${stats.globalAverage.toFixed(2)} / 5.0
+            
+            DESEMPEÑO POR CAMPUS:
+            ${stats.campuses.map(c => `- ${c.name}: ${c.avg.toFixed(2)}`).join('\n')}
+
+            FORTALEZAS (Top Competencias):
+            ${stats.topStrengths.map(s => `- ${s.name}: ${s.avg.toFixed(2)}`).join('\n')}
+
+            ÁREAS CRÍTICAS (Oportunidades de Mejora):
+            ${stats.criticalAreas.map(s => `- ${s.name}: ${s.avg.toFixed(2)}`).join('\n')}
+
+            OFICINAS CON BAJO DESEMPEÑO (Muestra):
+            ${stats.lowPerformingOffices.map(o => `- ${o.name}: ${o.avg.toFixed(2)}`).join('\n')}
+
+            INSTRUCCIONES:
+            Genera un análisis JSON con el siguiente formato estricto.
+            El tono debe ser ESTRUCTURADO, REFLECTIVO, CONSTRUCTIVO y RESOLUTIVO.
+            Debes recomendar acciones concretas con relación a los puntajes.
+            Para las oficinas con puntajes bajos, sugiere un plan de acción específico.
+
+            {
+                "executiveSummary": "Resumen ejecutivo de alto nivel sobre la salud organizacional de la Universidad.",
+                "strategicDiagnosis": "Diagnóstico profundo analizando la disparidad entre campus y la cultura general.",
+                "strengths": ["Fortaleza clave 1", "Fortaleza clave 2", "Fortaleza clave 3"],
+                "weaknesses": ["Área crítica 1", "Área crítica 2"],
+                "recommendations": [
+                    { "title": "Estrategia 1", "description": "Descripción detallada", "impact": "Impacto esperado" },
+                    { "title": "Estrategia 2", "description": "Descripción detallada", "impact": "Impacto esperado" },
+                    { "title": "Estrategia 3", "description": "Descripción detallada", "impact": "Impacto esperado" }
+                ],
+                "lowPerformanceActionPlan": {
+                    "diagnosis": "Análisis breve de por qué estas oficinas pueden estar fallando (hipótesis basada en datos generales).",
+                    "actions": ["Acción correctiva 1", "Acción correctiva 2", "Acción correctiva 3"]
+                },
+                "actionPlan": {
+                    "shortTerm": ["Acción inmediata 1", "Acción inmediata 2"],
+                    "mediumTerm": ["Acción a 6 meses 1", "Acción a 6 meses 2"],
+                    "longTerm": ["Acción a 1 año 1", "Acción a 1 año 2"]
+                }
+            }
+            
+            Responde SOLO con el JSON válido.
+            `;
+
+            const genAI = new GoogleGenerativeAI(apiKey);
+            const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+            const resultAI = await model.generateContent(prompt);
+            const response = await resultAI.response;
+            const text = response.text();
+            
+            const cleanText = text.replace(/```json\n|\n```/g, '').trim();
+            return JSON.parse(cleanText);
+
+        } catch (error) {
+            console.error("Error generating university report:", error);
+            return null;
         }
     }
 }
