@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { createClient } from '@supabase/supabase-js';
 import { supabase, User, Office, UserRole, Role } from '../../lib/supabase';
 import { Plus, Edit2, Trash2, Search, Upload, X, ChevronLeft, ChevronRight, Users, Filter, Download, Save } from 'lucide-react';
 import * as XLSX from 'xlsx';
@@ -49,51 +50,30 @@ export function UsersManagement() {
     })();
   }, []);
 
-  // Helper that creates an auth user but preserves the current authenticated session
-  // so the creator does not get switched to the newly created account.
+  // Helper that creates an auth user using a temporary client
+  // so the current authenticated session is NOT replaced.
   const signUpPreserveCreator = async (opts: { email: string; password: string }) => {
-    const { data: currentSessionData } = await supabase.auth.getSession();
-    const previousSession = (currentSessionData as any)?.session || null;
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL ?? 'https://abchjsydqtfbwivygpet.supabase.co';
+    const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-    if (!previousSession) {
-      console.warn('[signUpPreserveCreator] No active session found - user may be logged out');
-      return await supabase.auth.signUp({ email: opts.email, password: opts.password });
+    if (!supabaseAnonKey) {
+      throw new Error('Missing VITE_SUPABASE_ANON_KEY');
     }
 
-    try {
-      // Perform signup
-      const result = await supabase.auth.signUp({ email: opts.email, password: opts.password });
+    // Create a temporary client that behaves like an incognito window
+    // It will NOT persist the session key to localStorage, thus preserving the admin's session.
+    const tempClient = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+      },
+    });
 
-      // IMMEDIATELY restore session (don't wait)
-      setTimeout(async () => {
-        try {
-          await supabase.auth.setSession({
-            access_token: previousSession.access_token,
-            refresh_token: previousSession.refresh_token,
-          } as any);
-          console.log('[signUpPreserveCreator] Session restored after signup');
-        } catch (restoreErr) {
-          console.error('[signUpPreserveCreator] Failed to restore session:', restoreErr);
-          // Force reload as last resort
-          window.location.reload();
-        }
-      }, 100); // 100ms delay
-
-      return result;
-    } catch (err) {
-      // Restore session even on error
-      if (previousSession) {
-        try {
-          await supabase.auth.setSession({
-            access_token: previousSession.access_token,
-            refresh_token: previousSession.refresh_token,
-          } as any);
-        } catch (restoreErr) {
-          console.warn('Could not restore session after signUp error:', restoreErr);
-        }
-      }
-      throw err;
-    }
+    return await tempClient.auth.signUp({
+      email: opts.email,
+      password: opts.password,
+    });
   };
 
   // Sync collaborator_offices: add new ones, remove missing ones
