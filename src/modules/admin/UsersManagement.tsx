@@ -353,9 +353,16 @@ export function UsersManagement() {
     });
 
     // Prefer candidates in the same selected office(s) when present
+    // Prefer candidates in the same selected office(s) by sorting them to the top,
+    // but DO NOT exclude others (like Vicerrectoría) who may be in central offices.
     if (formData.office_ids && formData.office_ids.length > 0) {
-      const sameOffice = candidates.filter((c) => ((c as any).office_id && formData.office_ids.includes((c as any).office_id)) || ((c as any).offices && (c as any).offices.some((o: any) => formData.office_ids.includes(o.id))));
-      if (sameOffice.length > 0) candidates = sameOffice;
+      candidates.sort((a, b) => {
+        const aIsSame = ((a as any).office_id && formData.office_ids.includes((a as any).office_id)) || ((a as any).offices && (a as any).offices.some((o: any) => formData.office_ids.includes(o.id)));
+        const bIsSame = ((b as any).office_id && formData.office_ids.includes((b as any).office_id)) || ((b as any).offices && (b as any).offices.some((o: any) => formData.office_ids.includes(o.id)));
+        if (aIsSame && !bIsSame) return -1;
+        if (!aIsSame && bIsSame) return 1;
+        return 0;
+      });
     }
 
     return candidates;

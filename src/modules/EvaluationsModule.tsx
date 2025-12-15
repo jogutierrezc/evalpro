@@ -335,11 +335,41 @@ export function EvaluationsModule({ onNavigate }: EvaluationsModuleProps) {
             officeCandidateIds = officeCandidateIds.filter(id => id !== evaluatorId);
 
             // Fetch user details for all potential candidates to filter by role
-            const allPotentialIds = Array.from(new Set([...strictCandidateIds, ...officeCandidateIds]));
             let allPotentialUsers: any[] = [];
-            if (allPotentialIds.length > 0) {
-              const { data: usersData } = await supabase.from('users').select('*').in('id', allPotentialIds);
-              allPotentialUsers = usersData || [];
+
+            // Fix: Allow broad access for high-level roles (e.g. Vicerrector evaluating Directors)
+            // This ensures they can see candidates across the entire campus, not just their office or direct reports.
+            const isBroadAccess = ['vicerrector', 'rector'].some(k => normalizeStr(canonicalRole).includes(k));
+
+            if (isBroadAccess) {
+              console.debug('[EvaluationsModule] High-level role detected, loading campus users for broad candidate search.');
+              const evaluatorCampus = (user as any).campus;
+              let query = supabase.from('users').select('*');
+
+              // If specific campus, limit to it. If 'Todas' or undefined, fetch all (assuming high-level oversight).
+              if (evaluatorCampus && evaluatorCampus !== 'Todas') {
+                query = query.eq('campus', evaluatorCampus);
+              }
+
+              const { data: broadUsers } = await query;
+              const userMap = new Map();
+              (broadUsers || []).forEach((u: any) => userMap.set(u.id, u));
+
+              // Ensure strict candidates (direct reports) are included even if different campus
+              const missingStrict = strictCandidateIds.filter(id => !userMap.has(id));
+              if (missingStrict.length > 0) {
+                const { data: extra } = await supabase.from('users').select('*').in('id', missingStrict);
+                (extra || []).forEach((u: any) => userMap.set(u.id, u));
+              }
+
+              allPotentialUsers = Array.from(userMap.values());
+            } else {
+              // Standard behavior: Restricted to Office + Direct Reports
+              const allPotentialIds = Array.from(new Set([...strictCandidateIds, ...officeCandidateIds]));
+              if (allPotentialIds.length > 0) {
+                const { data: usersData } = await supabase.from('users').select('*').in('id', allPotentialIds);
+                allPotentialUsers = usersData || [];
+              }
             }
 
             // Helper to filter users by role list
