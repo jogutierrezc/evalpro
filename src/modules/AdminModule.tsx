@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Building2, Users, FileEdit, Layers, Slash, Clock, FileText } from 'lucide-react';
+import { Building2, Users, FileEdit, Layers, Slash, Clock, FileText, AlertTriangle } from 'lucide-react';
 import { OfficesManagement } from './admin/OfficesManagement';
 import { UsersManagement } from './admin/UsersManagement';
 import { TemplatesManagement } from './admin/TemplatesManagement';
@@ -7,10 +7,11 @@ import FormTypesManagement from './admin/FormTypesManagement';
 import RolesManagement from './admin/RolesManagement';
 import EvaluationPeriodsManagement from './admin/EvaluationPeriodsManagement';
 import EvaluationsManagement from './admin/EvaluationsManagement';
+import PendingEvaluationsModule from './admin/PendingEvaluationsModule';
 
 import { ReportsManagement } from './admin/ReportsManagement';
 
-type AdminTab = 'offices' | 'users' | 'evaluations' | 'templates' | 'form_types' | 'roles' | 'periods' | 'reports';
+type AdminTab = 'offices' | 'users' | 'evaluations' | 'templates' | 'form_types' | 'roles' | 'periods' | 'reports' | 'pending';
 
 export function AdminModule() {
   const [activeTab, setActiveTab] = useState<AdminTab>('offices');
@@ -19,6 +20,7 @@ export function AdminModule() {
     { id: 'offices' as AdminTab, label: 'Oficinas', icon: Building2 },
     { id: 'users' as AdminTab, label: 'Personal', icon: Users },
     { id: 'evaluations' as AdminTab, label: 'Evaluaciones', icon: FileEdit },
+    { id: 'pending' as AdminTab, label: 'Pendientes', icon: AlertTriangle },
     { id: 'reports' as AdminTab, label: 'Informes', icon: FileText },
     { id: 'templates' as AdminTab, label: 'Formularios', icon: FileEdit },
     { id: 'form_types' as AdminTab, label: 'Tipos de Formulario', icon: Layers },
@@ -59,6 +61,7 @@ export function AdminModule() {
           {activeTab === 'offices' && <OfficesManagement />}
           {activeTab === 'users' && <UsersManagement />}
           {activeTab === 'evaluations' && <EvaluationsManagement />}
+          {activeTab === 'pending' && <PendingEvaluationsModule />}
           {activeTab === 'reports' && <ReportsManagement />}
           {/* 'collaborators' tab removed — personnel is managed via UsersManagement */}
           {activeTab === 'templates' && <TemplatesManagement />}

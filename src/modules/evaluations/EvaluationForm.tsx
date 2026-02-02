@@ -329,9 +329,10 @@ export function EvaluationForm({ evaluation, onClose }: EvaluationFormProps) {
       } else {
         alert('Progreso guardado');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving evaluation:', error);
-      alert('Error al guardar la evaluación');
+      const msg = error?.message || error?.error || (typeof error === 'string' ? error : JSON.stringify(error || {}));
+      alert('Error al guardar la evaluación: ' + (msg || 'ver consola para más detalles'));
     } finally {
       setSaving(false);
     }
