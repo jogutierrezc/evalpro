@@ -11,7 +11,8 @@ import {
   BookOpen,
   BrainCircuit,
   User,
-  Users
+  Users,
+  FileSpreadsheet
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -29,6 +30,7 @@ export function Layout({ children, activeModule, onModuleChange }: LayoutProps) 
     { id: 'evaluations', label: 'Evaluaciones', icon: FileText, roles: ['admin'] },
     { id: 'results', label: 'Resultados', icon: BarChart3, roles: ['admin'] },
     { id: 'reports', label: 'Informes', icon: FileText, roles: ['admin'] },
+    { id: 'export', label: 'Exportar', icon: FileSpreadsheet, roles: ['admin'] },
     { id: 'self-report', label: 'Mi Resultado Prisma', icon: BrainCircuit, roles: ['*'] },
     { id: 'my-collaborators', label: 'Mis Colaboradores', icon: Users, roles: ['office_manager', 'admin'] },
     { id: 'admin', label: 'Administración', icon: Settings, roles: ['admin'] },

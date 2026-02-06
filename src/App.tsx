@@ -13,6 +13,7 @@ import { UserGuideModule } from './modules/UserGuideModule';
 import { TechnicalReportViewer } from './modules/TechnicalReportViewer';
 import PrismaReport from './modules/PrismaReport';
 import { MyCollaboratorsModule } from './modules/MyCollaboratorsModule';
+import ExportModule from './modules/ExportModule';
 
 function AppContent() {
   const { loading, user } = useAuth();
@@ -58,6 +59,7 @@ function AppContent() {
       )}
       {activeModule === 'results' && <ResultsModule />}
       {activeModule === 'reports' && user.role === 'admin' && <ReportsManagement />}
+      {activeModule === 'export' && user.role === 'admin' && <ExportModule />}
       {activeModule === 'self-report' && <PrismaReport />}
       {activeModule === 'my-collaborators' && <MyCollaboratorsModule />}
       {activeModule === 'guide' && <UserGuideModule />}
