@@ -61,6 +61,8 @@ export default function ExportModule() {
   const [filterCampus, setFilterCampus] = useState('all');
   const [filterOffice, setFilterOffice] = useState('all');
   const [filterTemplate, setFilterTemplate] = useState('all');
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState('');
 
   useEffect(() => {
     loadData();
@@ -70,201 +72,228 @@ export default function ExportModule() {
     try {
       setLoading(true);
 
-      const rows: EvaluationRow[] = [];
-      const pageSize = 1000;
-      let page = 0;
-      let hasMore = true;
+      // We only load a minimal set of evaluations to populate the filter dropdowns.
+      // The full data for export will be fetched on-demand when the user clicks "Exportar".
+      const { data: evals, error } = await supabase
+        .from('evaluations')
+        .select(`
+          id,
+          template_id,
+          evaluator:users!evaluator_id ( full_name ),
+          evaluated:users!evaluated_id ( full_name, campus, office:offices ( name ) ),
+          template:evaluation_templates ( name )
+        `)
+        .eq('status', 'completed')
+        .order('created_at', { ascending: false })
+        .limit(2000); // Sufficient for populating filter lists
 
-      while (hasMore) {
-        const from = page * pageSize;
-        const to = from + pageSize - 1;
+      if (error) throw error;
 
-        const { data: evals, error } = await supabase
-          .from('evaluations')
-          .select(`
-            id,
-            evaluator_id,
-            evaluated_id,
-            template_id,
-            created_at,
-            status,
-            evaluator:users!evaluator_id ( full_name ),
-            evaluated:users!evaluated_id ( full_name, campus, role, office:offices ( name ) ),
-            template:evaluation_templates ( name )
-          `)
-          .eq('status', 'completed')
-          .order('created_at', { ascending: false })
-          .range(from, to);
-
-        if (error) throw error;
-
-        const mapped: EvaluationRow[] = (evals || []).map((e: any) => ({
+      const mapped: EvaluationRow[] = (evals || []).map((e: any) => ({
         id: e.id,
-        evaluator_id: e.evaluator_id,
-        evaluated_id: e.evaluated_id,
-        template_id: e.template_id,
-        created_at: e.created_at,
-        status: e.status,
+        evaluator_id: '',
+        evaluated_id: '',
+        template_id: e.template_id || '',
+        created_at: '',
+        status: 'completed',
         evaluator_name: e.evaluator?.full_name,
         evaluated_name: e.evaluated?.full_name,
-        evaluated_role: e.evaluated?.role,
         evaluated_office: e.evaluated?.office?.name,
         evaluated_campus: normalizeCampus(e.evaluated?.campus),
         template_name: e.template?.name,
-        }));
+      }));
 
-        rows.push(...mapped);
-        hasMore = (evals || []).length === pageSize;
-        page += 1;
-      }
-
-      setEvaluations(rows);
-
-      const uniqueTemplates = new Set(rows.map(r => r.template_id).filter(Boolean));
-      const templateMap = new Map<string, TemplateData>();
-
-      const templatePromises = Array.from(uniqueTemplates).map(async (templateId) => {
-        const [{ data: sections }, { data: questions }] = await Promise.all([
-          supabase.from('evaluation_sections').select('*').eq('template_id', templateId),
-          supabase.from('evaluation_questions').select('*').eq('template_id', templateId),
-        ]);
-
-        const orderedSections = (sections || []).sort((a: any, b: any) => {
-          const ao = Number(a.order_index ?? 0);
-          const bo = Number(b.order_index ?? 0);
-          return ao - bo;
-        });
-
-        templateMap.set(templateId, { sections: orderedSections, questions: questions || [] });
-      });
-
-      await Promise.all(templatePromises);
-      setTemplateDataMap(templateMap);
-
-      const evaluationIds = rows.map(r => r.id);
-      const chunks: string[][] = [];
-      const chunkSize = 50;
-      for (let i = 0; i < evaluationIds.length; i += chunkSize) {
-        chunks.push(evaluationIds.slice(i, i + chunkSize));
-      }
-
-      let allResponses: any[] = [];
-      for (const chunk of chunks) {
-        const { data } = await supabase
-          .from('evaluation_responses')
-          .select('*')
-          .in('evaluation_id', chunk);
-
-        if (data) {
-          allResponses = [...allResponses, ...data];
-        }
-      }
-
-      const responseMap = new Map<string, any[]>();
-      (allResponses || []).forEach(r => {
-        if (!responseMap.has(r.evaluation_id)) {
-          responseMap.set(r.evaluation_id, []);
-        }
-        responseMap.get(r.evaluation_id)!.push(r);
-      });
-
-      const detailed: EvaluationDetail[] = rows.map((evalItem) => {
-        const templateData = templateMap.get(evalItem.template_id);
-        if (!templateData) return null;
-
-        const responses = responseMap.get(evalItem.id) || [];
-        const respMap: Record<string, any> = {};
-        responses.forEach((r) => { respMap[r.question_id] = r.response_value; });
-
-        const sectionsSummary: SectionSummaryRow[] = templateData.sections.map((s) => {
-          const qs = templateData.questions.filter((q: any) => q.section_id === s.id);
-          const qDetails = qs.map((q: any) => ({
-            id: q.id,
-            type: q.question_type,
-            weight: Number(q.weight || 0),
-            response: respMap[q.id]
-          }));
-
-          const ratingQs = qDetails.filter((q) => q.type === 'rating' && q.response !== undefined && q.response !== null);
-          const hasWeights = ratingQs.some((q) => Number(q.weight || 0) > 0);
-
-          let avg: number | null = null;
-          let sectionWeight = 0;
-
-          if (ratingQs.length > 0) {
-            if (hasWeights) {
-              let ssum = 0, wsum = 0;
-              ratingQs.forEach((q) => {
-                const v = Number(q.response);
-                const w = Number(q.weight || 0);
-                if (!isNaN(v) && w > 0) {
-                  ssum += v * w;
-                  wsum += w;
-                }
-              });
-              avg = wsum > 0 ? Math.round((ssum / wsum) * 100) / 100 : null;
-              sectionWeight = wsum;
-            } else {
-              const vals = ratingQs.map((q) => Number(q.response)).filter(v => !isNaN(v));
-              avg = vals.length > 0 ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100 : null;
-              sectionWeight = ratingQs.length;
-            }
-          }
-
-          return {
-            sectionId: s.id,
-            sectionName: s.name || s.title || `Sección ${s.id}`,
-            avg,
-            weight: sectionWeight
-          };
-        });
-
-        const totalWeight = sectionsSummary.reduce((sum, s) => sum + s.weight, 0);
-        const originalWeights = sectionsSummary.map(s => s.weight);
-
-        let globalScore = 0;
-        const validSections = sectionsSummary.filter(s => s.avg !== null && s.avg !== undefined);
-
-        if (validSections.length > 0 && totalWeight > 0) {
-          let ssum = 0, wsum = 0;
-          validSections.forEach((s) => {
-            const sectionScore = Number(s.avg) || 0;
-            const sectionWeight = originalWeights[sectionsSummary.indexOf(s)];
-            if (!isNaN(sectionScore) && sectionWeight > 0) {
-              ssum += sectionScore * sectionWeight;
-              wsum += sectionWeight;
-            }
-          });
-          globalScore = wsum > 0 ? Math.round((ssum / wsum) * 100) / 100 : 0;
-        } else if (validSections.length > 0) {
-          const scores = validSections.map(s => Number(s.avg)).filter(v => !isNaN(v));
-          globalScore = scores.length > 0 ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 100) / 100 : 0;
-        }
-
-        if (globalScore === 0) return null;
-
-        return {
-          evaluationId: evalItem.id,
-          evaluatorId: evalItem.evaluator_id,
-          evaluatedId: evalItem.evaluated_id,
-          evaluatedName: evalItem.evaluated_name || 'N/A',
-          evaluatedRole: evalItem.evaluated_role || 'N/A',
-          evaluatorName: evalItem.evaluator_name || 'N/A',
-          evaluatedOffice: evalItem.evaluated_office || 'N/A',
-          evaluatedCampus: normalizeCampus(evalItem.evaluated_campus) || 'Bucaramanga',
-          templateId: evalItem.template_id,
-          templateName: evalItem.template_name || 'N/A',
-          sectionsSummary,
-          avgScore: globalScore
-        };
-      }).filter(Boolean) as EvaluationDetail[];
-
-      setDetailedResults(detailed);
+      setEvaluations(mapped);
     } catch (err) {
-      console.error('Error loading export data', err);
+      console.error('Error loading filter data', err);
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchDetailedData = async (targetCampus: string, targetOffice: string, targetTemplate: string) => {
+    const allDetailedResults: EvaluationDetail[] = [];
+    const pageSize = 1000;
+    let page = 0;
+    let hasMore = true;
+
+    while (hasMore) {
+      setExportProgress(`Buscando evaluaciones... (Página ${page + 1})`);
+      const from = page * pageSize;
+      const to = from + pageSize - 1;
+
+      let query = supabase
+        .from('evaluations')
+        .select(`
+          id,
+          evaluator_id,
+          evaluated_id,
+          template_id,
+          created_at,
+          status,
+          evaluator:users!evaluator_id ( full_name ),
+          evaluated:users!evaluated_id!inner ( full_name, campus, role, office:offices ( name ) ),
+          template:evaluation_templates!inner ( name )
+        `)
+        .eq('status', 'completed')
+        .order('created_at', { ascending: false });
+
+      if (targetCampus !== 'all') {
+        query = query.eq('evaluated.campus', targetCampus);
+      }
+      if (targetOffice !== 'all') {
+        // Since office is a nested object, we filter by office_id if we have it, or we filter in-memory if needed.
+        // However, the best way for 'all' information is to fetch and then filter if office is not easily filterable.
+        // But we can try to filter by office name via the inner join if supported or just fetch all and filter in JS.
+      }
+      if (targetTemplate !== 'all') {
+        query = query.eq('template.name', targetTemplate);
+      }
+
+      const { data: evals, error } = await query.range(from, to);
+      if (error) throw error;
+
+      if (!evals || evals.length === 0) {
+        hasMore = false;
+        break;
+      }
+
+      // Filter by office name in memory if requested
+      const filteredEvals = targetOffice === 'all' 
+        ? evals 
+        : evals.filter((e: any) => e.evaluated?.office?.name === targetOffice);
+
+      if (filteredEvals.length > 0) {
+        const evaluationIds = filteredEvals.map(e => e.id);
+        
+        // Fetch templates
+        const uniqueTemplates = new Set(filteredEvals.map((e: any) => e.template_id).filter(Boolean));
+        const tempMap = new Map<string, TemplateData>();
+        
+        setExportProgress(`Cargando plantillas para ${uniqueTemplates.size} tipos de evaluación...`);
+        for (const tid of Array.from(uniqueTemplates)) {
+          const [{ data: sections }, { data: questions }] = await Promise.all([
+            supabase.from('evaluation_sections').select('*').eq('template_id', tid),
+            supabase.from('evaluation_questions').select('*').eq('template_id', tid),
+          ]);
+          tempMap.set(tid as string, { 
+            sections: (sections || []).sort((a: any, b: any) => (a.order_index || 0) - (b.order_index || 0)), 
+            questions: questions || [] 
+          });
+        }
+
+        // Fetch responses in chunks
+        setExportProgress(`Cargando respuestas para ${evaluationIds.length} evaluaciones...`);
+        const chunkSize = 50;
+        let responsesForPage: any[] = [];
+        for (let i = 0; i < evaluationIds.length; i += chunkSize) {
+          const chunk = evaluationIds.slice(i, i + chunkSize);
+          const { data } = await supabase.from('evaluation_responses').select('*').in('evaluation_id', chunk);
+          if (data) responsesForPage = [...responsesForPage, ...data];
+        }
+
+        const respByEval = new Map<string, any[]>();
+        responsesForPage.forEach(r => {
+          if (!respByEval.has(r.evaluation_id)) respByEval.set(r.evaluation_id, []);
+          respByEval.get(r.evaluation_id)!.push(r);
+        });
+
+        // Process results
+        filteredEvals.forEach((evalItem: any) => {
+          const templateData = tempMap.get(evalItem.template_id);
+          if (!templateData) return;
+
+          const responses = respByEval.get(evalItem.id) || [];
+          const rMap: Record<string, any> = {};
+          responses.forEach((r) => { rMap[r.question_id] = r.response_value; });
+
+          const sectionsSummary: SectionSummaryRow[] = templateData.sections.map((s) => {
+            const qs = templateData.questions.filter((q: any) => q.section_id === s.id);
+            const qDetails = qs.map((q: any) => ({
+              id: q.id,
+              type: q.question_type,
+              weight: Number(q.weight || 0),
+              response: rMap[q.id]
+            }));
+
+            const ratingQs = qDetails.filter((q) => q.type === 'rating' && q.response !== undefined && q.response !== null);
+            const hasWeights = ratingQs.some((q) => Number(q.weight || 0) > 0);
+
+            let avg: number | null = null;
+            let sectionWeight = 0;
+
+            if (ratingQs.length > 0) {
+              if (hasWeights) {
+                let ssum = 0, wsum = 0;
+                ratingQs.forEach((q) => {
+                  const v = Number(q.response);
+                  const w = Number(q.weight || 0);
+                  if (!isNaN(v) && w > 0) {
+                    ssum += v * w;
+                    wsum += w;
+                  }
+                });
+                avg = wsum > 0 ? Math.round((ssum / wsum) * 100) / 100 : null;
+                sectionWeight = wsum;
+              } else {
+                const vals = ratingQs.map((q) => Number(q.response)).filter(v => !isNaN(v));
+                avg = vals.length > 0 ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100 : null;
+                sectionWeight = ratingQs.length;
+              }
+            }
+
+            return {
+              sectionId: s.id,
+              sectionName: s.name || s.title || `Sección ${s.id}`,
+              avg,
+              weight: sectionWeight
+            };
+          });
+
+          // Calculate global score
+          const totalWeight = sectionsSummary.reduce((sum, s) => sum + s.weight, 0);
+          const originalWeights = sectionsSummary.map(s => s.weight);
+          let globalScore = 0;
+          const validSections = sectionsSummary.filter(s => s.avg !== null && s.avg !== undefined);
+
+          if (validSections.length > 0 && totalWeight > 0) {
+            let ssum = 0, wsum = 0;
+            validSections.forEach((s) => {
+              const sectionScore = Number(s.avg) || 0;
+              const sectionWeight = originalWeights[sectionsSummary.indexOf(s)];
+              if (!isNaN(sectionScore) && sectionWeight > 0) {
+                ssum += sectionScore * sectionWeight;
+                wsum += sectionWeight;
+              }
+            });
+            globalScore = wsum > 0 ? Math.round((ssum / wsum) * 100) / 100 : 0;
+          } else if (validSections.length > 0) {
+            const scores = validSections.map(s => Number(s.avg)).filter(v => !isNaN(v));
+            globalScore = scores.length > 0 ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 100) / 100 : 0;
+          }
+
+          allDetailedResults.push({
+            evaluationId: evalItem.id,
+            evaluatorId: evalItem.evaluator_id,
+            evaluatedId: evalItem.evaluated_id,
+            evaluatedName: evalItem.evaluated?.full_name || 'N/A',
+            evaluatedRole: evalItem.evaluated?.role || 'N/A',
+            evaluatorName: evalItem.evaluator?.full_name || 'N/A',
+            evaluatedOffice: evalItem.evaluated?.office?.name || 'N/A',
+            evaluatedCampus: normalizeCampus(evalItem.evaluated?.campus) || 'Bucaramanga',
+            templateId: evalItem.template_id,
+            templateName: evalItem.template?.name || 'N/A',
+            sectionsSummary,
+            avgScore: globalScore
+          });
+        });
+      }
+
+      hasMore = evals.length === pageSize;
+      page += 1;
+    }
+
+    return allDetailedResults;
   };
 
   const campuses = useMemo(() => {
@@ -283,19 +312,14 @@ export default function ExportModule() {
   }, [evaluations]);
 
   const filteredDetails = useMemo(() => {
-    return detailedResults.filter(r => {
-      const matchesCampus = filterCampus === 'all' || r.evaluatedCampus === filterCampus;
-      const matchesOffice = filterOffice === 'all' || r.evaluatedOffice === filterOffice;
-      const matchesTemplate = filterTemplate === 'all' || r.templateName === filterTemplate;
-      return matchesCampus && matchesOffice && matchesTemplate;
-    });
-  }, [detailedResults, filterCampus, filterOffice, filterTemplate]);
+    // This state is now only populated during the export process.
+    return detailedResults;
+  }, [detailedResults]);
 
-  const exportIndividual = () => {
-    if (filterTemplate === 'all') return;
-    if (filteredDetails.length === 0) return;
+  const exportIndividual = (data: EvaluationDetail[]) => {
+    if (data.length === 0) return;
 
-    const templateSections = filteredDetails[0]?.sectionsSummary || [];
+    const templateSections = data[0]?.sectionsSummary || [];
     const sectionNames = templateSections.map(s => s.sectionName);
 
     const headers = [
@@ -308,7 +332,7 @@ export default function ExportModule() {
       'Evaluador'
     ];
 
-    const rows = filteredDetails.map((r) => {
+    const rows = data.map((r) => {
       const sectionMap: Record<string, number | string> = {};
       r.sectionsSummary.forEach(s => {
         sectionMap[s.sectionName] = s.avg ?? '';
@@ -333,14 +357,8 @@ export default function ExportModule() {
     XLSX.writeFile(wb, `exportar_${filterTemplate.replace(/\s+/g, '_').toLowerCase()}.xlsx`);
   };
 
-  const exportSummary = () => {
-    const filtered = detailedResults.filter(r => {
-      const matchesCampus = filterCampus === 'all' || r.evaluatedCampus === filterCampus;
-      const matchesOffice = filterOffice === 'all' || r.evaluatedOffice === filterOffice;
-      return matchesCampus && matchesOffice;
-    });
-
-    const templateNames = Array.from(new Set(filtered.map(r => r.templateName))).sort();
+  const exportSummary = (data: EvaluationDetail[]) => {
+    const templateNames = Array.from(new Set(data.map(r => r.templateName))).sort();
 
     const byUser = new Map<string, {
       name: string;
@@ -350,7 +368,7 @@ export default function ExportModule() {
       templateScores: Record<string, { sum: number; count: number }>;
     }>();
 
-    filtered.forEach((r) => {
+    data.forEach((r) => {
       if (!byUser.has(r.evaluatedId)) {
         byUser.set(r.evaluatedId, {
           name: r.evaluatedName,
@@ -406,12 +424,29 @@ export default function ExportModule() {
     XLSX.writeFile(wb, 'exportar_resumen.xlsx');
   };
 
-  const handleExport = () => {
-    if (loading) return;
-    if (filterTemplate === 'all') {
-      exportSummary();
-    } else {
-      exportIndividual();
+  const handleExport = async () => {
+    if (loading || isExporting) return;
+    
+    try {
+      setIsExporting(true);
+      const data = await fetchDetailedData(filterCampus, filterOffice, filterTemplate);
+      
+      if (data.length === 0) {
+        alert('No se encontraron evaluaciones con los filtros seleccionados.');
+        return;
+      }
+
+      if (filterTemplate === 'all') {
+        exportSummary(data);
+      } else {
+        exportIndividual(data);
+      }
+    } catch (err) {
+      console.error('Error during export', err);
+      alert('Error al generar la exportación.');
+    } finally {
+      setIsExporting(false);
+      setExportProgress('');
     }
   };
 
@@ -425,11 +460,20 @@ export default function ExportModule() {
           </div>
           <button
             onClick={handleExport}
-            disabled={loading || detailedResults.length === 0}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={loading || isExporting}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:bg-blue-700 transition-colors"
           >
-            <Download className="w-4 h-4" />
-            Exportar Excel
+            {isExporting ? (
+              <span className="flex items-center gap-2">
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                Procesando...
+              </span>
+            ) : (
+              <>
+                <Download className="w-4 h-4" />
+                Exportar Excel
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -492,9 +536,12 @@ export default function ExportModule() {
         </div>
       </div>
 
-      {loading && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 text-gray-600">
-          Cargando datos para exportación...
+      {(loading || isExporting) && (
+        <div className="bg-blue-50 rounded-xl shadow-sm border border-blue-100 p-6 flex items-center gap-4 animate-pulse">
+          <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+          <div className="text-blue-700 font-medium">
+            {isExporting ? exportProgress || 'Generando archivo...' : 'Cargando opciones de filtro...'}
+          </div>
         </div>
       )}
 
