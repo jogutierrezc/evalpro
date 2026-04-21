@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
-import { Download, Filter } from 'lucide-react';
+import { Download, Filter, ClipboardCheck } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 interface EvaluationRow {
@@ -38,6 +38,7 @@ interface EvaluationDetail {
   templateName: string;
   sectionsSummary: SectionSummaryRow[];
   avgScore: number | null;
+  status: string;
 }
 
 interface TemplateData {
@@ -83,7 +84,6 @@ export default function ExportModule() {
           evaluated:users!evaluated_id ( full_name, campus, office:offices ( name ) ),
           template:evaluation_templates ( name )
         `)
-        .eq('status', 'completed')
         .order('created_at', { ascending: false })
         .limit(2000); // Sufficient for populating filter lists
 
@@ -135,7 +135,6 @@ export default function ExportModule() {
           evaluated:users!evaluated_id!inner ( full_name, campus, role, office:offices ( name ) ),
           template:evaluation_templates!inner ( name )
         `)
-        .eq('status', 'completed')
         .order('created_at', { ascending: false });
 
       if (targetCampus !== 'all') {
@@ -197,6 +196,9 @@ export default function ExportModule() {
           if (!respByEval.has(r.evaluation_id)) respByEval.set(r.evaluation_id, []);
           respByEval.get(r.evaluation_id)!.push(r);
         });
+
+        setExportProgress(`Procesando puntuaciones para ${allDetailedResults.length + filteredEvals.length} evaluaciones...`);
+        await new Promise(r => setTimeout(r, 10)); // Yield to main thread for UI update
 
         // Process results
         filteredEvals.forEach((evalItem: any) => {
@@ -284,9 +286,13 @@ export default function ExportModule() {
             templateId: evalItem.template_id,
             templateName: evalItem.template?.name || 'N/A',
             sectionsSummary,
-            avgScore: globalScore
+            avgScore: globalScore,
+            status: evalItem.status
           });
         });
+        
+        setExportProgress(`Encontrados ${allDetailedResults.length} resultados...`);
+        await new Promise(r => setTimeout(r, 10));
       }
 
       hasMore = evals.length === pageSize;
@@ -327,6 +333,7 @@ export default function ExportModule() {
       'Oficina',
       'Campus',
       'Cargo',
+      'Estado',
       ...sectionNames,
       'Nota global',
       'Evaluador'
@@ -339,14 +346,16 @@ export default function ExportModule() {
       });
 
       const isSelf = r.evaluatorId === r.evaluatedId;
+      const statusLabel = r.status === 'completed' ? 'Completada' : r.status === 'in_progress' ? 'En progreso' : 'Pendiente';
 
       return [
         r.evaluatedName,
         r.evaluatedOffice,
         r.evaluatedCampus,
         r.evaluatedRole,
+        statusLabel,
         ...sectionNames.map((name) => sectionMap[name] ?? ''),
-        r.avgScore ?? '',
+        r.avgScore ?? 0,
         isSelf ? '' : r.evaluatorName
       ];
     });
@@ -545,9 +554,10 @@ export default function ExportModule() {
         </div>
       )}
 
-      {!loading && detailedResults.length === 0 && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 text-gray-600">
-          No hay evaluaciones completadas para exportar.
+      {!loading && evaluations.length > 0 && (
+        <div className="bg-green-50 rounded-xl shadow-sm border border-green-100 p-6 text-green-800 flex items-center gap-2">
+          <ClipboardCheck className="w-5 h-5" />
+          Se han encontrado {evaluations.length} evaluaciones disponibles para filtrar y exportar.
         </div>
       )}
     </div>
