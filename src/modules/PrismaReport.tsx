@@ -234,7 +234,9 @@ const PrismaReport: React.FC<PrismaReportProps> = ({ targetUserId, evaluationId,
                 // Find matching section in sectionScores
                 const matchingSectionKey = Object.keys(sectionScores).find(k => {
                     const kNorm = normalizeStr(k);
-                    return kNorm.includes(configName) || configName.includes(configName) ||
+                    // Match if section name contains the category name or vice versa
+                    const basicMatch = kNorm.includes(catNorm) || catNorm.includes(kNorm);
+                    return basicMatch ||
                         (catNorm === 'calidad' && kNorm.includes('calidad') && !kNorm.includes('sistema')) || // Prevent Calidad from matching SGC
                         (catNorm.includes('resultados') && kNorm.includes('resultados')) ||
                         (catNorm.includes('integridad') && kNorm.includes('integridad')) ||

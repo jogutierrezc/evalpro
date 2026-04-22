@@ -79,11 +79,16 @@ export default function ExportModule() {
         .from('evaluations')
         .select(`
           id,
+          evaluator_id,
+          evaluated_id,
           template_id,
+          created_at,
+          status,
           evaluator:users!evaluator_id ( full_name ),
           evaluated:users!evaluated_id ( full_name, campus, office:offices ( name ) ),
           template:evaluation_templates ( name )
         `)
+        .eq('status', 'completed')
         .order('created_at', { ascending: false })
         .limit(2000); // Sufficient for populating filter lists
 
@@ -91,11 +96,11 @@ export default function ExportModule() {
 
       const mapped: EvaluationRow[] = (evals || []).map((e: any) => ({
         id: e.id,
-        evaluator_id: '',
-        evaluated_id: '',
+        evaluator_id: e.evaluator_id || '',
+        evaluated_id: e.evaluated_id || '',
         template_id: e.template_id || '',
-        created_at: '',
-        status: 'completed',
+        created_at: e.created_at || '',
+        status: e.status || 'completed',
         evaluator_name: e.evaluator?.full_name,
         evaluated_name: e.evaluated?.full_name,
         evaluated_office: e.evaluated?.office?.name,
@@ -135,19 +140,11 @@ export default function ExportModule() {
           evaluated:users!evaluated_id!inner ( full_name, campus, role, office:offices ( name ) ),
           template:evaluation_templates!inner ( name )
         `)
+        .eq('status', 'completed')
         .order('created_at', { ascending: false });
 
-      if (targetCampus !== 'all') {
-        query = query.eq('evaluated.campus', targetCampus);
-      }
-      if (targetOffice !== 'all') {
-        // Since office is a nested object, we filter by office_id if we have it, or we filter in-memory if needed.
-        // However, the best way for 'all' information is to fetch and then filter if office is not easily filterable.
-        // But we can try to filter by office name via the inner join if supported or just fetch all and filter in JS.
-      }
-      if (targetTemplate !== 'all') {
-        query = query.eq('template.name', targetTemplate);
-      }
+      // NOTE: Filtering on nested join fields (e.g. evaluated.campus) does NOT work
+      // with Supabase PostgREST joins. We fetch all and filter in JS below.
 
       const { data: evals, error } = await query.range(from, to);
       if (error) throw error;
@@ -157,10 +154,17 @@ export default function ExportModule() {
         break;
       }
 
-      // Filter by office name in memory if requested
-      const filteredEvals = targetOffice === 'all' 
-        ? evals 
-        : evals.filter((e: any) => e.evaluated?.office?.name === targetOffice);
+      // Filter in JavaScript
+      let filteredEvals = evals as any[];
+      if (targetCampus !== 'all') {
+        filteredEvals = filteredEvals.filter((e: any) => normalizeCampus(e.evaluated?.campus) === targetCampus);
+      }
+      if (targetOffice !== 'all') {
+        filteredEvals = filteredEvals.filter((e: any) => e.evaluated?.office?.name === targetOffice);
+      }
+      if (targetTemplate !== 'all') {
+        filteredEvals = filteredEvals.filter((e: any) => e.template?.name === targetTemplate);
+      }
 
       if (filteredEvals.length > 0) {
         const evaluationIds = filteredEvals.map(e => e.id);

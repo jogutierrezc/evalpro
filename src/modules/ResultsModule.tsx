@@ -56,6 +56,7 @@ export function ResultsModule() {
   const [detailedResults, setDetailedResults] = useState<ResultWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingDetailed, setLoadingDetailed] = useState(false);
+  const [detailedLoaded, setDetailedLoaded] = useState(false);
   const [viewMode, setViewMode] = useState<'individual' | 'office' | 'campus' | 'university'>('individual');
   
   // Filters
@@ -93,12 +94,8 @@ export function ResultsModule() {
     loadEvaluations();
   }, [user]);
 
-  // Load detailed results when switching to aggregate views
+  // Reset sub-selections when changing main view
   useEffect(() => {
-    if (viewMode !== 'individual' && detailedResults.length === 0) {
-      loadDetailedResults();
-    }
-    // Reset sub-selections when changing main view
     setSelectedCampus(null);
   }, [viewMode]);
 
@@ -312,9 +309,6 @@ export function ResultsModule() {
           globalScore = scores.length > 0 ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 100) / 100 : 0;
         }
 
-        // Filter out results with 0 score if they are considered incomplete
-        if (globalScore === 0) return null;
-
         return {
           id: evalItem.id,
           evaluatedId: evalItem.evaluated_id,
@@ -333,6 +327,7 @@ export function ResultsModule() {
       }).filter(Boolean) as ResultWithDetails[];
 
       setDetailedResults(detailed);
+      setDetailedLoaded(true);
     } catch (error) {
       console.error('Error loading detailed results:', error);
     } finally {
@@ -701,6 +696,16 @@ export function ResultsModule() {
           <div className="flex items-center justify-center h-64">
             <div className="text-gray-500">Cargando análisis detallado...</div>
           </div>
+        ) : !detailedLoaded ? (
+          <div className="flex flex-col items-center justify-center h-64 gap-4">
+            <p className="text-gray-500 text-sm">Haga clic en el botón para cargar el análisis por oficina.</p>
+            <button
+              onClick={loadDetailedResults}
+              className="px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
+            >
+              Cargar Análisis por Oficina
+            </button>
+          </div>
         ) : (
           <div className="space-y-4">
             {/* Filtro por Campus */}
@@ -909,6 +914,16 @@ export function ResultsModule() {
           <div className="flex items-center justify-center h-64">
             <div className="text-gray-500">Cargando análisis detallado...</div>
           </div>
+        ) : !detailedLoaded ? (
+          <div className="flex flex-col items-center justify-center h-64 gap-4">
+            <p className="text-gray-500 text-sm">Haga clic en el botón para cargar el análisis por campus.</p>
+            <button
+              onClick={loadDetailedResults}
+              className="px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
+            >
+              Cargar Análisis por Campus
+            </button>
+          </div>
         ) : (
           <div className="space-y-4">
             {/* Filtro por Tipo de Formulario */}
@@ -1020,6 +1035,16 @@ export function ResultsModule() {
         loadingDetailed ? (
           <div className="flex items-center justify-center h-64">
             <div className="text-gray-500">Cargando análisis detallado...</div>
+          </div>
+        ) : !detailedLoaded ? (
+          <div className="flex flex-col items-center justify-center h-64 gap-4">
+            <p className="text-gray-500 text-sm">Haga clic en el botón para cargar la vista general.</p>
+            <button
+              onClick={loadDetailedResults}
+              className="px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
+            >
+              Cargar Vista General
+            </button>
           </div>
         ) : (
           <div className="space-y-4">
