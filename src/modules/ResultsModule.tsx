@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, Evaluation } from '../lib/supabase';
-import { BarChart3, Eye, Trash2, X, Search, Filter, AlertCircle, ChevronLeft, ChevronRight, Building2 } from 'lucide-react';
+import { BarChart3, Eye, Trash2, X, Search, Filter, AlertCircle, ChevronLeft, ChevronRight, Building2, Activity } from 'lucide-react';
 import SectionAnalysis, { SectionSummaryRow } from './SectionAnalysis';
 import OfficeAnalysis from './OfficeAnalysis';
 import CampusAnalysis from './CampusAnalysis';
