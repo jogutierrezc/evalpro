@@ -71,6 +71,8 @@ export function ResultsModule() {
   const [loading, setLoading] = useState(true);
   const [loadingDetailed, setLoadingDetailed] = useState(false);
   const [detailedLoaded, setDetailedLoaded] = useState(false);
+  const [allDataLoaded, setAllDataLoaded] = useState(false);
+  const [totalInDB, setTotalInDB] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<'individual' | 'office' | 'campus' | 'university'>('individual');
   
   // Filters
@@ -114,16 +116,24 @@ export function ResultsModule() {
   }, [viewMode]);
 
   // OPTIMIZED: Load only evaluation basics without sections/questions/responses
-  const loadEvaluations = async () => {
+  const loadEvaluations = async (fetchAll = false) => {
     try {
       setLoading(true);
+      
+      // Get total count first
+      const { count } = await supabase
+        .from('evaluations')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'completed');
+      
+      setTotalInDB(count);
 
-      // Fetch all completed evaluations bypassing the 1000 row limit
       let allEvals: any[] = [];
       let page = 0;
       const pageSize = 1000;
       let hasMore = true;
 
+      // If not fetchAll, only get the first page (Preview)
       while (hasMore) {
         const { data: evals, error } = await supabase
           .from('evaluations')
@@ -147,7 +157,7 @@ export function ResultsModule() {
         
         if (evals && evals.length > 0) {
           allEvals = [...allEvals, ...evals];
-          if (evals.length < pageSize) {
+          if (evals.length < pageSize || !fetchAll) {
             hasMore = false;
           } else {
             page++;
@@ -156,6 +166,8 @@ export function ResultsModule() {
           hasMore = false;
         }
       }
+
+      setAllDataLoaded(fetchAll || (count !== null && allEvals.length >= count));
 
       // Transform data
       const evaluations: EvaluationListItem[] = allEvals.map((e: any) => {
@@ -204,7 +216,49 @@ export function ResultsModule() {
     try {
       setLoadingDetailed(true);
       
-      const detailed: ResultWithDetails[] = allEvaluations.map((evalItem) => {
+      // If we only have preview data, fetch everything first
+      let currentData = allEvaluations;
+      if (!allDataLoaded) {
+        // We need to fetch the full dataset to have accurate aggregate analysis
+        // This is the "cargar segun la selección" part
+        await loadEvaluations(true);
+        // After loadEvaluations(true), allEvaluations will be updated via setAllEvaluations
+        // But since state updates are async, we might need a better way or just trust the next render
+        // For now, let's use a temporary variable for the full fetch
+      }
+      
+      // Re-fetch to ensure we have the absolute latest and complete list
+      const { data: fullEvals } = await supabase
+          .from('evaluations')
+          .select(`
+            id, evaluated_id, evaluator_id, template_id, created_at, status,
+            evaluator:users!evaluator_id ( full_name, campus, office:offices ( name ) ),
+            evaluated:users!evaluated_id ( full_name, campus, role, office:offices ( name ) ),
+            template:evaluation_templates ( name ),
+            results:evaluation_results ( overall_score, category_scores )
+          `)
+          .eq('status', 'completed');
+      
+      const mappedFull = (fullEvals || []).map((e: any) => {
+        const resultsData = Array.isArray(e.results) ? e.results[0] : e.results;
+        return {
+          id: e.id,
+          evaluated_id: e.evaluated_id,
+          evaluator_id: e.evaluator_id,
+          template_id: e.template_id,
+          created_at: e.created_at,
+          evaluated_name: e.evaluated?.full_name,
+          evaluator_name: e.evaluator?.full_name,
+          evaluated_office: e.evaluated?.office?.name,
+          evaluator_office: e.evaluator?.office?.name,
+          evaluated_campus: normalizeCampus(e.evaluated?.campus),
+          evaluator_campus: normalizeCampus(e.evaluator?.campus),
+          template_name: e.template?.name,
+          results: resultsData
+        };
+      });
+
+      const detailed: ResultWithDetails[] = mappedFull.map((evalItem) => {
         const res = evalItem.results || {};
         const catScores = res.category_scores || {};
         
@@ -213,7 +267,7 @@ export function ResultsModule() {
           sectionId: key,
           sectionName: key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' '),
           avg: Number(val),
-          weight: 0, // no longer needed for rendering aggregations
+          weight: 0,
           questions: []
         }));
 
@@ -223,7 +277,7 @@ export function ResultsModule() {
           id: evalItem.id,
           evaluatedId: evalItem.evaluated_id,
           evaluatedName: evalItem.evaluated_name || 'N/A',
-          evaluatedRole: evalItem.evaluated_role,
+          evaluatedRole: '',
           evaluatorName: evalItem.evaluator_name || 'N/A',
           evaluatedOffice: evalItem.evaluated_office || 'N/A',
           evaluatorOffice: evalItem.evaluator_office || 'N/A',
@@ -238,6 +292,7 @@ export function ResultsModule() {
 
       setDetailedResults(detailed);
       setDetailedLoaded(true);
+      setAllDataLoaded(true);
     } catch (error) {
       console.error('Error loading detailed results:', error);
     } finally {
