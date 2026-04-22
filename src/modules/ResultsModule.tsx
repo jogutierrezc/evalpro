@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, Evaluation } from '../lib/supabase';
-import { BarChart3, Eye, Trash2, X, Search, Filter, AlertCircle, ChevronLeft, ChevronRight, Building2 } from 'lucide-react';
+import { BarChart3, Eye, Trash2, X, Search, Filter, AlertCircle, ChevronLeft, ChevronRight, Building2, RefreshCw } from 'lucide-react';
 import SectionAnalysis, { SectionSummaryRow } from './SectionAnalysis';
 import OfficeAnalysis from './OfficeAnalysis';
 import CampusAnalysis from './CampusAnalysis';
@@ -211,17 +211,11 @@ export function ResultsModule() {
     }
   };
 
-  // Load detailed results directly from DB results with calculation fallback
   const loadDetailedResults = async () => {
     try {
       setLoadingDetailed(true);
       
-      // 1. Ensure we have all evaluations loaded
-      if (!allDataLoaded) {
-        await loadEvaluations(true);
-      }
-      
-      // Re-fetch EVERYTHING in chunks to ensure we bypass the 1000 limit
+      // 1. Get all completed evaluations (paging)
       let allEvalsFull: any[] = [];
       let page = 0;
       const pageSize = 1000;
@@ -241,14 +235,10 @@ export function ResultsModule() {
           .range(page * pageSize, (page + 1) * pageSize - 1);
 
         if (error) throw error;
-        
         if (evals && evals.length > 0) {
           allEvalsFull = [...allEvalsFull, ...evals];
-          if (evals.length < pageSize) {
-            hasMore = false;
-          } else {
-            page++;
-          }
+          hasMore = evals.length === pageSize;
+          page++;
         } else {
           hasMore = false;
         }
@@ -260,111 +250,128 @@ export function ResultsModule() {
         return;
       }
 
-      const mappedFull = allEvalsFull.map((e: any) => {
-        const resultsData = Array.isArray(e.results) ? e.results[0] : e.results;
-        return {
-          ...e,
-          results: resultsData
-        };
+      // 2. Fetch Templates (Sections & Questions) with Paging
+      const uniqueTemplateIds = Array.from(new Set(allEvalsFull.map(e => e.template_id)));
+      
+      const fetchAllRows = async (table: string, filterField: string, filterValues: any[]) => {
+        let results: any[] = [];
+        const chunkCount = 100;
+        for (let i = 0; i < filterValues.length; i += chunkCount) {
+          const chunk = filterValues.slice(i, i + chunkCount);
+          let innerPage = 0;
+          let innerHasMore = true;
+          while (innerHasMore) {
+            const { data, error } = await supabase
+              .from(table).select('*').in(filterField, chunk)
+              .range(innerPage * 1000, (innerPage + 1) * 1000 - 1);
+            if (error) throw error;
+            if (data && data.length > 0) {
+              results = [...results, ...data];
+              innerHasMore = data.length === 1000;
+              innerPage++;
+            } else { innerHasMore = false; }
+          }
+        }
+        return results;
+      };
+
+      const [sectionsList, questionsList] = await Promise.all([
+        fetchAllRows('evaluation_sections', 'template_id', uniqueTemplateIds),
+        fetchAllRows('evaluation_questions', 'template_id', uniqueTemplateIds)
+      ]);
+
+      const sectionsByTemplate = new Map<string, any[]>();
+      sectionsList.forEach(s => {
+        if (!sectionsByTemplate.has(s.template_id)) sectionsByTemplate.set(s.template_id, []);
+        sectionsByTemplate.get(s.template_id)!.push(s);
       });
 
-      // 2. Identify missing results
-      const missingResults = mappedFull.filter(e => !e.results || e.results.overall_score === undefined);
-      const calculatedMap = new Map<string, any>();
+      const questionsByTemplate = new Map<string, any[]>();
+      questionsList.forEach(q => {
+        if (!questionsByTemplate.has(q.template_id)) questionsByTemplate.set(q.template_id, []);
+        questionsByTemplate.get(q.template_id)!.push(q);
+      });
 
-      if (missingResults.length > 0) {
-        console.log(`Recalculando ${missingResults.length} evaluaciones antiguas...`);
-        
-        // Fetch necessary data for calculation
-        const missingIds = missingResults.map(e => e.id);
-        const templateIds = Array.from(new Set(missingResults.map(e => e.template_id)));
-
-        const [sections, questions] = await Promise.all([
-          supabase.from('evaluation_sections').select('*').in('template_id', templateIds),
-          supabase.from('evaluation_questions').select('*').in('template_id', templateIds)
-        ]);
-
-        // Fetch responses in chunks to avoid URL limit
-        let allResponses: any[] = [];
-        const chunkSize = 100;
-        for (let i = 0; i < missingIds.length; i += chunkSize) {
-          const chunk = missingIds.slice(i, i + chunkSize);
-          const { data } = await supabase.from('evaluation_responses').select('*').in('evaluation_id', chunk);
-          if (data) allResponses = [...allResponses, ...data];
+      // 3. Fetch Responses in batches
+      const evalIds = allEvalsFull.map(e => e.id);
+      const respByEval = new Map<string, Record<string, any>>();
+      for (let i = 0; i < evalIds.length; i += 30) {
+        const chunk = evalIds.slice(i, i + 30);
+        let respPage = 0;
+        let respHasMore = true;
+        while (respHasMore) {
+          const { data: respData, error } = await supabase
+            .from('evaluation_responses')
+            .select('evaluation_id, question_id, response_value')
+            .in('evaluation_id', chunk)
+            .range(respPage * 1000, (respPage + 1) * 1000 - 1);
+          if (error) throw error;
+          if (respData && respData.length > 0) {
+            respData.forEach(r => {
+              if (!respByEval.has(r.evaluation_id)) respByEval.set(r.evaluation_id, {});
+              respByEval.get(r.evaluation_id)![r.question_id] = r.response_value;
+            });
+            respHasMore = respData.length === 1000;
+            respPage++;
+          } else { respHasMore = false; }
         }
+      }
 
-        const sectionsList = sections.data || [];
-        const questionsList = questions.data || [];
-        const responsesByEval = new Map<string, any[]>();
-        allResponses.forEach(r => {
-          if (!responsesByEval.has(r.evaluation_id)) responsesByEval.set(r.evaluation_id, []);
-          responsesByEval.get(r.evaluation_id)!.push(r);
-        });
+      // 4. Final Mapping with Fallback
+      const normVal = (val: any): number => {
+        if (val === null || val === undefined || val === '') return 0;
+        if (typeof val === 'number') return val;
+        if (typeof val === 'string') {
+          const parsed = parseFloat(val.replace(',', '.'));
+          return isNaN(parsed) ? 0 : parsed;
+        }
+        if (typeof val === 'object') return Number(val.value || val.rating || val.score || 0);
+        return 0;
+      };
 
-        // Helper for normalization (local copy)
-        const normVal = (val: any): number => {
-          if (val === null || val === undefined || val === '') return 0;
-          if (typeof val === 'number') return val;
-          if (typeof val === 'string') {
-            const parsed = parseFloat(val.replace(',', '.'));
-            return isNaN(parsed) ? 0 : parsed;
-          }
-          if (typeof val === 'object') return Number(val.value || val.rating || val.score || 0);
-          return 0;
-        };
+      const detailed: ResultWithDetails[] = allEvalsFull.map(evalItem => {
+        const templateSections = sectionsByTemplate.get(evalItem.template_id) || [];
+        const templateQuestions = questionsByTemplate.get(evalItem.template_id) || [];
+        const responses = respByEval.get(evalItem.id) || {};
+        
+        const dbResArr = evalItem.results;
+        const dbRes = Array.isArray(dbResArr) ? dbResArr[0] : dbResArr;
+        const catScores = dbRes?.category_scores || {};
 
-        // Calculate for each missing one
-        missingResults.forEach(evalItem => {
-          const evalSections = sectionsList.filter(s => s.template_id === evalItem.template_id);
-          const evalQuestions = questionsList.filter(q => q.template_id === evalItem.template_id);
-          const evalResponses = responsesByEval.get(evalItem.id) || [];
-          const respMap: Record<string, any> = {};
-          evalResponses.forEach(r => { respMap[r.question_id] = r.response_value; });
-
-          const sectionsSummary: SectionSummaryRow[] = evalSections.map(s => {
-            const qs = evalQuestions.filter(q => q.section_id === s.id);
-            const ratingQs = qs.filter(q => q.question_type === 'rating');
+        const sectionsSummary: SectionSummaryRow[] = templateSections
+          .sort((a, b) => (a.order_index || 0) - (b.order_index || 0))
+          .map(s => {
+            const sectionQuestions = templateQuestions.filter(q => q.section_id === s.id);
+            const ratingQuestions = sectionQuestions.filter(q => q.question_type === 'rating');
             
             let avg: number | null = null;
-            if (ratingQs.length > 0) {
-              const vals = ratingQs.map(q => normVal(respMap[q.id])).filter(v => !isNaN(v));
-              avg = vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+            if (ratingQuestions.length > 0) {
+              const vals = ratingQuestions.map(q => normVal(responses[q.id])).filter(v => v > 0);
+              if (vals.length > 0) avg = vals.reduce((a, b) => a + b, 0) / vals.length;
             }
+
+            if ((avg === null || avg === 0) && Object.keys(catScores).length > 0) {
+              const dbVal = catScores[s.name] || catScores[s.title];
+              if (dbVal !== undefined && dbVal !== null) avg = Number(dbVal);
+            }
+
             return {
               sectionId: s.id,
               sectionName: s.name || s.title || `Sección ${s.id}`,
               avg: avg !== null ? Math.round(avg * 100) / 100 : null,
-              weight: ratingQs.length,
+              weight: ratingQuestions.length,
               questions: []
             };
           });
 
-          const validSections = sectionsSummary.filter(s => s.avg !== null);
-          const globalScore = validSections.length > 0 
-            ? validSections.reduce((sum, s) => sum + (s.avg || 0), 0) / validSections.length
-            : 0;
-
-          calculatedMap.set(evalItem.id, {
-            overall_score: Math.round(globalScore * 100) / 100,
-            category_scores: sectionsSummary.reduce((acc, s) => ({ ...acc, [s.sectionName]: s.avg }), {})
-          });
-        });
-      }
-
-      // 3. Final Mapping
-      const detailed: ResultWithDetails[] = mappedFull.map((evalItem) => {
-        const dbRes = evalItem.results;
-        const calcRes = calculatedMap.get(evalItem.id);
-        const res = dbRes || calcRes || {};
-        const catScores = res.category_scores || {};
+        const validSections = sectionsSummary.filter(s => s.avg !== null && s.avg > 0);
+        let globalScore = validSections.length > 0 
+          ? validSections.reduce((sum, s) => sum + (s.avg || 0), 0) / validSections.length
+          : 0;
         
-        const sectionsSummary: SectionSummaryRow[] = Object.entries(catScores).map(([key, val]) => ({
-          sectionId: key,
-          sectionName: key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' '),
-          avg: Number(val),
-          weight: 0,
-          questions: []
-        }));
+        if (globalScore === 0 && dbRes?.overall_score) {
+          globalScore = Number(dbRes.overall_score);
+        }
 
         return {
           id: evalItem.id,
@@ -378,7 +385,7 @@ export function ResultsModule() {
           evaluatorCampus: normalizeCampus(evalItem.evaluator?.campus) || 'Bucaramanga',
           templateName: evalItem.template?.name || 'N/A',
           date: evalItem.created_at,
-          avgScore: Number(res.overall_score || 0),
+          avgScore: Math.round(globalScore * 100) / 100,
           sectionsSummary
         };
       });
@@ -393,7 +400,6 @@ export function ResultsModule() {
     }
   };
 
-  // Extract unique filter values
   const uniqueOffices = useMemo(() => {
     const offices = new Set(allEvaluations.map(e => e.evaluated_office).filter(Boolean));
     return Array.from(offices).sort();
@@ -502,7 +508,8 @@ export function ResultsModule() {
       </div>
 
       {user?.role !== 'employee' && (
-        <div className="mb-6 flex gap-2">
+        <div className="mb-6 flex items-center justify-between">
+          <div className="flex gap-2">
           <button
             onClick={() => {
               setViewMode('individual');
@@ -547,7 +554,22 @@ export function ResultsModule() {
             </>
           )}
         </div>
-      )}
+        
+        <div className="flex items-center gap-2">
+          {detailedLoaded && (
+            <button
+              onClick={loadDetailedResults}
+              disabled={loadingDetailed}
+              className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 text-slate-600 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors shadow-sm disabled:opacity-50"
+              title="Vuelve a cruzar todos los datos de la base de datos"
+            >
+              <RefreshCw className={`w-4 h-4 ${loadingDetailed ? 'animate-spin' : ''}`} />
+              Recalcular Analítica
+            </button>
+          )}
+        </div>
+      </div>
+    )}
 
       {viewMode === 'individual' || user?.role === 'employee' ? (
         <div className="space-y-4">

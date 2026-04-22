@@ -116,9 +116,139 @@ export default function ExportModule() {
     }
   };
 
+
   const fetchDetailedData = async (targetCampus: string, targetOffice: string, targetTemplate: string) => {
     const allDetailedResults: EvaluationDetail[] = [];
+    const pageSize = 1000;
+    let page = 0;
+    let hasMore = true;
+    let allFilteredEvals: any[] = [];
 
+    // 1. Fetch Evaluations (with Paging and results fallback)
+    while (hasMore) {
+      setExportProgress(`Buscando evaluaciones... (Página ${page + 1})`);
+      const from = page * pageSize;
+      const to = from + pageSize - 1;
+
+      const { data: evals, error } = await supabase
+        .from('evaluations')
+        .select(`
+          id, evaluator_id, evaluated_id, template_id, created_at, status,
+          evaluator:users!evaluator_id ( full_name ),
+          evaluated:users!evaluated_id!inner ( full_name, campus, role, office:offices ( name ) ),
+          template:evaluation_templates!inner ( name ),
+          results:evaluation_results ( overall_score, category_scores )
+        `)
+        .eq('status', 'completed')
+        .order('created_at', { ascending: false })
+        .range(from, to);
+
+      if (error) throw error;
+      if (!evals || evals.length === 0) {
+        hasMore = false;
+        break;
+      }
+
+      let filtered = evals as any[];
+      if (targetCampus !== 'all') {
+        filtered = filtered.filter((e: any) => normalizeCampus(e.evaluated?.campus) === targetCampus);
+      }
+      if (targetOffice !== 'all') {
+        filtered = filtered.filter((e: any) => e.evaluated?.office?.name === targetOffice);
+      }
+      if (targetTemplate !== 'all') {
+        filtered = filtered.filter((e: any) => e.template?.name === targetTemplate);
+      }
+
+      allFilteredEvals = [...allFilteredEvals, ...filtered];
+      hasMore = evals.length === pageSize;
+      page += 1;
+    }
+
+    if (allFilteredEvals.length === 0) return [];
+
+    // 2. Fetch Templates (Sections & Questions) with Paging
+    setExportProgress(`Cargando estructuras de plantillas...`);
+    const uniqueTemplateIds = Array.from(new Set(allFilteredEvals.map(e => e.template_id)));
+    
+    // Helper to fetch all rows from any table with a filter and internal paging
+    const fetchAllRows = async (table: string, filterField: string, filterValues: any[]) => {
+      let results: any[] = [];
+      const chunkCount = 100;
+      for (let i = 0; i < filterValues.length; i += chunkCount) {
+        const chunk = filterValues.slice(i, i + chunkCount);
+        let innerPage = 0;
+        let innerHasMore = true;
+        while (innerHasMore) {
+          const { data, error } = await supabase
+            .from(table)
+            .select('*')
+            .in(filterField, chunk)
+            .range(innerPage * 1000, (innerPage + 1) * 1000 - 1);
+          if (error) throw error;
+          if (data && data.length > 0) {
+            results = [...results, ...data];
+            innerHasMore = data.length === 1000;
+            innerPage++;
+          } else {
+            innerHasMore = false;
+          }
+        }
+      }
+      return results;
+    };
+
+    const [sectionsList, questionsList] = await Promise.all([
+      fetchAllRows('evaluation_sections', 'template_id', uniqueTemplateIds),
+      fetchAllRows('evaluation_questions', 'template_id', uniqueTemplateIds)
+    ]);
+
+    const sectionsByTemplate = new Map<string, any[]>();
+    sectionsList.forEach(s => {
+      if (!sectionsByTemplate.has(s.template_id)) sectionsByTemplate.set(s.template_id, []);
+      sectionsByTemplate.get(s.template_id)!.push(s);
+    });
+
+    const questionsByTemplate = new Map<string, any[]>();
+    questionsList.forEach(q => {
+      if (!questionsByTemplate.has(q.template_id)) questionsByTemplate.set(q.template_id, []);
+      questionsByTemplate.get(q.template_id)!.push(q);
+    });
+
+    // 3. Fetch Responses with Internal Paging
+    setExportProgress(`Cargando respuestas para ${allFilteredEvals.length} evaluaciones...`);
+    const evalIds = allFilteredEvals.map(e => e.id);
+    const respByEval = new Map<string, Record<string, any>>();
+    
+    // Process in batches of 30 evaluations to ensure we don't hit response count limits
+    for (let i = 0; i < evalIds.length; i += 30) {
+      const chunk = evalIds.slice(i, i + 30);
+      let respPage = 0;
+      let respHasMore = true;
+      while (respHasMore) {
+        const { data: respData, error } = await supabase
+          .from('evaluation_responses')
+          .select('evaluation_id, question_id, response_value')
+          .in('evaluation_id', chunk)
+          .range(respPage * 1000, (respPage + 1) * 1000 - 1);
+        
+        if (error) throw error;
+        if (respData && respData.length > 0) {
+          respData.forEach(r => {
+            if (!respByEval.has(r.evaluation_id)) respByEval.set(r.evaluation_id, {});
+            respByEval.get(r.evaluation_id)![r.question_id] = r.response_value;
+          });
+          respHasMore = respData.length === 1000;
+          respPage++;
+        } else {
+          respHasMore = false;
+        }
+      }
+    }
+
+    // 4. Final Mapping (Cross-Referenced with Fallback)
+    setExportProgress(`Generando reporte cruzado...`);
+    
     const normalizeValue = (val: any): number => {
       if (val === null || val === undefined || val === '') return 0;
       if (typeof val === 'number') return val;
@@ -126,104 +256,80 @@ export default function ExportModule() {
         const parsed = parseFloat(val.replace(',', '.'));
         return isNaN(parsed) ? 0 : parsed;
       }
-      if (typeof val === 'object') {
-        return Number(val.value || val.rating || val.score || val.response || 0);
-      }
+      if (typeof val === 'object') return Number(val.value || val.rating || val.score || 0);
       return 0;
     };
-    const pageSize = 1000;
-    let page = 0;
-    let hasMore = true;
 
-    while (hasMore) {
-      setExportProgress(`Buscando evaluaciones... (Página ${page + 1})`);
-      const from = page * pageSize;
-      const to = from + pageSize - 1;
+    allFilteredEvals.forEach(evalItem => {
+      const templateSections = sectionsByTemplate.get(evalItem.template_id) || [];
+      const templateQuestions = questionsByTemplate.get(evalItem.template_id) || [];
+      const responses = respByEval.get(evalItem.id) || {};
+      
+      const dbResArr = evalItem.results;
+      const dbRes = Array.isArray(dbResArr) ? dbResArr[0] : dbResArr;
+      const catScores = dbRes?.category_scores || {};
 
-      let query = supabase
-        .from('evaluations')
-        .select(`
-          id,
-          evaluator_id,
-          evaluated_id,
-          template_id,
-          created_at,
-          status,
-          evaluator:users!evaluator_id ( full_name ),
-          evaluated:users!evaluated_id!inner ( full_name, campus, role, office:offices ( name ) ),
-          template:evaluation_templates!inner ( name ),
-          results:evaluation_results ( overall_score, category_scores )
-        `)
-        .eq('status', 'completed')
-        .order('created_at', { ascending: false });
-
-      // NOTE: Filtering on nested join fields (e.g. evaluated.campus) does NOT work
-      // with Supabase PostgREST joins. We fetch all and filter in JS below.
-
-      const { data: evals, error } = await query.range(from, to);
-      if (error) throw error;
-
-      if (!evals || evals.length === 0) {
-        hasMore = false;
-        break;
-      }
-
-      // Filter in JavaScript
-      let filteredEvals = evals as any[];
-      if (targetCampus !== 'all') {
-        filteredEvals = filteredEvals.filter((e: any) => normalizeCampus(e.evaluated?.campus) === targetCampus);
-      }
-      if (targetOffice !== 'all') {
-        filteredEvals = filteredEvals.filter((e: any) => e.evaluated?.office?.name === targetOffice);
-      }
-      if (targetTemplate !== 'all') {
-        filteredEvals = filteredEvals.filter((e: any) => e.template?.name === targetTemplate);
-      }
-
-      if (filteredEvals.length > 0) {
-        setExportProgress(`Procesando puntuaciones para ${allDetailedResults.length + filteredEvals.length} evaluaciones...`);
-        await new Promise(r => setTimeout(r, 10)); // Yield to main thread for UI update
-
-        // Process results directly from evaluation_results
-        filteredEvals.forEach((evalItem: any) => {
-          const resData = Array.isArray(evalItem.results) ? evalItem.results[0] : evalItem.results;
-          const res = resData || {};
-          const catScores = res.category_scores || {};
+      const sectionsSummary: SectionSummaryRow[] = templateSections
+        .sort((a, b) => (a.order_index || 0) - (b.order_index || 0))
+        .map(s => {
+          const sectionQuestions = templateQuestions.filter(q => q.section_id === s.id);
+          const ratingQuestions = sectionQuestions.filter(q => q.question_type === 'rating');
           
-          const sectionsSummary: SectionSummaryRow[] = Object.entries(catScores).map(([key, val]) => ({
-            sectionId: key,
-            sectionName: key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' '),
-            avg: Number(val),
-            weight: 0,
+          let avg: number | null = null;
+          
+          // Primary: Calculate from responses
+          if (ratingQuestions.length > 0) {
+            const vals = ratingQuestions.map(q => normalizeValue(responses[q.id]));
+            const validVals = vals.filter(v => v > 0);
+            if (validVals.length > 0) {
+              avg = validVals.reduce((a, b) => a + b, 0) / validVals.length;
+            }
+          }
+
+          // Fallback: Use pre-calculated category score if calculation failed or yielded 0
+          if ((avg === null || avg === 0) && Object.keys(catScores).length > 0) {
+            // Try matching by section name
+            const dbVal = catScores[s.name] || catScores[s.title];
+            if (dbVal !== undefined && dbVal !== null) {
+              avg = Number(dbVal);
+            }
+          }
+
+          return {
+            sectionId: s.id,
+            sectionName: s.name || s.title || `Sección ${s.id}`,
+            avg: avg !== null ? Math.round(avg * 100) / 100 : null,
+            weight: ratingQuestions.length,
             questions: []
-          }));
-
-          const globalScore = Number(res.overall_score || 0);
-
-          allDetailedResults.push({
-            evaluationId: evalItem.id,
-            evaluatorId: evalItem.evaluator_id,
-            evaluatedId: evalItem.evaluated_id,
-            evaluatedName: evalItem.evaluated?.full_name || 'N/A',
-            evaluatedRole: evalItem.evaluated?.role || 'N/A',
-            evaluatorName: evalItem.evaluator?.full_name || 'N/A',
-            evaluatedOffice: evalItem.evaluated?.office?.name || 'N/A',
-            evaluatedCampus: normalizeCampus(evalItem.evaluated?.campus) || 'Bucaramanga',
-            templateId: evalItem.template_id,
-            templateName: evalItem.template?.name || 'N/A',
-            sectionsSummary,
-            avgScore: globalScore,
-            status: evalItem.status
-          });
+          };
         });
-        
-        setExportProgress(`Encontrados ${allDetailedResults.length} resultados...`);
-        await new Promise(r => setTimeout(r, 10));
+
+      const validSections = sectionsSummary.filter(s => s.avg !== null && s.avg > 0);
+      let globalScore = validSections.length > 0 
+        ? validSections.reduce((sum, s) => sum + (s.avg || 0), 0) / validSections.length
+        : 0;
+      
+      // Global Fallback
+      if (globalScore === 0 && dbRes?.overall_score) {
+        globalScore = Number(dbRes.overall_score);
       }
 
-      hasMore = evals.length === pageSize;
-      page += 1;
-    }
+      allDetailedResults.push({
+        evaluationId: evalItem.id,
+        evaluatorId: evalItem.evaluator_id,
+        evaluatedId: evalItem.evaluated_id,
+        evaluatedName: evalItem.evaluated?.full_name || 'N/A',
+        evaluatedRole: evalItem.evaluated?.role || 'N/A',
+        evaluatorName: evalItem.evaluator?.full_name || 'N/A',
+        evaluatedOffice: evalItem.evaluated?.office?.name || 'N/A',
+        evaluatedCampus: normalizeCampus(evalItem.evaluated?.campus) || 'Bucaramanga',
+        templateId: evalItem.template_id,
+        templateName: evalItem.template?.name || 'N/A',
+        sectionsSummary,
+        avgScore: Math.round(globalScore * 100) / 100,
+        status: evalItem.status
+      });
+    });
 
     return allDetailedResults;
   };
