@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, Evaluation } from '../lib/supabase';
-import { BarChart3, Eye, Trash2, X, Search, Filter, AlertCircle, ChevronLeft, ChevronRight, Building2, Activity } from 'lucide-react';
+import { BarChart3, Eye, Trash2, X, Search, Filter, AlertCircle, ChevronLeft, ChevronRight, Building2 } from 'lucide-react';
 import SectionAnalysis, { SectionSummaryRow } from './SectionAnalysis';
 import OfficeAnalysis from './OfficeAnalysis';
 import CampusAnalysis from './CampusAnalysis';
@@ -561,7 +561,7 @@ export function ResultsModule() {
             {totalInDB && allEvaluations.length < totalInDB && (
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Activity className="w-4 h-4 text-blue-600 animate-pulse" />
+                  <BarChart3 className="w-4 h-4 text-blue-600 animate-pulse" />
                   <p className="text-xs text-blue-800">
                     Vista previa activa: <strong>{allEvaluations.length}</strong> de <strong>{totalInDB}</strong> registros cargados.
                   </p>
