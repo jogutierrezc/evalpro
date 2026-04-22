@@ -124,11 +124,9 @@ export function useEvaluationReport({ evaluationId, userId }: UseEvaluationRepor
                 const title = r.question?.section?.title || 'General';
                 const numericVal = normalizeValue(r.response_value);
 
-                // Filter out non-rating questions unless they have a valid numeric value > 0 (fallback)
-                if (qType && qType !== 'rating' && numericVal === 0) return;
-
-                // Log for debugging (temporary)
-                if (numericVal === 0) console.warn(`[EvalPro Debug] Zero value for ${title}:`, r.response_value);
+                // Ignore non-rating questions and any questions with a value of 0 or empty
+                // In a 1-5 scale, 0 is an unanswered question and shouldn't drag down the average
+                if (numericVal === 0) return;
 
                 // We use the raw title to allow the AI logic to detect the dimension dynamically
                 // or display the custom section name if no dimension matches.

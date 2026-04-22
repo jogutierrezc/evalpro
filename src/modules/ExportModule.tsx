@@ -118,6 +118,19 @@ export default function ExportModule() {
 
   const fetchDetailedData = async (targetCampus: string, targetOffice: string, targetTemplate: string) => {
     const allDetailedResults: EvaluationDetail[] = [];
+
+    const normalizeValue = (val: any): number => {
+      if (val === null || val === undefined || val === '') return 0;
+      if (typeof val === 'number') return val;
+      if (typeof val === 'string') {
+        const parsed = parseFloat(val.replace(',', '.'));
+        return isNaN(parsed) ? 0 : parsed;
+      }
+      if (typeof val === 'object') {
+        return Number(val.value || val.rating || val.score || val.response || 0);
+      }
+      return 0;
+    };
     const pageSize = 1000;
     let page = 0;
     let hasMore = true;
@@ -232,7 +245,7 @@ export default function ExportModule() {
               if (hasWeights) {
                 let ssum = 0, wsum = 0;
                 ratingQs.forEach((q) => {
-                  const v = Number(q.response);
+                  const v = normalizeValue(q.response);
                   const w = Number(q.weight || 0);
                   if (!isNaN(v) && w > 0) {
                     ssum += v * w;
@@ -242,7 +255,7 @@ export default function ExportModule() {
                 avg = wsum > 0 ? Math.round((ssum / wsum) * 100) / 100 : null;
                 sectionWeight = wsum;
               } else {
-                const vals = ratingQs.map((q) => Number(q.response)).filter(v => !isNaN(v));
+                const vals = ratingQs.map((q) => normalizeValue(q.response)).filter(v => !isNaN(v));
                 avg = vals.length > 0 ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100 : null;
                 sectionWeight = ratingQs.length;
               }

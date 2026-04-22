@@ -191,6 +191,19 @@ export default function SectionAnalysis({ evaluation, onClose }: Props) {
       const respMap: Record<string, any> = {};
       responsesList.forEach((r) => { respMap[r.question_id] = r.response_value; });
 
+      const normalizeValue = (val: any): number => {
+        if (val === null || val === undefined || val === '') return 0;
+        if (typeof val === 'number') return val;
+        if (typeof val === 'string') {
+          const parsed = parseFloat(val.replace(',', '.'));
+          return isNaN(parsed) ? 0 : parsed;
+        }
+        if (typeof val === 'object') {
+          return Number(val.value || val.rating || val.score || val.response || 0);
+        }
+        return 0;
+      };
+
       const built: SectionSummaryRow[] = sectionsList.map((s) => {
         const qs = (questionsList || []).filter((q: any) => q.section_id === s.id);
         const qDetails = qs.map((q: any) => ({ id: q.id, text: q.question_text || '', type: q.question_type, weight: Number(q.weight || 0), response: respMap[q.id] }));
@@ -200,10 +213,10 @@ export default function SectionAnalysis({ evaluation, onClose }: Props) {
         if (ratingQs.length > 0) {
           if (hasWeights) {
             let ssum = 0; let wsum = 0;
-            ratingQs.forEach((q) => { const v = Number(q.response); const w = Number(q.weight || 0); if (!isNaN(v)) { ssum += v * w; wsum += w; } });
+            ratingQs.forEach((q) => { const v = normalizeValue(q.response); const w = Number(q.weight || 0); if (!isNaN(v)) { ssum += v * w; wsum += w; } });
             avg = wsum > 0 ? Math.round((ssum / wsum) * 100) / 100 : null;
           } else {
-            const vals = ratingQs.map((q) => Number(q.response));
+            const vals = ratingQs.map((q) => normalizeValue(q.response));
             avg = Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100;
           }
         }
