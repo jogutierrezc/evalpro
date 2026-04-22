@@ -101,7 +101,6 @@ export const PRISMA_KNOWLEDGE_BASE: Record<string, CategoryConfig> = {
             { id: 'te4', text: 'Respeta las ideas y opiniones de sus compañeros', weight: 0.2, isAnchor: false },
         ]
     },
-    // --- NUEVAS CATEGORÍAS VAF / EVALPROM ---
     liderazgo: {
         id: 'liderazgo',
         name: 'Liderazgo',
@@ -154,217 +153,70 @@ export const NARRATIVE_DB: Record<string, CategoryNarrative> = {
         anchorFailure: {
             arquetipo: 'Ejecutor Reactivo (Riesgo de Fatiga Estructural)',
             analisis: (anchor) =>
-                `El análisis detecta una disonancia crítica en el perfil. Aunque el evaluado demuestra una alta capacidad de resolución inmediata y entrega, la calificación deficiente en el factor estructural "${anchor}" revela un patrón de gestión por urgencia. \n\nEsto sugiere que el profesional logra los resultados a través de un sobreesfuerzo compensatorio, "apagando fuegos" en lugar de prevenirlos. A nivel organizacional, este comportamiento es insostenible a largo plazo y genera "Deuda Técnica" en los procesos, donde la falta de planificación hoy se convierte en errores complejos mañana.`,
-            accion: 'Adopción inmediata de la "Matriz de Eisenhower" para filtrar urgencias vs. importancias. Bloqueo de agenda de 30 min los lunes exclusivamente para planificación semanal (sin operación).'
+                `El análisis detecta una disonancia crítica en el perfil. Aunque el evaluado demuestra una alta capacidad de resolución inmediata y entrega, la calificación deficiente en el factor estructural "${anchor}" revela un patrón de gestión por urgencia.`,
+            accion: 'Adopción inmediata de la "Matriz de Eisenhower".'
         },
         excellence: {
             arquetipo: 'Arquitecto de Procesos y Estándares',
             analisis: () =>
-                `El perfil evidencia un nivel de madurez superior en la gestión de la calidad. No se limita al cumplimiento de la tarea asignada, sino que demuestra una visión sistémica donde cada entregable es verificado contra los estándares institucionales antes de su liberación. \n\nSu conducta actúa como un "Cortafuegos Operativo": su sola presencia reduce la tasa de errores del equipo. La consistencia en sus respuestas sugiere una autodisciplina rigurosa y una capacidad para auditar su propio trabajo con objetividad clínica.`,
-            accion: 'Elevar a rol de "Auditor Interno de Calidad" para pares. Liderar la creación de un "Playbook" o manual de buenas prácticas del área para estandarizar este nivel de excelencia.'
+                `El perfil evidencia un nivel de madurez superior en la gestión de la calidad.`,
+            accion: 'Elevar a rol de "Auditor Interno de Calidad".'
         },
         good: {
             arquetipo: 'Profesional Metódico y Confiable',
             analisis: () =>
-                `El evaluado presenta un desempeño sólido sustentado en hábitos de revisión constantes. Existe una clara conciencia de la importancia de la precisión y se evidencia responsabilidad sobre el producto final. \n\nSin embargo, el análisis sugiere que este nivel de calidad podría estar dependiendo excesivamente de la revisión manual y el esfuerzo individual. El siguiente nivel evolutivo requiere transicionar del "Hacerlo bien" al "Hacerlo eficientemente", integrando herramientas que aseguren la calidad sin aumentar la carga operativa.`,
-            accion: 'Implementar listas de chequeo (Checklists) automatizadas para tareas repetitivas. Explorar herramientas digitales que reduzcan la dependencia de la memoria operativa.'
+                `El evaluado presenta un desempeño sólido sustentado en hábitos de revisión constantes.`,
+            accion: 'Implementar listas de chequeo (Checklists).'
         },
         development: {
             arquetipo: 'Operativo Disperso (Foco Variable)',
             analisis: () =>
-                `Se identifican fluctuaciones significativas en los estándares de entrega. Los resultados indican que la calidad del trabajo es vulnerable a factores externos como la presión de tiempo o el volumen de tareas. \n\nEste perfil tiende a priorizar la velocidad de entrega sobre la precisión, lo que genera retrabajos (reproceso) aguas abajo. Existe una brecha en la fase de "Preparación", iniciando la ejecución sin tener todos los requerimientos o recursos validados, lo que impacta la eficiencia global del área.`,
-            accion: 'Instituir la regla del "Doble Check" con un par antes de cada entrega final. Capacitación en gestión del tiempo enfocada en la técnica Pomodoro para mantener focos de atención sostenida.'
+                `Se identifican fluctuaciones significativas en los estándares de entrega.`,
+            accion: 'Instituir la regla del "Doble Check".'
         }
     },
-    // ... (Keep existing Standard Categories: resultados, integridad, comunicacion, institucional, trabajo_equipo)
     resultados: {
         anchorFailure: {
-            arquetipo: 'Esforzado sin Estrategia (Ineficacia Cíclica)',
-            analisis: (anchor) =>
-                `Se observa un despliegue de energía significativo pero con bajo retorno de inversión (ROI) operativo. La falla crítica en el indicador "${anchor}" señala una ruptura en el ciclo de mejora continua (PHVA). \n\nEl profesional tiende a ejecutar tareas de manera aislada sin cerrar el ciclo de aprendizaje. Esto significa que los errores se repiten y las oportunidades de optimización se pierden. Es un perfil de "Mucho hacer, poco analizar", lo que limita su crecimiento estratégico dentro de la institución.`,
-            accion: 'Aplicación estricta del ciclo PHVA (Planear, Hacer, Verificar, Actuar) en un micro-proyecto piloto. Documentar lecciones aprendidas semanalmente (Retrospectiva personal).'
+            arquetipo: 'Esforzado sin Estrategia',
+            analisis: (anchor) => `Falla crítica en "${anchor}".`,
+            accion: 'Aplicación del PHVA.'
         },
         excellence: {
             arquetipo: 'Estratega de Alto Impacto',
-            analisis: () =>
-                `Resultados excepcionales que denotan una mentalidad orientada no solo al logro, sino a la superación del estándar. El perfil muestra una capacidad proactiva para anticipar obstáculos y reformular estrategias en tiempo real. \n\nDestaca su resiliencia operativa: ante la desviación de un objetivo, no busca culpables, sino alternativas de solución. Es un agente de cambio natural que transforma problemas complejos en planes de acción estructurados, maximizando el uso de los recursos institucionales.`,
-            accion: 'Asignación de "Proyectos Transversales" de alto riesgo/alta recompensa. Participación en comités de innovación para aportar soluciones a problemas estructurales del área.'
+            analisis: () => `Resultados excepcionales.`,
+            accion: 'Proyectos Transversales.'
         },
         good: {
-            arquetipo: 'Orientado al Logro y la Eficacia',
-            analisis: () =>
-                `Perfil pragmático que cumple consistentemente con los KPIs asignados. Muestra autonomía en la resolución de problemas cotidianos y requiere mínima supervisión para mantener el rumbo operativo. \n\nSu enfoque es funcional: asegura que las cosas sucedan. Para alcanzar la excelencia, se recomienda desarrollar una visión más analítica sobre el "cómo" se logran los resultados, buscando no solo la eficacia (lograr la meta) sino la eficiencia (lograrla con menos recursos).`,
-            accion: 'Entrenamiento en metodologías de resolución de problemas (Design Thinking o 5 Porqués) para abordar desafíos no rutinarios con mayor profundidad.'
+            arquetipo: 'Orientado al Logro',
+            analisis: () => `Perfil pragmático.`,
+            accion: 'Entrenamiento en resolución de problemas.'
         },
         development: {
-            arquetipo: 'Ejecutor de Tareas (Dependiente)',
-            analisis: () =>
-                `El desempeño se limita estrictamente a la descripción del cargo, mostrando reactividad ante imprevistos. Cuando el plan original falla, el evaluado tiende a detenerse a esperar nuevas instrucciones en lugar de proponer alternativas. \n\nEsta pasividad estratégica sobrecarga a la jefatura inmediata, quien debe actuar como el "motor" de la resolución de problemas. Se requiere desarrollar el sentido de "Ownership" (apropiación) sobre los resultados finales, no solo sobre las tareas intermedias.`,
-            accion: 'Delegación progresiva de pequeñas decisiones: "No me traigas el problema, tráeme el problema y dos posibles soluciones para que yo elija una".'
+            arquetipo: 'Ejecutor Dependiente',
+            analisis: () => `Desempeño limitado a la descripción del cargo.`,
+            accion: 'Delegación progresiva.'
         }
     },
-    integridad: {
-        anchorFailure: {
-            arquetipo: 'Perfil con Riesgo de Cumplimiento Normativo',
-            analisis: (anchor) =>
-                `ALERTA DE SISTEMA: El análisis de respuestas revela una vulnerabilidad en los cimientos éticos del perfil, específicamente en "${anchor}". Esto no necesariamente implica deshonestidad, pero sí un desconocimiento o subvaloración de los marcos normativos institucionales. \n\nEn situaciones de alta presión, este perfil podría racionalizar atajos que comprometan la seguridad jurídica o reputacional de la UDES. La integridad no es negociable; esta brecha debe ser tratada como prioridad cero en el plan de desarrollo.`,
-            accion: 'Plan de Re-inducción Intensiva en Código de Ética y Buen Gobierno. Firma de compromiso ético renovado y supervisión directa en decisiones que involucren recursos sensibles.'
-        },
-        excellence: {
-            arquetipo: 'Guardián Cultural y Referente Ético',
-            analisis: () =>
-                `El evaluado personifica los valores corporativos de la UDES. Su consistencia perfecta en este módulo indica una alineación profunda entre sus valores personales y la misión institucional. \n\nEste perfil actúa como un "Ancla Moral" para el equipo: genera confianza instantánea y eleva el estándar de comportamiento de quienes lo rodean. Su transparencia en la gestión de errores (reconocimiento propio) es una cualidad de liderazgo avanzada que fomenta la seguridad psicológica en el equipo.`,
-            accion: 'Incorporar como mentor en procesos de Onboarding para nuevos colaboradores. Facilitador en talleres de dilemas éticos y cultura organizacional.'
-        },
-        good: {
-            arquetipo: 'Profesional Transparente y Alineado',
-            analisis: () =>
-                `Muestra una conducta adecuada y respetuosa de las normas. Entiende los límites de su actuación y respeta la jerarquía y los procedimientos establecidos. \n\nEs un perfil confiable para el manejo de información. Sin embargo, se invita a pasar de un cumplimiento pasivo ("No rompo las reglas") a una promoción activa de la integridad ("Ayudo a otros a cumplir"), especialmente en situaciones donde observe desviaciones menores en su entorno.`,
-            accion: 'Lectura dirigida sobre "Ética en la toma de decisiones cotidianas". Fomentar su participación activa cuando se discutan mejoras a reglamentos internos.'
-        },
-        development: {
-            arquetipo: 'Necesita Alineación Normativa',
-            analisis: () =>
-                `Se percibe una relación transaccional con las normas: se cumplen por obligación, no por convicción. Las respuestas sugieren que el evaluado ve los procedimientos de control como "burocracia" que entorpece su trabajo, más que como salvaguardas institucionales. \n\nEsta actitud puede llevar a la omisión involuntaria de protocolos importantes. Es crucial reforzar el "Por qué" detrás de las normas, no solo el "Qué".`,
-            accion: 'Taller de sensibilización: "El impacto de mis acciones en la reputación UDES". Revisión conjunta de casos de estudio sobre consecuencias de faltas normativas.'
-        }
-    },
-    comunicacion: {
-        anchorFailure: {
-            arquetipo: 'Comunicador de Riesgo (Imprudencia Táctica)',
-            analisis: (anchor) =>
-                `Se detecta una falencia crítica en la inteligencia social del perfil, puntualmente en "${anchor}". El análisis sugiere que el profesional prioriza la franqueza sobre la prudencia, lo que puede resultar en comunicaciones abrasivas o inoportunas. \n\nEste estilo comunicativo genera fricciones innecesarias ("ruido") que desgastan las relaciones interpersonales y pueden bloquear la colaboración. Aunque el mensaje técnico sea correcto, la forma de entrega está saboteando la recepción del mismo.`,
-            accion: 'Entrenamiento obligatorio en "Comunicación No Violenta" (Marshall Rosenberg). Ejercicios de role-playing enfocados en dar feedback negativo sin generar defensividad.'
-        },
-        excellence: {
-            arquetipo: 'Diplomático Institucional',
-            analisis: () =>
-                `Maestría en la gestión de la información y las relaciones. El perfil demuestra una capacidad superior para adaptar su registro comunicativo según la audiencia (pares, jefes, externos). \n\nSabe navegar conversaciones difíciles con elegancia, manteniendo la firmeza en el fondo pero la suavidad en la forma. Es un "Hub de Comunicación": la información fluye a través de él/ella de manera clara, veraz y oportuna, eliminando rumores y alineando al equipo.`,
-            accion: 'Designar como vocero oficial del equipo en proyectos interdepartamentales. Liderar presentaciones ejecutivas ante directivos.'
-        },
-        good: {
-            arquetipo: 'Comunicador Efectivo y Claro',
-            analisis: () =>
-                `Logra transmitir sus ideas con claridad y mantiene canales abiertos de retroalimentación. Es un comunicador funcional que asegura que las instrucciones se entiendan y los reportes lleguen a tiempo. \n\nSu oportunidad de mejora radica en la "Escucha Activa" y la comunicación persuasiva. Pasar de informar (transmitir datos) a influir (movilizar voluntades), especialmente en situaciones donde no tiene autoridad jerárquica directa.`,
-            accion: 'Práctica de técnicas de Storytelling para la presentación de informes. Fomentar el hábito de parafrasear lo escuchado para validar comprensión total.'
-        },
-        development: {
-            arquetipo: 'Emisor Pasivo (Silo Comunicacional)',
-            analisis: () =>
-                `Tendencia al aislamiento comunicativo. El evaluado asume que "hacer el trabajo" es suficiente, descuidando la visibilidad y el reporte de sus avances. \n\nA menudo retiene información por no considerarla relevante o espera a que se le pregunte para informar problemas. Esta pasividad genera puntos ciegos para la jefatura y descoordinación con los pares, quienes no saben en qué estado están los procesos compartidos.`,
-            accion: 'Establecer rutinas de reporte breves (Daily Stand-up o informe semanal de 5 puntos). Curso de redacción ejecutiva y oratoria básica.'
-        }
-    },
-    institucional: {
-        anchorFailure: {
-            arquetipo: 'Desalineado Institucionalmente',
-            analisis: (anchor) =>
-                `El bajo desempeño en el indicador "${anchor}" es una señal de alerta sobre el compromiso organizacional. Revela una desconexión entre el individuo y el ecosistema de la Universidad. \n\nYa sea por incumplimiento de horarios o mal uso de recursos, esta conducta erosiona la autoridad moral y afecta el clima laboral (sensación de inequidad en el equipo). Es necesario re-establecer el "Contrato Psicológico" básico antes de pensar en desarrollo profesional.`,
-            accion: 'Reunión de feedback correctivo centrada en expectativas básicas del rol. Monitoreo formal de cumplimiento durante 30 días.'
-        },
-        excellence: {
-            arquetipo: 'Embajador de Marca UDES',
-            analisis: () =>
-                `El evaluado ha internalizado la identidad UDES como propia. Su respeto por los recursos, los tiempos y la imagen institucional es ejemplar, actuando con "Mentalidad de Dueño". \n\nEste perfil comprende que la imagen personal y el cuidado de los activos son extensiones de la excelencia académica. Su comportamiento refuerza la cultura de respeto y profesionalismo en su entorno inmediato.`,
-            accion: 'Participación como representante del área en eventos institucionales de alto perfil o comités de bienestar universitario.'
-        },
-        good: {
-            arquetipo: 'Ciudadano Corporativo Responsable',
-            analisis: () =>
-                `Cumple adecuadamente con las normativas de convivencia y uso de recursos. Es un miembro funcional de la comunidad que no genera conflictos normativos. \n\nSe observa un respeto por la institución, aunque quizás desde una perspectiva de cumplimiento normativo más que de orgullo de pertenencia. El reto es elevar su sentido de pertenencia para que se convierta en un promotor activo de la marca institucional.`,
-            accion: 'Involucramiento en voluntariados o iniciativas de sostenibilidad del campus para fortalecer el vínculo emocional con la institución.'
-        },
-        development: {
-            arquetipo: 'Presencia Irregular',
-            analisis: () =>
-                `Se observan brechas en la autodisciplina básica (puntualidad, presentación, cuidado de equipos). Estas conductas, aunque puedan parecer menores, proyectan una imagen de desprolijidad que puede opacar sus competencias técnicas. \n\nEl evaluado necesita comprender que la forma es tan importante como el fondo en un entorno académico de excelencia.`,
-            accion: 'Establecimiento de rutinas de control personal. Feedback directo sobre el impacto de la imagen personal en la percepción de profesionalismo.'
-        }
-    },
-    trabajo_equipo: {
-        anchorFailure: {
-            arquetipo: 'Lobo Solitario (Potencial Disruptivo)',
-            analisis: (anchor) =>
-                `La dificultad crítica en "${anchor}" indica una barrera significativa para la colaboración. El perfil tiende a priorizar su agenda personal o su comodidad individual sobre las necesidades colectivas del equipo. \n\nEste comportamiento genera "Silos Operativos": el conocimiento se queda estancado en una persona y la ayuda no fluye. En momentos de crisis, este aislamiento se convierte en un punto de falla único para el departamento.`,
-            accion: 'Asignación de objetivos grupales vinculantes (donde su éxito dependa 100% del éxito de un par). Dinámicas de integración obligatorias.'
-        },
-        excellence: {
-            arquetipo: 'Catalizador de Sinergias',
-            analisis: () =>
-                `Inteligencia colaborativa superior. El evaluado no solo es un buen compañero, es un multiplicador de talento. Tiene la capacidad de detectar necesidades en otros antes de que sean expresadas y ofrece soporte sin descuidar sus propias funciones. \n\nSu actitud ante el disenso es constructiva: busca la "Tercera Alternativa" que beneficie al equipo, no tener la razón. Es el pegamento social que mantiene unido al departamento en momentos de alta presión.`,
-            accion: 'Facilitador de sesiones de Team Building. Rol de "Buddy" o acompañante para la integración cultural de nuevos ingresos.'
-        },
-        good: {
-            arquetipo: 'Colaborador Activo y Respetuoso',
-            analisis: () =>
-                `Se integra fluidamente a la dinámica del equipo. Aporta su cuota de trabajo y mantiene relaciones cordiales basadas en el respeto mutuo. \n\nEs un buen jugador de equipo, aunque su colaboración puede ser reactiva (ayuda cuando se le pide). El siguiente paso es desarrollar una empatía táctica más proactiva: anticiparse a los cuellos de botella del equipo y ofrecer soluciones antes de que el problema escale.`,
-            accion: 'Fomentar el intercambio de conocimientos (Cross-training) con otros compañeros para aumentar la polivalencia del equipo.'
-        },
-        development: {
-            arquetipo: 'Colaborador Selectivo',
-            analisis: () =>
-                `Su colaboración está condicionada a la afinidad personal o a la conveniencia. Le cuesta adaptarse a estilos de trabajo diversos o a personalidades que chocan con la suya. \n\nTiende a juzgar las ideas de otros prematuramente, lo que puede inhibir la participación de compañeros más introvertidos. Necesita trabajar en la tolerancia y en la valoración de la diversidad cognitiva como un activo, no como un obstáculo.`,
-            accion: 'Rotación temporal en proyectos con personas con las que usualmente tiene menos interacción. Taller de "Estilos de Pensamiento" o DISC.'
-        }
-    },
-    // --- NARRATIVAS NUEVAS CATEGORÍAS VAF ---
-    liderazgo: {
-        anchorFailure: { arquetipo: 'Liderazgo en Desarrollo', analisis: () => 'Fortalecer competencias de dirección.', accion: 'Capacitación en liderazgo.' },
-        excellence: { arquetipo: 'Líder Transformacional', analisis: () => 'Capacidad superior de influir y guiar.', accion: 'Mentoring estratégico.' },
-        good: { arquetipo: 'Líder Efectivo', analisis: () => 'Dirige equipos con claridad.', accion: 'Desarrollar visión a largo plazo.' },
-        development: { arquetipo: 'Líder en Formación', analisis: () => 'Gestión de equipos en etapa temprana.', accion: 'Coaching de liderazgo.' }
-    },
-    requisitos: {
-        anchorFailure: { arquetipo: 'Riesgo de Cumplimiento', analisis: () => 'Brechas en el cumplimiento de requisitos.', accion: 'Plan de acción correctiva.' },
-        excellence: { arquetipo: 'Auditor de Requisitos', analisis: () => 'Cumplimiento impecable y sistemático.', accion: 'Liderar auditorías internas.' },
-        good: { arquetipo: 'Cumplimiento Sólido', analisis: () => 'Adherencia adecuada a los requisitos.', accion: 'Optimización de procesos.' },
-        development: { arquetipo: 'En Alineación', analisis: () => 'Requiere supervisión en requisitos.', accion: 'Refuerzo de normativas.' }
-    },
-    sgc: {
-        anchorFailure: { arquetipo: 'Desalineado con Calidad', analisis: () => 'Brechas en el sistema de gestión.', accion: 'Capacitación SGC.' },
-        excellence: { arquetipo: 'Campeón de Calidad', analisis: () => 'Promotor activo del SGC.', accion: 'Liderar mejoras del SGC.' },
-        good: { arquetipo: 'Comprometido con Calidad', analisis: () => 'Aplica correctamente el SGC.', accion: 'Participar en auditorías.' },
-        development: { arquetipo: 'Conociendo el SGC', analisis: () => 'Adopción temprana del sistema.', accion: 'Inducción SGC.' }
-    },
-    documental: {
-        anchorFailure: { arquetipo: 'Desorden Documental', analisis: () => 'Riesgo en gestión de información.', accion: 'Organización inmediata.' },
-        excellence: { arquetipo: 'Archivista Experto', analisis: () => 'Gestión documental impecable.', accion: 'Digitalización avanzada.' },
-        good: { arquetipo: 'Organizado', analisis: () => 'Mantiene control documental.', accion: 'Mejorar indexación.' },
-        development: { arquetipo: 'Organización Básica', analisis: () => 'Mejorar trazabilidad.', accion: 'Capacitación en archivo.' }
-    },
-    planeacion: {
-        anchorFailure: { arquetipo: 'Reactivo', analisis: () => 'Falta de planificación estructurada.', accion: 'Taller de planeación.' },
-        excellence: { arquetipo: 'Estratega', analisis: () => 'Visión y ejecución planificada.', accion: 'Planeación estratégica.' },
-        good: { arquetipo: 'Planificador', analisis: () => 'Organiza sus tareas adecuadamente.', accion: 'Uso de herramientas de gestión.' },
-        development: { arquetipo: 'Improvisador', analisis: () => 'Dependencia del día a día.', accion: 'Agenda estructurada.' }
-    },
-    mejora: {
-        anchorFailure: { arquetipo: 'Estático', analisis: () => 'Resistencia al cambio.', accion: 'Sensibilización de mejora.' },
-        excellence: { arquetipo: 'Innovador', analisis: () => 'Impulsor de mejora continua.', accion: 'Liderar proyectos de innovación.' },
-        good: { arquetipo: 'Proactivo', analisis: () => 'Propone mejoras regularmente.', accion: 'Metodologías ágiles.' },
-        development: { arquetipo: 'Adaptable', analisis: () => 'Se adapta a cambios propuestos.', accion: 'Participar en ideación.' }
-    },
-    // Default fallback
     default: {
         anchorFailure: {
-            arquetipo: 'Perfil Tácticamente Vulnerable',
-            analisis: (anchor) => `Desempeño comprometido por falencias en el pilar fundamental: "${anchor}". Se requiere estabilizar esta competencia base antes de avanzar.`,
-            accion: 'Plan de recuperación de fundamentos.'
+            arquetipo: 'Perfil Vulnerable',
+            analisis: (anchor) => `Falla en pilar: ${anchor}.`,
+            accion: 'Plan de recuperación.'
         },
         excellence: {
-            arquetipo: 'Referente de Excelencia',
-            analisis: () => 'Dominio total de la competencia con visión sistémica.',
-            accion: 'Mentoring de pares.'
+            arquetipo: 'Referente',
+            analisis: () => 'Dominio total.',
+            accion: 'Mentoring.'
         },
         good: {
-            arquetipo: 'Desempeño Sólido',
-            analisis: () => 'Cumplimiento adecuado de expectativas con consistencia operativa.',
-            accion: 'Retos de mayor complejidad.'
+            arquetipo: 'Sólido',
+            analisis: () => 'Cumple expectativas.',
+            accion: 'Nuevos retos.'
         },
         development: {
             arquetipo: 'En Formación',
-            analisis: () => 'Competencias en etapa temprana de maduración.',
-            accion: 'Supervisión cercana y capacitación.'
+            analisis: () => 'Etapa temprana.',
+            accion: 'Capacitación.'
         }
     }
 };
@@ -373,13 +225,10 @@ export const NARRATIVE_DB: Record<string, CategoryNarrative> = {
 
 class NarrativeGenerator {
     static generate(categoryId: string, score: number, anchorFailed: boolean, anchorText: string = '') {
-        // 1. Seleccionar la base de datos correcta (o default si no existe)
         const db = NARRATIVE_DB[categoryId] || NARRATIVE_DB['default'];
-
         let template: NarrativeTemplate;
         let nivelRiesgo: AnalysisResult['nivelRiesgo'];
 
-        // 2. Lógica de Selección de Template
         if (anchorFailed) {
             template = db.anchorFailure;
             nivelRiesgo = 'Alto';
@@ -393,16 +242,13 @@ class NarrativeGenerator {
             template = db.development;
             nivelRiesgo = 'Medio';
         } else {
-            // Caso crítico genérico si baja de 3.0
             template = db.development;
-            template.arquetipo = "Alerta de Desempeño Crítico";
             nivelRiesgo = 'Crítico';
         }
 
-        // 3. Construcción del Objeto Final
         return {
             arquetipo: template.arquetipo,
-            analisis: template.analisis(anchorText), // Inyección dinámica del texto de la pregunta
+            analisis: template.analisis(anchorText),
             accionSugerida: template.accion,
             nivelRiesgo
         };
@@ -415,13 +261,10 @@ export class PrismaBrain {
 
     static analyze(categoryId: string, userAnswers: Record<string, number>): AnalysisResult {
         const config = PRISMA_KNOWLEDGE_BASE[categoryId];
-
         if (!config) {
-            // Fallback seguro si la categoría no existe en la config
             return {
-                category: categoryId,
-                score: 0, rawScore: 0, maxPossibleScore: 5, percentage: 0,
-                anchorFailed: false, arquetipo: 'Error', analisis: 'Categoría no configurada',
+                category: categoryId, score: 0, rawScore: 0, maxPossibleScore: 5, percentage: 0,
+                anchorFailed: false, arquetipo: 'Error', analisis: 'No configurada',
                 accionSugerida: '-', nivelRiesgo: 'Bajo'
             };
         }
@@ -430,17 +273,10 @@ export class PrismaBrain {
         let totalWeight = 0;
         let anchorFailed = false;
         let anchorQuestionText = '';
-
-        // Helper for normalization
         const normalize = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
-        // A. Cálculo Numérico
         config.questions.forEach((q) => {
             const qTextNorm = normalize(q.text);
-
-            // Robust fuzzy match logic:
-            // 1. Normalize both keys and query
-            // 2. Check if key includes query OR query includes key (for partial matches)
             const matchedKey = Object.keys(userAnswers).find(k => {
                 const kNorm = normalize(k);
                 return kNorm.includes(qTextNorm) || qTextNorm.includes(kNorm);
@@ -450,8 +286,6 @@ export class PrismaBrain {
                 const score = userAnswers[matchedKey];
                 weightedSum += score * q.weight;
                 totalWeight += q.weight;
-
-                // Detectar Ancla Rota (Umbral estricto: <= 3.0 en pregunta crítica)
                 if (q.isAnchor && score <= 3.0) {
                     anchorFailed = true;
                     anchorQuestionText = q.text;
@@ -461,14 +295,7 @@ export class PrismaBrain {
 
         const finalScore = totalWeight > 0 ? (weightedSum / totalWeight) : 0;
         const roundedScore = parseFloat(finalScore.toFixed(2));
-
-        // B. Generación Narrativa (Delegada al Generador)
-        const narrativa = NarrativeGenerator.generate(
-            categoryId,
-            roundedScore,
-            anchorFailed,
-            anchorQuestionText
-        );
+        const narrativa = NarrativeGenerator.generate(categoryId, roundedScore, anchorFailed, anchorQuestionText);
 
         return {
             category: config.name,
@@ -482,332 +309,116 @@ export class PrismaBrain {
         };
     }
 
+    static async callAI(prompt: string): Promise<string> {
+        const openRouterKey = import.meta.env.VITE_OPENROUTER_API_KEY;
+        const googleKey = import.meta.env.VITE_GOOGLE_AI_KEY;
+
+        // 1. Try OpenRouter first
+        if (openRouterKey && !openRouterKey.includes('your_openrouter_key')) {
+            try {
+                const model = import.meta.env.VITE_OPENROUTER_MODEL || "google/gemini-2.0-flash-exp:free";
+                const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+                    method: "POST",
+                    headers: {
+                        "Authorization": `Bearer ${openRouterKey}`,
+                        "HTTP-Referer": import.meta.env.VITE_SITE_URL || 'http://localhost:5174',
+                        "X-Title": import.meta.env.VITE_SITE_NAME || 'EvalPro UDES',
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        "model": model,
+                        "messages": [{ "role": "user", "content": prompt }]
+                    })
+                });
+                const data = await response.json();
+                if (data.choices?.[0]?.message?.content) {
+                    return data.choices[0].message.content;
+                }
+            } catch (err) {
+                console.error("OpenRouter error:", err);
+            }
+        }
+
+        if (googleKey) {
+            try {
+                const genAI = new GoogleGenerativeAI(googleKey);
+                const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+                const result = await model.generateContent(prompt);
+                const response = await result.response;
+                return response.text();
+            } catch (err) {
+                console.error("Google AI error:", err);
+            }
+        }
+
+        throw new Error("No AI providers configured");
+    }
+
     static getCategories(): string[] {
         return Object.keys(PRISMA_KNOWLEDGE_BASE);
     }
 
     static async enrichWithAi(result: AnalysisResult): Promise<AnalysisResult> {
-        const apiKey = import.meta.env.VITE_GOOGLE_AI_KEY;
-        if (!apiKey) {
-            console.warn('Google AI API Key not found');
+        try {
+            const prompt = `Actúa como Mentor. Competencia: ${result.category}. Puntaje: ${result.score}. Genera un JSON con "analisis" y "accionSugerida". Responde solo JSON.`;
+            const content = await this.callAI(prompt);
+            const cleanContent = content.replace(/```json\n|\n```/g, '').trim();
+            const aiData = JSON.parse(cleanContent);
+            return {
+                ...result,
+                analisis: aiData.analisis || result.analisis,
+                accionSugerida: aiData.accionSugerida || result.accionSugerida,
+                arquetipo: `${result.arquetipo} ✨`
+            };
+        } catch (error) {
             return result;
         }
-
-        // 1. Retrieve Context from Knowledge Base
-        // Find the key in PRISMA_KNOWLEDGE_BASE that matches the result category name
-        const categoryKey = Object.keys(PRISMA_KNOWLEDGE_BASE).find(key => 
-            PRISMA_KNOWLEDGE_BASE[key].name === result.category
-        ) || 'default';
-        
-        const config = PRISMA_KNOWLEDGE_BASE[categoryKey];
-        const questionsContext = config ? config.questions.map(q => `- ${q.text} (Peso: ${q.weight})`).join('\n') : '';
-
-        try {
-            const prompt = `
-            Actúa como un Mentor de Desarrollo Profesional y Coach Ejecutivo empático.
-            Tu tarea es interpretar los resultados de una autoevaluación de desempeño (Modelo PRISMA) para la competencia: "${result.category}".
-            
-            CONTEXTO DEL MODELO PRISMA:
-            Comportamientos evaluados:
-            ${questionsContext}
-
-            RESULTADOS DEL USUARIO (Autoevaluación):
-            - Puntaje: ${result.score} / 5.0
-            - Nivel: ${result.nivelRiesgo}
-            - Arquetipo: ${result.arquetipo}
-            
-            INSTRUCCIONES DE TONO Y ESTILO (CRÍTICO):
-            - Tono: Constructivo, reflexivo, suave y motivador. NUNCA uses un lenguaje punitivo, crítico o negativo.
-            - Enfoque: Psicología positiva. Si el puntaje es bajo, enmárcalo como una "oportunidad latente de crecimiento" o un "área por descubrir", no como una falla.
-            - Objetivo: Que el usuario sienta que este es un espejo para mejorar, no un juicio. Usa frases como "Podrías explorar...", "Te invitamos a reflexionar sobre...", "Una forma de potenciar esto es...".
-
-            TAREA:
-            1. "Reflexión": Un breve párrafo (máx 50 palabras) que invite al usuario a pensar sobre su desempeño actual en esta área de forma amable.
-            2. "Invitación a la Acción": Una sugerencia práctica y sencilla (máx 25 palabras) para empezar a fortalecer esta competencia mañana mismo.
-            
-            FORMATO JSON:
-            {
-                "analisis": "Texto de la reflexión",
-                "accionSugerida": "Texto de la invitación a la acción"
-            }
-            `;
-
-            const genAI = new GoogleGenerativeAI(apiKey);
-            const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-            
-            const resultAI = await model.generateContent(prompt);
-            const response = await resultAI.response;
-            const content = response.text();
-            
-            if (content) {
-                // Clean markdown code blocks if present
-                const cleanContent = content.replace(/```json\n|\n```/g, '').trim();
-                const aiData = JSON.parse(cleanContent);
-                return {
-                    ...result,
-                    analisis: aiData.analisis || result.analisis,
-                    accionSugerida: aiData.accionSugerida || result.accionSugerida,
-                    arquetipo: `${result.arquetipo} ✨`
-                };
-            }
-        } catch (error) {
-            console.error('Error enriching with AI:', error);
-        }
-
-        return result;
     }
 
     static async enrichWithAiForManager(result: AnalysisResult, evaluatedName: string): Promise<AnalysisResult> {
-        const apiKey = import.meta.env.VITE_GOOGLE_AI_KEY;
-        if (!apiKey) return result;
-
-        const categoryKey = Object.keys(PRISMA_KNOWLEDGE_BASE).find(key => 
-            PRISMA_KNOWLEDGE_BASE[key].name === result.category
-        ) || '';
-        
-        const config = PRISMA_KNOWLEDGE_BASE[categoryKey];
-        const questionsContext = config ? config.questions.map(q => `- ${q.text} (Peso: ${q.weight})`).join('\n') : '';
-
         try {
-            const prompt = `
-            Actúa como un Consultor Senior de Liderazgo y Gestión de Talento.
-            Tu tarea es proporcionar una guía estratégica para un LÍDER (Jefe) sobre cómo gestionar y potenciar a su colaborador: "${evaluatedName}" en la competencia: "${result.category}".
-            
-            CONTEXTO DEL MODELO PRISMA:
-            Comportamientos evaluados:
-            ${questionsContext}
-
-            RESULTADOS DEL COLABORADOR:
-            - Puntaje: ${result.score} / 5.0
-            - Nivel: ${result.nivelRiesgo}
-            - Arquetipo: ${result.arquetipo}
-            
-            INSTRUCCIONES PARA EL LÍDER:
-            - Tono: Profesional, estratégico y orientado a la acción directiva.
-            - Objetivo: Darle herramientas al jefe para que tenga una conversación de feedback efectiva y establezca un plan de desarrollo.
-
-            TAREA:
-            1. "Diagnóstico para el Líder": Explica brevemente qué significa este puntaje en términos de impacto en el equipo y el trabajo diario.
-            2. "Guía de Coaching": Sugiere una acción concreta o pregunta poderosa que el jefe puede usar en su próxima reunión 1 a 1 para desarrollar esta competencia en el colaborador.
-            
-            FORMATO JSON:
-            {
-                "analisis": "Texto del diagnóstico para el líder (máx 50 palabras)",
-                "accionSugerida": "Acción de coaching sugerida (máx 30 palabras)"
-            }
-            `;
-
-            const genAI = new GoogleGenerativeAI(apiKey);
-            const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-            
-            const resultAI = await model.generateContent(prompt);
-            const response = await resultAI.response;
-            const content = response.text();
-            
-            if (content) {
-                const cleanContent = content.replace(/```json\n|\n```/g, '').trim();
-                const aiData = JSON.parse(cleanContent);
-                return {
-                    ...result,
-                    analisis: aiData.analisis || result.analisis,
-                    accionSugerida: aiData.accionSugerida || result.accionSugerida,
-                    arquetipo: `${result.arquetipo} 👥`
-                };
-            }
+            const prompt = `Guía estratégica para el Líder de ${evaluatedName}. Competencia: ${result.category}. Puntaje: ${result.score}. Genera un JSON con "analisis" y "accionSugerida". Responde solo JSON.`;
+            const content = await this.callAI(prompt);
+            const cleanContent = content.replace(/```json\n|\n```/g, '').trim();
+            const aiData = JSON.parse(cleanContent);
+            return {
+                ...result,
+                analisis: aiData.analisis || result.analisis,
+                accionSugerida: aiData.accionSugerida || result.accionSugerida,
+                arquetipo: `${result.arquetipo} 👥`
+            };
         } catch (error) {
-            console.error('Error enriching with AI for manager:', error);
-        }
-
-        return result;
-    }
-
-    static async generateExecutiveReport(stats: {
-        globalAverage: number;
-        campusStats: { name: string; avg: number }[];
-        topStrengths: { name: string; avg: number }[];
-        criticalAreas: { name: string; avg: number }[];
-        totalEvaluations: number;
-    }): Promise<string> {
-        const apiKey = import.meta.env.VITE_GOOGLE_AI_KEY;
-        if (!apiKey) return "Error: API Key no configurada.";
-
-        try {
-            const prompt = `
-            Actúa como un Director de Talento Humano presentando un informe a la Rectoría de la Universidad.
-            Analiza los siguientes datos consolidados de la evaluación de desempeño institucional (Modelo PRISMA).
-
-            DATOS GENERALES:
-            - Promedio Global Universidad: ${stats.globalAverage.toFixed(2)} / 5.0
-            - Total Evaluaciones: ${stats.totalEvaluations}
-
-            DESEMPEÑO POR CAMPUS:
-            ${stats.campusStats.map(c => `- ${c.name}: ${c.avg.toFixed(2)}`).join('\n')}
-
-            FORTALEZAS (Top Competencias):
-            ${stats.topStrengths.map(s => `- ${s.name}: ${s.avg.toFixed(2)}`).join('\n')}
-
-            ÁREAS CRÍTICAS (Oportunidades de Mejora):
-            ${stats.criticalAreas.map(s => `- ${s.name}: ${s.avg.toFixed(2)}`).join('\n')}
-
-            INSTRUCCIONES:
-            Redacta un "Resumen Ejecutivo" de 3 párrafos:
-            1. Diagnóstico General: Interpretación del promedio global y la salud organizacional.
-            2. Análisis Comparativo: Breve comentario sobre las diferencias entre campus (si las hay).
-            3. Recomendación Estratégica: Una iniciativa clave para abordar las áreas críticas basándote en las fortalezas detectadas.
-
-            Tono: Corporativo, estratégico y constructivo.
-            Formato: Markdown (usa negritas para resaltar puntos clave).
-            `;
-
-            const genAI = new GoogleGenerativeAI(apiKey);
-            const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-
-            const resultAI = await model.generateContent(prompt);
-            const response = await resultAI.response;
-            return response.text() || "No se pudo generar el reporte.";
-
-        } catch (error) {
-            console.error("Error generating executive report:", error);
-            return "Error al conectar con el servicio de IA.";
+            return result;
         }
     }
 
-    static async generateCampusReport(campusName: string, stats: {
-        globalScore: number;
-        organizationAverage: number;
-        strongestSection: { name: string; score: number };
-        weakestSection: { name: string; score: number };
-        officesCount: number;
-        peopleCount: number; // Approximate or actual
-    }): Promise<any> {
-        const apiKey = import.meta.env.VITE_GOOGLE_AI_KEY;
-        if (!apiKey) return null;
-
+    static async generateExecutiveReport(stats: any): Promise<string> {
         try {
-            const prompt = `
-            Actúa como un Evaluador Profesional de Desarrollo Organizacional y Talento Humano (Rol: Consultor Senior).
-            Genera un reporte estratégico para el Campus "${campusName}" de la Universidad.
-            
-            DATOS DEL CAMPUS:
-            - Puntaje Global: ${stats.globalScore.toFixed(2)} / 5.0
-            - Promedio Organización: ${stats.organizationAverage.toFixed(2)} / 5.0
-            - Fortaleza Principal: ${stats.strongestSection.name} (${stats.strongestSection.score.toFixed(2)})
-            - Área de Mejora: ${stats.weakestSection.name} (${stats.weakestSection.score.toFixed(2)})
-            - Alcance: ${stats.officesCount} oficinas evaluadas.
+            const prompt = `Reporte Ejecutivo Universidad. Promedio Global: ${stats.globalAverage.toFixed(2)}. Redacta 3 párrafos en Markdown.`;
+            return await this.callAI(prompt);
+        } catch (error) {
+            return "No se pudo generar el reporte.";
+        }
+    }
 
-            INSTRUCCIONES:
-            Genera un análisis JSON con el siguiente formato estricto.
-            El tono debe ser CONSTRUCTIVO, RESOLUTIVO y PROPOSITIVO. Enfócate en soluciones y crecimiento.
-            
-            {
-                "executiveSummary": "Resumen ejecutivo de 2-3 oraciones sobre el estado del campus.",
-                "strategicDiagnosis": "Análisis más profundo (1 párrafo) comparando con la organización y destacando la cultura.",
-                "strengths": ["Punto fuerte 1", "Punto fuerte 2", "Punto fuerte 3"],
-                "weaknesses": ["Oportunidad de mejora 1", "Oportunidad de mejora 2"],
-                "recommendations": [
-                    { "title": "Nombre Acción 1", "description": "Descripción detallada", "impact": "Impacto esperado" },
-                    { "title": "Nombre Acción 2", "description": "Descripción detallada", "impact": "Impacto esperado" },
-                    { "title": "Nombre Acción 3", "description": "Descripción detallada", "impact": "Impacto esperado" }
-                ],
-                "actionPlan": {
-                    "shortTerm": ["Acción inmediata 1", "Acción inmediata 2"],
-                    "mediumTerm": ["Acción a 6 meses 1", "Acción a 6 meses 2"],
-                    "longTerm": ["Acción a 1 año 1", "Acción a 1 año 2"]
-                }
-            }
-            
-            Responde SOLO con el JSON válido.
-            `;
-
-            const genAI = new GoogleGenerativeAI(apiKey);
-            const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-
-            const resultAI = await model.generateContent(prompt);
-            const response = await resultAI.response;
-            const text = response.text();
-            
+    static async generateCampusReport(campusName: string, stats: any): Promise<any> {
+        try {
+            const prompt = `Reporte Campus ${campusName}. Puntaje: ${stats.globalScore.toFixed(2)}. Responde solo JSON con executiveSummary, strategicDiagnosis, strengths[], weaknesses[], recommendations[], actionPlan{shortTerm[], mediumTerm[], longTerm[]}.`;
+            const text = await this.callAI(prompt);
             const cleanText = text.replace(/```json\n|\n```/g, '').trim();
             return JSON.parse(cleanText);
-
         } catch (error) {
-            console.error("Error generating campus report:", error);
             return null;
         }
     }
 
-    static async generateUniversityReport(stats: {
-        globalAverage: number;
-        campuses: { name: string; avg: number }[];
-        topOffices: { name: string; avg: number }[];
-        lowPerformingOffices: { name: string; avg: number }[];
-        topStrengths: { name: string; avg: number }[];
-        criticalAreas: { name: string; avg: number }[];
-    }): Promise<any> {
-        const apiKey = import.meta.env.VITE_GOOGLE_AI_KEY;
-        if (!apiKey) return null;
-
+    static async generateUniversityReport(stats: any): Promise<any> {
         try {
-            const prompt = `
-            Actúa como un Evaluador Profesional de Desarrollo Organizacional y Talento Humano (Rol: Consultor Senior).
-            Genera un "Reporte General Avanzado" para toda la Universidad (Nivel Nacional/Multicampus).
-            
-            DATOS GENERALES:
-            - Promedio Global Universidad: ${stats.globalAverage.toFixed(2)} / 5.0
-            
-            DESEMPEÑO POR CAMPUS:
-            ${stats.campuses.map(c => `- ${c.name}: ${c.avg.toFixed(2)}`).join('\n')}
-
-            FORTALEZAS (Top Competencias):
-            ${stats.topStrengths.map(s => `- ${s.name}: ${s.avg.toFixed(2)}`).join('\n')}
-
-            ÁREAS CRÍTICAS (Oportunidades de Mejora):
-            ${stats.criticalAreas.map(s => `- ${s.name}: ${s.avg.toFixed(2)}`).join('\n')}
-
-            OFICINAS CON BAJO DESEMPEÑO (Muestra):
-            ${stats.lowPerformingOffices.map(o => `- ${o.name}: ${o.avg.toFixed(2)}`).join('\n')}
-
-            INSTRUCCIONES:
-            Genera un análisis JSON con el siguiente formato estricto.
-            El tono debe ser ESTRUCTURADO, REFLECTIVO, CONSTRUCTIVO y RESOLUTIVO.
-            Debes recomendar acciones concretas con relación a los puntajes.
-            Para las oficinas con puntajes bajos, sugiere un plan de acción específico.
-
-            {
-                "executiveSummary": "Resumen ejecutivo de alto nivel sobre la salud organizacional de la Universidad.",
-                "strategicDiagnosis": "Diagnóstico profundo analizando la disparidad entre campus y la cultura general.",
-                "strengths": ["Fortaleza clave 1", "Fortaleza clave 2", "Fortaleza clave 3"],
-                "weaknesses": ["Área crítica 1", "Área crítica 2"],
-                "recommendations": [
-                    { "title": "Estrategia 1", "description": "Descripción detallada", "impact": "Impacto esperado" },
-                    { "title": "Estrategia 2", "description": "Descripción detallada", "impact": "Impacto esperado" },
-                    { "title": "Estrategia 3", "description": "Descripción detallada", "impact": "Impacto esperado" }
-                ],
-                "lowPerformanceActionPlan": {
-                    "diagnosis": "Análisis breve de por qué estas oficinas pueden estar fallando (hipótesis basada en datos generales).",
-                    "actions": ["Acción correctiva 1", "Acción correctiva 2", "Acción correctiva 3"]
-                },
-                "actionPlan": {
-                    "shortTerm": ["Acción inmediata 1", "Acción inmediata 2"],
-                    "mediumTerm": ["Acción a 6 meses 1", "Acción a 6 meses 2"],
-                    "longTerm": ["Acción a 1 año 1", "Acción a 1 año 2"]
-                }
-            }
-            
-            Responde SOLO con el JSON válido.
-            `;
-
-            const genAI = new GoogleGenerativeAI(apiKey);
-            const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-
-            const resultAI = await model.generateContent(prompt);
-            const response = await resultAI.response;
-            const text = response.text();
-            
+            const prompt = `Reporte Nacional UDES. Promedio: ${stats.globalAverage.toFixed(2)}. Responde solo JSON similar al de campus pero con lowPerformanceActionPlan.`;
+            const text = await this.callAI(prompt);
             const cleanText = text.replace(/```json\n|\n```/g, '').trim();
             return JSON.parse(cleanText);
-
         } catch (error) {
-            console.error("Error generating university report:", error);
             return null;
         }
     }
