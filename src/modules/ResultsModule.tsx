@@ -211,24 +211,24 @@ export function ResultsModule() {
     }
   };
 
-  // Load detailed results directly from DB results (fast, no recalculation)
+  // Load detailed results directly from DB results with calculation fallback
   const loadDetailedResults = async () => {
     try {
       setLoadingDetailed(true);
       
-      // If we only have preview data, fetch everything first
-      let currentData = allEvaluations;
+      // 1. Ensure we have all evaluations loaded
       if (!allDataLoaded) {
-        // We need to fetch the full dataset to have accurate aggregate analysis
-        // This is the "cargar segun la selección" part
         await loadEvaluations(true);
-        // After loadEvaluations(true), allEvaluations will be updated via setAllEvaluations
-        // But since state updates are async, we might need a better way or just trust the next render
-        // For now, let's use a temporary variable for the full fetch
       }
       
-      // Re-fetch to ensure we have the absolute latest and complete list
-      const { data: fullEvals } = await supabase
+      // Re-fetch EVERYTHING in chunks to ensure we bypass the 1000 limit
+      let allEvalsFull: any[] = [];
+      let page = 0;
+      const pageSize = 1000;
+      let hasMore = true;
+
+      while (hasMore) {
+        const { data: evals, error } = await supabase
           .from('evaluations')
           .select(`
             id, evaluated_id, evaluator_id, template_id, created_at, status,
@@ -237,32 +237,127 @@ export function ResultsModule() {
             template:evaluation_templates ( name ),
             results:evaluation_results ( overall_score, category_scores )
           `)
-          .eq('status', 'completed');
-      
-      const mappedFull = (fullEvals || []).map((e: any) => {
+          .eq('status', 'completed')
+          .range(page * pageSize, (page + 1) * pageSize - 1);
+
+        if (error) throw error;
+        
+        if (evals && evals.length > 0) {
+          allEvalsFull = [...allEvalsFull, ...evals];
+          if (evals.length < pageSize) {
+            hasMore = false;
+          } else {
+            page++;
+          }
+        } else {
+          hasMore = false;
+        }
+      }
+
+      if (allEvalsFull.length === 0) {
+        setDetailedResults([]);
+        setDetailedLoaded(true);
+        return;
+      }
+
+      const mappedFull = allEvalsFull.map((e: any) => {
         const resultsData = Array.isArray(e.results) ? e.results[0] : e.results;
         return {
-          id: e.id,
-          evaluated_id: e.evaluated_id,
-          evaluator_id: e.evaluator_id,
-          template_id: e.template_id,
-          created_at: e.created_at,
-          evaluated_name: e.evaluated?.full_name,
-          evaluator_name: e.evaluator?.full_name,
-          evaluated_office: e.evaluated?.office?.name,
-          evaluator_office: e.evaluator?.office?.name,
-          evaluated_campus: normalizeCampus(e.evaluated?.campus),
-          evaluator_campus: normalizeCampus(e.evaluator?.campus),
-          template_name: e.template?.name,
+          ...e,
           results: resultsData
         };
       });
 
+      // 2. Identify missing results
+      const missingResults = mappedFull.filter(e => !e.results || e.results.overall_score === undefined);
+      const calculatedMap = new Map<string, any>();
+
+      if (missingResults.length > 0) {
+        console.log(`Recalculando ${missingResults.length} evaluaciones antiguas...`);
+        
+        // Fetch necessary data for calculation
+        const missingIds = missingResults.map(e => e.id);
+        const templateIds = Array.from(new Set(missingResults.map(e => e.template_id)));
+
+        const [sections, questions] = await Promise.all([
+          supabase.from('evaluation_sections').select('*').in('template_id', templateIds),
+          supabase.from('evaluation_questions').select('*').in('template_id', templateIds)
+        ]);
+
+        // Fetch responses in chunks to avoid URL limit
+        let allResponses: any[] = [];
+        const chunkSize = 100;
+        for (let i = 0; i < missingIds.length; i += chunkSize) {
+          const chunk = missingIds.slice(i, i + chunkSize);
+          const { data } = await supabase.from('evaluation_responses').select('*').in('evaluation_id', chunk);
+          if (data) allResponses = [...allResponses, ...data];
+        }
+
+        const sectionsList = sections.data || [];
+        const questionsList = questions.data || [];
+        const responsesByEval = new Map<string, any[]>();
+        allResponses.forEach(r => {
+          if (!responsesByEval.has(r.evaluation_id)) responsesByEval.set(r.evaluation_id, []);
+          responsesByEval.get(r.evaluation_id)!.push(r);
+        });
+
+        // Helper for normalization (local copy)
+        const normVal = (val: any): number => {
+          if (val === null || val === undefined || val === '') return 0;
+          if (typeof val === 'number') return val;
+          if (typeof val === 'string') {
+            const parsed = parseFloat(val.replace(',', '.'));
+            return isNaN(parsed) ? 0 : parsed;
+          }
+          if (typeof val === 'object') return Number(val.value || val.rating || val.score || 0);
+          return 0;
+        };
+
+        // Calculate for each missing one
+        missingResults.forEach(evalItem => {
+          const evalSections = sectionsList.filter(s => s.template_id === evalItem.template_id);
+          const evalQuestions = questionsList.filter(q => q.template_id === evalItem.template_id);
+          const evalResponses = responsesByEval.get(evalItem.id) || [];
+          const respMap: Record<string, any> = {};
+          evalResponses.forEach(r => { respMap[r.question_id] = r.response_value; });
+
+          const sectionsSummary: SectionSummaryRow[] = evalSections.map(s => {
+            const qs = evalQuestions.filter(q => q.section_id === s.id);
+            const ratingQs = qs.filter(q => q.question_type === 'rating');
+            
+            let avg: number | null = null;
+            if (ratingQs.length > 0) {
+              const vals = ratingQs.map(q => normVal(respMap[q.id])).filter(v => !isNaN(v));
+              avg = vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+            }
+            return {
+              sectionId: s.id,
+              sectionName: s.name || s.title || `Sección ${s.id}`,
+              avg: avg !== null ? Math.round(avg * 100) / 100 : null,
+              weight: ratingQs.length,
+              questions: []
+            };
+          });
+
+          const validSections = sectionsSummary.filter(s => s.avg !== null);
+          const globalScore = validSections.length > 0 
+            ? validSections.reduce((sum, s) => sum + (s.avg || 0), 0) / validSections.length
+            : 0;
+
+          calculatedMap.set(evalItem.id, {
+            overall_score: Math.round(globalScore * 100) / 100,
+            category_scores: sectionsSummary.reduce((acc, s) => ({ ...acc, [s.sectionName]: s.avg }), {})
+          });
+        });
+      }
+
+      // 3. Final Mapping
       const detailed: ResultWithDetails[] = mappedFull.map((evalItem) => {
-        const res = evalItem.results || {};
+        const dbRes = evalItem.results;
+        const calcRes = calculatedMap.get(evalItem.id);
+        const res = dbRes || calcRes || {};
         const catScores = res.category_scores || {};
         
-        // Map category_scores to sectionsSummary shape
         const sectionsSummary: SectionSummaryRow[] = Object.entries(catScores).map(([key, val]) => ({
           sectionId: key,
           sectionName: key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' '),
@@ -271,21 +366,19 @@ export function ResultsModule() {
           questions: []
         }));
 
-        const globalScore = Number(res.overall_score || 0);
-
         return {
           id: evalItem.id,
           evaluatedId: evalItem.evaluated_id,
-          evaluatedName: evalItem.evaluated_name || 'N/A',
-          evaluatedRole: '',
-          evaluatorName: evalItem.evaluator_name || 'N/A',
-          evaluatedOffice: evalItem.evaluated_office || 'N/A',
-          evaluatorOffice: evalItem.evaluator_office || 'N/A',
-          evaluatedCampus: normalizeCampus(evalItem.evaluated_campus) || 'Bucaramanga',
-          evaluatorCampus: normalizeCampus(evalItem.evaluator_campus) || 'Bucaramanga',
-          templateName: evalItem.template_name || 'N/A',
+          evaluatedName: evalItem.evaluated?.full_name || 'N/A',
+          evaluatedRole: evalItem.evaluated?.role || '',
+          evaluatorName: evalItem.evaluator?.full_name || 'N/A',
+          evaluatedOffice: evalItem.evaluated?.office?.name || 'N/A',
+          evaluatorOffice: evalItem.evaluator?.office?.name || 'N/A',
+          evaluatedCampus: normalizeCampus(evalItem.evaluated?.campus) || 'Bucaramanga',
+          evaluatorCampus: normalizeCampus(evalItem.evaluator?.campus) || 'Bucaramanga',
+          templateName: evalItem.template?.name || 'N/A',
           date: evalItem.created_at,
-          avgScore: globalScore,
+          avgScore: Number(res.overall_score || 0),
           sectionsSummary
         };
       });
@@ -464,6 +557,23 @@ export function ResultsModule() {
               <Filter className="w-4 h-4" />
               <span>Filtros {activeFiltersCount > 0 && `(${activeFiltersCount})`}</span>
             </div>
+
+            {totalInDB && allEvaluations.length < totalInDB && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-blue-600 animate-pulse" />
+                  <p className="text-xs text-blue-800">
+                    Vista previa activa: <strong>{allEvaluations.length}</strong> de <strong>{totalInDB}</strong> registros cargados.
+                  </p>
+                </div>
+                <button 
+                  onClick={() => loadEvaluations(true)} 
+                  className="px-3 py-1 bg-blue-600 text-white rounded text-xs font-bold hover:bg-blue-700 transition-colors shadow-sm"
+                >
+                  Cargar Histórico Completo
+                </button>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
               <div className="relative">
