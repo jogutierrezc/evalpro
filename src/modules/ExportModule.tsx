@@ -151,7 +151,8 @@ export default function ExportModule() {
           status,
           evaluator:users!evaluator_id ( full_name ),
           evaluated:users!evaluated_id!inner ( full_name, campus, role, office:offices ( name ) ),
-          template:evaluation_templates!inner ( name )
+          template:evaluation_templates!inner ( name ),
+          results:evaluation_results ( overall_score, category_scores )
         `)
         .eq('status', 'completed')
         .order('created_at', { ascending: false });
@@ -180,116 +181,24 @@ export default function ExportModule() {
       }
 
       if (filteredEvals.length > 0) {
-        const evaluationIds = filteredEvals.map(e => e.id);
-        
-        // Fetch templates
-        const uniqueTemplates = new Set(filteredEvals.map((e: any) => e.template_id).filter(Boolean));
-        const tempMap = new Map<string, TemplateData>();
-        
-        setExportProgress(`Cargando plantillas para ${uniqueTemplates.size} tipos de evaluación...`);
-        for (const tid of Array.from(uniqueTemplates)) {
-          const [{ data: sections }, { data: questions }] = await Promise.all([
-            supabase.from('evaluation_sections').select('*').eq('template_id', tid),
-            supabase.from('evaluation_questions').select('*').eq('template_id', tid),
-          ]);
-          tempMap.set(tid as string, { 
-            sections: (sections || []).sort((a: any, b: any) => (a.order_index || 0) - (b.order_index || 0)), 
-            questions: questions || [] 
-          });
-        }
-
-        // Fetch responses in chunks
-        setExportProgress(`Cargando respuestas para ${evaluationIds.length} evaluaciones...`);
-        const chunkSize = 50;
-        let responsesForPage: any[] = [];
-        for (let i = 0; i < evaluationIds.length; i += chunkSize) {
-          const chunk = evaluationIds.slice(i, i + chunkSize);
-          const { data } = await supabase.from('evaluation_responses').select('*').in('evaluation_id', chunk);
-          if (data) responsesForPage = [...responsesForPage, ...data];
-        }
-
-        const respByEval = new Map<string, any[]>();
-        responsesForPage.forEach(r => {
-          if (!respByEval.has(r.evaluation_id)) respByEval.set(r.evaluation_id, []);
-          respByEval.get(r.evaluation_id)!.push(r);
-        });
-
         setExportProgress(`Procesando puntuaciones para ${allDetailedResults.length + filteredEvals.length} evaluaciones...`);
         await new Promise(r => setTimeout(r, 10)); // Yield to main thread for UI update
 
-        // Process results
+        // Process results directly from evaluation_results
         filteredEvals.forEach((evalItem: any) => {
-          const templateData = tempMap.get(evalItem.template_id);
-          if (!templateData) return;
+          const resData = Array.isArray(evalItem.results) ? evalItem.results[0] : evalItem.results;
+          const res = resData || {};
+          const catScores = res.category_scores || {};
+          
+          const sectionsSummary: SectionSummaryRow[] = Object.entries(catScores).map(([key, val]) => ({
+            sectionId: key,
+            sectionName: key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' '),
+            avg: Number(val),
+            weight: 0,
+            questions: []
+          }));
 
-          const responses = respByEval.get(evalItem.id) || [];
-          const rMap: Record<string, any> = {};
-          responses.forEach((r) => { rMap[r.question_id] = r.response_value; });
-
-          const sectionsSummary: SectionSummaryRow[] = templateData.sections.map((s) => {
-            const qs = templateData.questions.filter((q: any) => q.section_id === s.id);
-            const qDetails = qs.map((q: any) => ({
-              id: q.id,
-              type: q.question_type,
-              weight: Number(q.weight || 0),
-              response: rMap[q.id]
-            }));
-
-            const ratingQs = qDetails.filter((q) => q.type === 'rating' && q.response !== undefined && q.response !== null);
-            const hasWeights = ratingQs.some((q) => Number(q.weight || 0) > 0);
-
-            let avg: number | null = null;
-            let sectionWeight = 0;
-
-            if (ratingQs.length > 0) {
-              if (hasWeights) {
-                let ssum = 0, wsum = 0;
-                ratingQs.forEach((q) => {
-                  const v = normalizeValue(q.response);
-                  const w = Number(q.weight || 0);
-                  if (!isNaN(v) && w > 0) {
-                    ssum += v * w;
-                    wsum += w;
-                  }
-                });
-                avg = wsum > 0 ? Math.round((ssum / wsum) * 100) / 100 : null;
-                sectionWeight = wsum;
-              } else {
-                const vals = ratingQs.map((q) => normalizeValue(q.response)).filter(v => !isNaN(v));
-                avg = vals.length > 0 ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100 : null;
-                sectionWeight = ratingQs.length;
-              }
-            }
-
-            return {
-              sectionId: s.id,
-              sectionName: s.name || s.title || `Sección ${s.id}`,
-              avg,
-              weight: sectionWeight
-            };
-          });
-
-          // Calculate global score
-          const totalWeight = sectionsSummary.reduce((sum, s) => sum + s.weight, 0);
-          const originalWeights = sectionsSummary.map(s => s.weight);
-          let globalScore = 0;
-          const validSections = sectionsSummary.filter(s => s.avg !== null && s.avg !== undefined);
-
-          if (validSections.length > 0 && totalWeight > 0) {
-            let ssum = 0, wsum = 0;
-            validSections.forEach((s) => {
-              const sectionScore = Number(s.avg) || 0;
-              const sectionWeight = originalWeights[sectionsSummary.indexOf(s)];
-              if (!isNaN(sectionScore) && sectionWeight > 0) {
-                ssum += sectionScore * sectionWeight;
-                wsum += sectionWeight;
-              }
-            });
-            globalScore = wsum > 0 ? Math.round((ssum / wsum) * 100) / 100 : 0;
-          } else if (validSections.length > 0) {
-            const scores = validSections.map(s => Number(s.avg)).filter(v => !isNaN(v));
-            globalScore = scores.length > 0 ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 100) / 100 : 0;
-          }
+          const globalScore = Number(res.overall_score || 0);
 
           allDetailedResults.push({
             evaluationId: evalItem.id,

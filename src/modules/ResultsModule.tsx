@@ -19,9 +19,10 @@ interface EvaluationListItem {
   evaluated_role?: string;
   evaluator_office?: string;
   evaluated_office?: string;
-  evaluator_campus?: string;
-  evaluated_campus?: string;
-  template_name?: string;
+  evaluator_campus: string;
+  evaluated_campus: string;
+  template_name: string;
+  results?: any;
 }
 
 export interface ResultWithDetails {
@@ -117,28 +118,49 @@ export function ResultsModule() {
     try {
       setLoading(true);
 
-      // Get evaluations with basic info only - FILTER BY COMPLETED STATUS ONLY
-      // Use joins to avoid 400 error with too many IDs in .in() filter
-      const { data: evals, error } = await supabase
-        .from('evaluations')
-        .select(`
-          id, 
-          evaluator_id, 
-          evaluated_id, 
-          template_id, 
-          created_at, 
-          status,
-          evaluator:users!evaluator_id ( full_name, campus, role, office:offices ( name ) ),
-          evaluated:users!evaluated_id ( full_name, campus, role, office:offices ( name ) ),
-          template:evaluation_templates ( name )
-        `)
-        .eq('status', 'completed')
-        .order('created_at', { ascending: false });
+      // Fetch all completed evaluations bypassing the 1000 row limit
+      let allEvals: any[] = [];
+      let page = 0;
+      const pageSize = 1000;
+      let hasMore = true;
 
-      if (error) throw error;
+      while (hasMore) {
+        const { data: evals, error } = await supabase
+          .from('evaluations')
+          .select(`
+            id, 
+            evaluator_id, 
+            evaluated_id, 
+            template_id, 
+            created_at, 
+            status,
+            evaluator:users!evaluator_id ( full_name, campus, role, office:offices ( name ) ),
+            evaluated:users!evaluated_id ( full_name, campus, role, office:offices ( name ) ),
+            template:evaluation_templates ( name ),
+            results:evaluation_results ( overall_score, category_scores )
+          `)
+          .eq('status', 'completed')
+          .order('created_at', { ascending: false })
+          .range(page * pageSize, (page + 1) * pageSize - 1);
+
+        if (error) throw error;
+        
+        if (evals && evals.length > 0) {
+          allEvals = [...allEvals, ...evals];
+          if (evals.length < pageSize) {
+            hasMore = false;
+          } else {
+            page++;
+          }
+        } else {
+          hasMore = false;
+        }
+      }
 
       // Transform data
-      const evaluations: EvaluationListItem[] = (evals || []).map((e: any) => {
+      const evaluations: EvaluationListItem[] = allEvals.map((e: any) => {
+        // Enforce the relation is an array or object safely
+        const resultsData = Array.isArray(e.results) ? e.results[0] : e.results;
         return {
           id: e.id,
           evaluator_id: e.evaluator_id,
@@ -154,6 +176,7 @@ export function ResultsModule() {
           evaluator_campus: normalizeCampus(e.evaluator?.campus),
           evaluated_campus: normalizeCampus(e.evaluated?.campus),
           template_name: e.template?.name,
+          results: resultsData
         };
       });
 
@@ -176,151 +199,25 @@ export function ResultsModule() {
     }
   };
 
-  // Load detailed results with sections/questions/responses for aggregate views
+  // Load detailed results directly from DB results (fast, no recalculation)
   const loadDetailedResults = async () => {
     try {
       setLoadingDetailed(true);
-
-      // Use allEvaluations as base - only load sections/questions once per UNIQUE template
-      const evaluationsToLoad = allEvaluations;
-      const uniqueTemplates = new Set(evaluationsToLoad.map(e => e.template_id));
-
-      // Step 1: Load all sections and questions for each UNIQUE template (not per evaluation)
-      const templateDataMap = new Map<string, {
-        sections: any[];
-        questions: any[];
-      }>();
-
-      const templateDataPromises = Array.from(uniqueTemplates).map(async (templateId) => {
-        const [{ data: sections }, { data: questions }] = await Promise.all([
-          supabase.from('evaluation_sections').select('*').eq('template_id', templateId),
-          supabase.from('evaluation_questions').select('*').eq('template_id', templateId),
-        ]);
-        templateDataMap.set(templateId, { sections: sections || [], questions: questions || [] });
-      });
-
-      await Promise.all(templateDataPromises);
-
-      // Step 2: Load ALL responses in chunks to avoid 400 error
-      const evaluationIds = evaluationsToLoad.map(e => e.id);
-      const chunks = [];
-      const chunkSize = 50;
-      for (let i = 0; i < evaluationIds.length; i += chunkSize) {
-        chunks.push(evaluationIds.slice(i, i + chunkSize));
-      }
-
-      let allResponses: any[] = [];
-      for (const chunk of chunks) {
-        const { data } = await supabase
-          .from('evaluation_responses')
-          .select('*')
-          .in('evaluation_id', chunk);
+      
+      const detailed: ResultWithDetails[] = allEvaluations.map((evalItem) => {
+        const res = evalItem.results || {};
+        const catScores = res.category_scores || {};
         
-        if (data) {
-          allResponses = [...allResponses, ...data];
-        }
-      }
+        // Map category_scores to sectionsSummary shape
+        const sectionsSummary: SectionSummaryRow[] = Object.entries(catScores).map(([key, val]) => ({
+          sectionId: key,
+          sectionName: key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' '),
+          avg: Number(val),
+          weight: 0, // no longer needed for rendering aggregations
+          questions: []
+        }));
 
-      const responseMap = new Map<string, any[]>();
-      (allResponses || []).forEach(r => {
-        if (!responseMap.has(r.evaluation_id)) {
-          responseMap.set(r.evaluation_id, []);
-        }
-        responseMap.get(r.evaluation_id)!.push(r);
-      });
-
-      // Step 3: Process each evaluation to build ResultWithDetails
-      const detailed: ResultWithDetails[] = evaluationsToLoad.map((evalItem) => {
-        const templateData = templateDataMap.get(evalItem.template_id);
-        const responses = responseMap.get(evalItem.id) || [];
-
-        if (!templateData) {
-          return null; // Skip if no template data
-        }
-
-        // Build response map for this evaluation
-        const respMap: Record<string, any> = {};
-        responses.forEach((r) => { respMap[r.question_id] = r.response_value; });
-
-        // Build section summaries with proper weight-based averages
-        const sectionsSummary: SectionSummaryRow[] = templateData.sections.map((s) => {
-          const qs = templateData.questions.filter((q: any) => q.section_id === s.id);
-          const qDetails = qs.map((q: any) => ({
-            id: q.id,
-            text: q.question_text || '',
-            type: q.question_type,
-            weight: Number(q.weight || 0),
-            response: respMap[q.id]
-          }));
-
-          // Get only rating questions with valid responses
-          const ratingQs = qDetails.filter((q) => q.type === 'rating' && q.response !== undefined && q.response !== null);
-          const hasWeights = ratingQs.some((q) => Number(q.weight || 0) > 0);
-          
-          let avg: number | null = null;
-          let sectionWeight = 0;
-
-          if (ratingQs.length > 0) {
-            if (hasWeights) {
-              // Weighted average using question weights
-              let ssum = 0, wsum = 0;
-              ratingQs.forEach((q) => {
-                const v = normalizeValue(q.response);
-                const w = Number(q.weight || 0);
-                if (!isNaN(v) && w > 0) { 
-                  ssum += v * w; 
-                  wsum += w; 
-                }
-              });
-              avg = wsum > 0 ? Math.round((ssum / wsum) * 100) / 100 : null;
-              // Section weight = sum of question weights
-              sectionWeight = wsum;
-            } else {
-              // Simple arithmetic mean if no weights defined
-              const vals = ratingQs.map((q) => normalizeValue(q.response)).filter(v => !isNaN(v));
-              avg = vals.length > 0 ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100 : null;
-              // If no explicit weights, use number of questions as implicit weight
-              sectionWeight = ratingQs.length;
-            }
-          }
-
-          return {
-            sectionId: s.id,
-            sectionName: s.name || s.title || `Sección ${s.id}`,
-            avg,
-            weight: sectionWeight,
-            questions: qDetails
-          };
-        });
-
-        // Normalize weights to percentages (for display)
-        const totalWeight = sectionsSummary.reduce((sum, s) => sum + s.weight, 0);
-        const originalWeights = sectionsSummary.map(s => s.weight); // Store original weights before normalization
-        sectionsSummary.forEach(s => {
-          s.weight = totalWeight > 0 ? Math.round((s.weight / totalWeight) * 100) : 0;
-        });
-
-        // Calculate global score as weighted average of section scores
-        let globalScore = 0;
-        const validSections = sectionsSummary.filter(s => s.avg !== null && s.avg !== undefined);
-        
-        if (validSections.length > 0 && totalWeight > 0) {
-          // Use original weights for calculation, normalized weights just for display
-          let ssum = 0, wsum = 0;
-          validSections.forEach((s, idx) => {
-            const sectionScore = Number(s.avg) || 0;
-            const sectionWeight = originalWeights[sectionsSummary.indexOf(s)];
-            if (!isNaN(sectionScore) && sectionWeight > 0) {
-              ssum += sectionScore * sectionWeight;
-              wsum += sectionWeight;
-            }
-          });
-          globalScore = wsum > 0 ? Math.round((ssum / wsum) * 100) / 100 : 0;
-        } else if (validSections.length > 0) {
-          // Fallback to simple average if no weights defined
-          const scores = validSections.map(s => Number(s.avg)).filter(v => !isNaN(v));
-          globalScore = scores.length > 0 ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 100) / 100 : 0;
-        }
+        const globalScore = Number(res.overall_score || 0);
 
         return {
           id: evalItem.id,
@@ -337,7 +234,7 @@ export function ResultsModule() {
           avgScore: globalScore,
           sectionsSummary
         };
-      }).filter(Boolean) as ResultWithDetails[];
+      });
 
       setDetailedResults(detailed);
       setDetailedLoaded(true);
