@@ -173,16 +173,18 @@ export default function SectionAnalysis({ evaluation, onClose }: Props) {
   const load = async () => {
     setLoading(true);
     try {
-      const [{ data: sections }, { data: questions }, { data: responses }, { data: evaluated }, { data: evaluator }] = await Promise.all([
+      const [{ data: sections }, { data: questions }, { data: responses }, { data: evaluated }, { data: evaluator }, { data: resultsData }] = await Promise.all([
         supabase.from('evaluation_sections').select('*').eq('template_id', evaluation.template_id),
         supabase.from('evaluation_questions').select('*').eq('template_id', evaluation.template_id),
         supabase.from('evaluation_responses').select('*').eq('evaluation_id', evaluation.id),
         supabase.from('users').select('*').eq('id', evaluation.evaluated_id).single(),
         supabase.from('users').select('*').eq('id', evaluation.evaluator_id).single(),
+        supabase.from('evaluation_results').select('overall_score, category_scores').eq('evaluation_id', evaluation.id).maybeSingle()
       ]);
 
       setEvaluatedUser(evaluated);
       setEvaluatorUser(evaluator);
+      const dbResult = resultsData;
 
       const sectionsList: any[] = sections || [];
       const questionsList: any[] = questions || [];
@@ -241,12 +243,17 @@ export default function SectionAnalysis({ evaluation, onClose }: Props) {
       if (allRating.length > 0) {
         if (anyW) {
           let ssum = 0; let wsum = 0;
-          allRating.forEach((q) => { const v = Number(q.response); const w = Number(q.weight || 0); if (!isNaN(v)) { ssum += v * w; wsum += w; } });
+          allRating.forEach((q) => { const v = normalizeValue(q.response); const w = Number(q.weight || 0); if (!isNaN(v) && v > 0) { ssum += v * w; wsum += w; } });
           globalScore = wsum > 0 ? Math.round((ssum / wsum) * 100) / 100 : 0;
         } else {
-          const vals = allRating.map((q) => Number(q.response)).filter((v) => !isNaN(v));
+          const vals = allRating.map((q) => normalizeValue(q.response)).filter((v) => !isNaN(v) && v > 0);
           globalScore = vals.length > 0 ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100 : 0;
         }
+      }
+
+      // Final Fallback: overall_score from DB if calculation is 0
+      if (globalScore === 0 && dbResult?.overall_score) {
+        globalScore = Number(dbResult.overall_score);
       }
 
       setSections(built);

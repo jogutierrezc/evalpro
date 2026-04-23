@@ -153,14 +153,22 @@ interface PrismaReportProps {
 const PrismaReport: React.FC<PrismaReportProps> = ({ targetUserId, evaluationId, viewMode = 'self', targetUserName }) => {
     const { user } = useAuth();
     const userIdToFetch = targetUserId || user?.id;
-    const { rawEvaluation, loading } = useEvaluationReport({ userId: userIdToFetch, evaluationId });
+    const [selectedEvalId, setSelectedEvalId] = useState<string | undefined>(evaluationId);
+    const { rawEvaluation, availableEvaluations, loading } = useEvaluationReport({ userId: userIdToFetch, evaluationId: selectedEvalId });
     const [aiResults, setAiResults] = useState<AnalysisResult[] | null>(null);
     const [isEnhancing, setIsEnhancing] = useState(false);
 
-    // Reset AI results when user changes
+    // Sync selectedEvalId with prop
+    useEffect(() => {
+        if (evaluationId) {
+            setSelectedEvalId(evaluationId);
+        }
+    }, [evaluationId]);
+
+    // Reset AI results when evaluation or user changes
     useEffect(() => {
         setAiResults(null);
-    }, [userIdToFetch]);
+    }, [userIdToFetch, selectedEvalId]);
 
     // Load saved AI results if available
     useEffect(() => {
@@ -176,14 +184,49 @@ const PrismaReport: React.FC<PrismaReportProps> = ({ targetUserId, evaluationId,
     }, [rawEvaluation]);
 
     const analysisResults = useMemo(() => {
-        if (!rawEvaluation || !rawEvaluation.responses) return [];
+        if (!rawEvaluation) return [];
 
-        // Helper to handle jsonb values
+        // 1. PRIORIDAD: Usar datos reales (category_scores) de evaluation_results
+        const dbResult = rawEvaluation?.results ? (Array.isArray(rawEvaluation.results) ? rawEvaluation.results[0] : rawEvaluation.results) : null;
+        
+        if (dbResult?.category_scores && Object.keys(dbResult.category_scores).length > 0) {
+            console.log("[Prisma] Usando puntajes reales de la base de datos");
+            const results: AnalysisResult[] = [];
+            const catScores = dbResult.category_scores;
+            const categories = PrismaBrain.getCategories();
+
+            categories.forEach(catId => {
+                const config = (PRISMA_KNOWLEDGE_BASE as any)[catId];
+                const score = parseFloat(catScores[config?.name] || catScores[config?.id] || catScores[catId] || 0);
+
+                if (score > 0) {
+                    // Generar narrativa basada en el puntaje real
+                    const narrativa = (NarrativeGenerator as any).generate(catId, score, false);
+                    results.push({
+                        category: config?.name || catId,
+                        score: score,
+                        rawScore: score,
+                        maxPossibleScore: 5.0,
+                        percentage: Math.round((score / 5) * 100),
+                        anchorFailed: false,
+                        ...narrativa
+                    });
+                }
+            });
+
+            if (results.length > 0) return results;
+        }
+
+        // 2. FALLBACK: Calcular desde respuestas si no hay resultados procesados
+        if (!rawEvaluation.responses) return [];
+        
+        console.log("[Prisma] Calculando puntajes desde respuestas (fallback)");
+        // Helper to handle jsonb values (Robust version from ExportModule)
         const normalizeValue = (val: any): number => {
-            if (val === null || val === undefined) return 0;
+            if (val === null || val === undefined || val === '') return 0;
             if (typeof val === 'number') return val;
             if (typeof val === 'string') {
-                const parsed = parseFloat(val);
+                const parsed = parseFloat(val.replace(',', '.'));
                 return isNaN(parsed) ? 0 : parsed;
             }
             if (typeof val === 'object') {
@@ -192,57 +235,38 @@ const PrismaReport: React.FC<PrismaReportProps> = ({ targetUserId, evaluationId,
             return 0;
         };
 
-        // Map responses: Question Text -> Score
         const userAnswers: Record<string, number> = {};
         const sectionScores: Record<string, { total: number; count: number }> = {};
 
         rawEvaluation.responses.forEach((r: any) => {
-            // Filter only rating questions to avoid skewing averages
-            const qType = r.question?.type || 'rating'; // Default to rating if missing, but should be there
+            const qType = r.question?.question_type || r.question?.type || 'rating';
             if (qType !== 'rating' && qType !== 'scale') return;
 
             const text = r.question?.question_text || '';
             const section = r.question?.section?.title || 'General';
             const val = normalizeValue(r.response_value);
 
-            // Store by text for fuzzy matching in engine
-            userAnswers[text] = val;
-
-            // Store by section for fallback
-            if (!sectionScores[section]) sectionScores[section] = { total: 0, count: 0 };
-            sectionScores[section].total += val;
-            sectionScores[section].count += 1;
+            // Filter out 0/empty values to match ExportModule behavior
+            if (val > 0) {
+                userAnswers[text] = val;
+                if (!sectionScores[section]) sectionScores[section] = { total: 0, count: 0 };
+                sectionScores[section].total += val;
+                sectionScores[section].count += 1;
+            }
         });
-
-        console.log('[Prisma Debug] User Answers Keys:', Object.keys(userAnswers));
-        console.log('[Prisma Debug] Section Scores:', sectionScores);
 
         const results: AnalysisResult[] = [];
         const categories = PrismaBrain.getCategories();
-
-        // Helper to normalize strings (remove accents, lowercase)
         const normalizeStr = (str: string) => str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
         categories.forEach(cat => {
             let res = PrismaBrain.analyze(cat, userAnswers);
 
-            // Fallback: If score is 0, try to find a matching section
             if (res.score === 0) {
-                const configName = normalizeStr(res.category || '');
                 const catNorm = normalizeStr(cat);
-
-                // Find matching section in sectionScores
                 const matchingSectionKey = Object.keys(sectionScores).find(k => {
                     const kNorm = normalizeStr(k);
-                    // Match if section name contains the category name or vice versa
-                    const basicMatch = kNorm.includes(catNorm) || catNorm.includes(kNorm);
-                    return basicMatch ||
-                        (catNorm === 'calidad' && kNorm.includes('calidad') && !kNorm.includes('sistema')) || // Prevent Calidad from matching SGC
-                        (catNorm.includes('resultados') && kNorm.includes('resultados')) ||
-                        (catNorm.includes('integridad') && kNorm.includes('integridad')) ||
-                        (catNorm.includes('comunicacion') && kNorm.includes('comunicacion')) ||
-                        (catNorm.includes('institucional') && kNorm.includes('institucional')) ||
-                        (catNorm.includes('equipo') && kNorm.includes('equipo'));
+                    return kNorm.includes(catNorm) || catNorm.includes(kNorm);
                 });
 
                 if (matchingSectionKey) {
@@ -250,33 +274,21 @@ const PrismaReport: React.FC<PrismaReportProps> = ({ targetUserId, evaluationId,
                     const avg = sData.count > 0 ? Number((sData.total / sData.count).toFixed(2)) : 0;
 
                     if (avg > 0) {
-                        // Create a synthetic result based on the section average
-                        // FORCE overwriting the narrative to avoid "Anchor Failed" text from 0 score
                         const isHigh = avg >= 4;
                         const isMed = avg >= 3;
-
                         res = {
                             ...res,
                             score: avg,
                             percentage: Math.round((avg / 5) * 100),
-                            anchorFailed: false, // Important: clear anchor failure
+                            anchorFailed: false,
                             nivelRiesgo: avg < 3 ? 'Alto' : avg < 4 ? 'Medio' : 'Bajo',
                             arquetipo: isHigh ? 'Desempeño Sobresaliente' : isMed ? 'Desempeño Competente' : 'Oportunidad de Mejora',
-                            analisis: `El análisis se ha generado a partir del promedio general de la sección "${matchingSectionKey}" (${avg}/5.0). ${isHigh ? 'El evaluado demuestra un dominio sólido de esta competencia.' :
-                                isMed ? 'El evaluado cumple con los expectativas básicas, aunque hay margen de mejora.' :
-                                    'Se requiere un plan de fortalecimiento inmediato en esta área.'
-                                }`,
-                            accionSugerida: isHigh ? 'Continuar liderando con el ejemplo y mentorear a otros.' :
-                                isMed ? 'Establecer objetivos específicos para elevar el estándar de calidad.' :
-                                    'Solicitar feedback frecuente y capacitación de refuerzo.'
+                            analisis: `Promedio de sección "${matchingSectionKey}" (${avg}/5.0).`,
+                            accionSugerida: isHigh ? 'Continuar liderando.' : 'Establecer objetivos de mejora.'
                         };
-                        console.log(`[Prisma Debug] Used fallback for ${cat} using section ${matchingSectionKey}: ${avg}`);
                     }
                 }
             }
-
-            console.log(`[Prisma Debug] Analysis for ${cat}:`, res);
-            // Only push if score > 0 effectively hides irrelevant categories
             if (res && res.score > 0) results.push(res);
         });
 
@@ -284,32 +296,46 @@ const PrismaReport: React.FC<PrismaReportProps> = ({ targetUserId, evaluationId,
     }, [rawEvaluation]);
 
     const displayResults = aiResults || analysisResults;
+    
+    // Helper para normalización de valores numéricos
+    const normVal = (val: any): number => {
+        if (val === null || val === undefined || val === '') return 0;
+        if (typeof val === 'number') return val;
+        if (typeof val === 'string') {
+            const parsed = parseFloat(val.replace(',', '.'));
+            return isNaN(parsed) ? 0 : parsed;
+        }
+        if (typeof val === 'object') return Number(val.value || val.rating || val.score || val.response || 0);
+        return 0;
+    };
 
     const globalScore = useMemo(() => {
-        // Calculate true global score from all rating responses to match the list view
-        // This avoids the "Average of Averages" discrepancy
+        if (!rawEvaluation) return "0.0";
+
+        // 1. PRIORIDAD: Usar puntaje global real de la base de datos (solo si es > 0)
+        const dbResult = rawEvaluation.results ? (Array.isArray(rawEvaluation.results) ? rawEvaluation.results[0] : rawEvaluation.results) : null;
+        const storedScore = normVal(dbResult?.overall_score);
+        if (storedScore > 0) {
+            return storedScore.toFixed(1);
+        }
+
+        // 2. FALLBACK: Calcular desde respuestas
         if (rawEvaluation?.responses?.length) {
             let total = 0;
             let count = 0;
             
             rawEvaluation.responses.forEach((r: any) => {
-                // Check for question type if available
                 const qType = r.question?.question_type || r.question?.type;
-                
-                // If we have type info, only include rating/scale
-                // If we don't have type info, check if value is numeric
                 if (!qType || qType === 'rating' || qType === 'scale') {
-                    const val = parseFloat(r.response_value);
-                    if (!isNaN(val)) {
+                    const val = normVal(r.response_value);
+                    if (val > 0) {
                         total += val;
                         count++;
                     }
                 }
             });
 
-            if (count > 0) {
-                return (total / count).toFixed(1);
-            }
+            if (count > 0) return (total / count).toFixed(1);
         }
 
         return displayResults.length > 0
@@ -427,13 +453,36 @@ const PrismaReport: React.FC<PrismaReportProps> = ({ targetUserId, evaluationId,
                                 <Brain size={16} />
                                 <span>{viewMode === 'manager' ? 'Informe de Gestión de Talento' : 'Informe de Inteligencia Conductual'}</span>
                             </div>
-                            <h1 className="text-3xl md:text-4xl font-bold mb-2">{viewMode === 'manager' ? `Reporte: ${targetUserName}` : 'Mi Resultado Prisma'}</h1>
-                            <p className="text-indigo-200 text-lg max-w-2xl mb-4">
-                                {viewMode === 'manager' 
-                                    ? `Análisis de desempeño y guía de coaching para ${targetUserName}.`
-                                    : `Hola ${user?.full_name?.split(' ')[0]}, hemos analizado tu perfil profesional basándonos en ${displayResults.length} dimensiones clave de desempeño.`
-                                }
-                            </p>
+                             <h1 className="text-3xl md:text-4xl font-bold mb-2">{viewMode === 'manager' ? `Reporte: ${targetUserName}` : 'Mi Resultado Prisma'}</h1>
+                             <p className="text-indigo-200 text-lg max-w-2xl mb-4">
+                                 {viewMode === 'manager' 
+                                     ? `Análisis de desempeño y guía de coaching para ${targetUserName}.`
+                                     : `Hola ${user?.full_name?.split(' ')[0]}, hemos analizado tu perfil profesional basándonos en ${displayResults.length} dimensiones clave de desempeño.`
+                                 }
+                             </p>
+
+                             {/* Selector de Evaluación */}
+                             {availableEvaluations.length > 1 && (
+                                 <div className="mt-6 flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                                     <span className="text-indigo-300 text-sm font-medium">Cambiar Evaluación:</span>
+                                     <select 
+                                         value={selectedEvalId || rawEvaluation?.id || ''}
+                                         onChange={(e) => setSelectedEvalId(e.target.value)}
+                                         className="bg-indigo-800/80 border border-indigo-700 text-white rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 backdrop-blur-sm min-w-[200px]"
+                                     >
+                                         {availableEvaluations.map(ev => {
+                                             const date = new Date(ev.created_at).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+                                             const isEvaluator = ev.evaluator_id === user?.id && ev.evaluated_id !== user?.id;
+                                             const roleLabel = isEvaluator ? '👉 [Como Evaluador]' : '👤 [Mi Resultado]';
+                                             return (
+                                                 <option key={ev.id} value={ev.id}>
+                                                     {date} - {ev.template?.name} {roleLabel}
+                                                 </option>
+                                             );
+                                         })}
+                                     </select>
+                                 </div>
+                             )}
                         </div>
 
                         <div className="flex items-center gap-4">

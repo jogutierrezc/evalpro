@@ -10,6 +10,7 @@ interface UseEvaluationReportProps {
 export function useEvaluationReport({ evaluationId, userId }: UseEvaluationReportProps) {
     const [inputData, setInputData] = useState<EvaluacionInput | null>(null);
     const [evaluationData, setEvaluationData] = useState<any | null>(null);
+    const [availableEvaluations, setAvailableEvaluations] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -18,10 +19,42 @@ export function useEvaluationReport({ evaluationId, userId }: UseEvaluationRepor
             setLoading(true);
             setError(null);
 
-            let evaluationData = null;
+            let currentEval = null;
 
-            // 1. Fetch Evaluation Data
-            if (evaluationId) {
+            // 1. Fetch ALL available evaluations for this user to allow switching
+            if (userId) {
+                const { data: allEvals, error: listError } = await supabase
+                    .from('evaluations')
+                    .select(`
+                        id,
+                        evaluator_id,
+                        evaluated_id,
+                        created_at,
+                        status,
+                        template:evaluation_templates(name, type),
+                        evaluator:users!evaluator_id(full_name),
+                        evaluated:users!evaluated_id(full_name)
+                    `)
+                    .or(`evaluated_id.eq.${userId},evaluator_id.eq.${userId}`)
+                    .eq('status', 'completed')
+                    .order('created_at', { ascending: false });
+
+                if (!listError && allEvals) {
+                    setAvailableEvaluations(allEvals);
+                }
+            }
+
+            // 2. Fetch specific or latest evaluation data
+            const targetId = evaluationId || (userId ? (await supabase
+                .from('evaluations')
+                .select('id')
+                .eq('evaluated_id', userId)
+                .eq('status', 'completed')
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle())?.data?.id : null);
+
+            if (targetId) {
                 const { data, error } = await supabase
                     .from('evaluations')
                     .select(`
@@ -30,7 +63,7 @@ export function useEvaluationReport({ evaluationId, userId }: UseEvaluationRepor
                         evaluated:users!evaluated_id(full_name, role),
                         evaluator:users!evaluator_id(full_name, role),
                         template:evaluation_templates(name, type),
-                        results:evaluation_results(ai_analysis),
+                        results:evaluation_results(overall_score, category_scores, ai_analysis, recommendations),
                         responses:evaluation_responses(
                             response_value,
                             question:evaluation_questions(
@@ -41,51 +74,21 @@ export function useEvaluationReport({ evaluationId, userId }: UseEvaluationRepor
                             )
                         )
                     `)
-                    .eq('id', evaluationId)
+                    .eq('id', targetId)
                     .single();
 
                 if (error) throw error;
-                evaluationData = data;
-                setEvaluationData(data);
-            } else if (userId) {
-                const { data, error } = await supabase
-                    .from('evaluations')
-                    .select(`
-                        id,
-                        created_at,
-                        evaluated:users!evaluated_id(full_name, role),
-                        template:evaluation_templates(name, type),
-                        results:evaluation_results(ai_analysis),
-                        responses:evaluation_responses(
-                            response_value,
-                            question:evaluation_questions(
-                                id,
-                                question_text,
-                                question_type,
-                                section:evaluation_sections(id, title)
-                            )
-                        )
-                    `)
-                    .eq('evaluated_id', userId)
-                    .eq('status', 'completed')
-                    .order('created_at', { ascending: false })
-                    .limit(1)
-                    .maybeSingle();
-
-                if (error) throw error;
-                evaluationData = data;
+                currentEval = data;
                 setEvaluationData(data);
             }
 
-            if (!evaluationData) {
+            if (!currentEval) {
                 setInputData(null);
                 setLoading(false);
                 return;
             }
 
-            // 2. Fetch Comparative Data (All completed evaluations)
-            // Note: For comparative data to be meaningful with dynamic sections, 
-            // we ideally need to aggregate by the SAME section names.
+            // 3. Fetch Comparative Data (All completed evaluations)
             const { data: allEvaluations } = await supabase
                 .from('evaluations')
                 .select(`
@@ -101,57 +104,42 @@ export function useEvaluationReport({ evaluationId, userId }: UseEvaluationRepor
 
             // Helper to handle jsonb values
             const normalizeValue = (val: any): number => {
-                if (val === null || val === undefined) return 0;
+                if (val === null || val === undefined || val === '') return 0;
                 if (typeof val === 'number') return val;
                 if (typeof val === 'string') {
-                    const parsed = parseFloat(val);
+                    const parsed = parseFloat(val.replace(',', '.'));
                     return isNaN(parsed) ? 0 : parsed;
                 }
                 if (typeof val === 'object') {
-                    // Start digging
                     return Number(val.value || val.rating || val.score || val.response || 0);
                 }
                 return 0;
             };
 
-            // Process User Scores - Aggregating by RAW Section Title
+            // Process User Scores
             const sectionScores: Record<string, { total: number; count: number }> = {};
-
-            console.log('[EvalPro Debug] Processing responses:', evaluationData.responses?.length);
-
-            evaluationData.responses?.forEach((r: any) => {
-                const qType = r.question?.question_type;
+            currentEval.responses?.forEach((r: any) => {
                 const title = r.question?.section?.title || 'General';
                 const numericVal = normalizeValue(r.response_value);
-
-                // Ignore non-rating questions and any questions with a value of 0 or empty
-                // In a 1-5 scale, 0 is an unanswered question and shouldn't drag down the average
                 if (numericVal === 0) return;
-
-                // We use the raw title to allow the AI logic to detect the dimension dynamically
-                // or display the custom section name if no dimension matches.
                 if (!sectionScores[title]) sectionScores[title] = { total: 0, count: 0 };
                 sectionScores[title].total += numericVal;
                 sectionScores[title].count += 1;
             });
-
-            console.log('[EvalPro Debug] Section Scores:', sectionScores);
 
             const puntajes: Record<string, number> = {};
             Object.entries(sectionScores).forEach(([key, val]) => {
                 puntajes[key] = val.count > 0 ? Number((val.total / val.count).toFixed(1)) : 0;
             });
 
-            // Process Comparative Scores - Also by RAW Section Title
+            // Process Comparative Scores
             const compScores: Record<string, { total: number; count: number }> = {};
             if (allEvaluations) {
                 allEvaluations.forEach(ev => {
                     ev.responses?.forEach((r: any) => {
-                        // Same normalization for comparative
-                        const qType = r.question?.question_type;
                         const numericVal = normalizeValue(r.response_value);
+                        const qType = r.question?.question_type;
                         if (qType && qType !== 'rating' && numericVal === 0) return;
-
                         const title = r.question?.section?.title || 'General';
                         if (!compScores[title]) compScores[title] = { total: 0, count: 0 };
                         compScores[title].total += numericVal;
@@ -167,7 +155,7 @@ export function useEvaluationReport({ evaluationId, userId }: UseEvaluationRepor
 
             // Determine Report Type
             let tipoInforme: TipoExamenVaf = 'AUTOEVALUACION';
-            const template = (evaluationData as any).template;
+            const template = (currentEval as any).template;
             const tName = (template?.name || '').toLowerCase();
             const tType = (template?.type || '').toLowerCase();
 
@@ -185,8 +173,8 @@ export function useEvaluationReport({ evaluationId, userId }: UseEvaluationRepor
                 tipoInforme = 'LIDERAZGO_TACTICO';
             }
 
-            const evaluadoUser = (evaluationData as any).evaluated;
-            const evaluatorUser = (evaluationData as any).evaluator;
+            const evaluadoUser = (currentEval as any).evaluated;
+            const evaluatorUser = (currentEval as any).evaluator;
 
             let evaluadorNombre = 'Sistema Neural de Análisis Prisma UDES';
             if (tipoInforme === 'LIDERAZGO_TACTICO') {
@@ -197,11 +185,11 @@ export function useEvaluationReport({ evaluationId, userId }: UseEvaluationRepor
                 evaluado: {
                     nombre: evaluadoUser?.full_name || 'Colaborador',
                     rol: evaluadoUser?.role || 'Analista',
-                    fecha: new Date(evaluationData.created_at).toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })
+                    fecha: new Date(currentEval.created_at).toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })
                 },
                 tipoInforme,
                 evaluadorNombre,
-                puntajes, // Dynamic keys now
+                puntajes,
                 comparativeScores: comparativePuntajes
             });
 
@@ -221,5 +209,5 @@ export function useEvaluationReport({ evaluationId, userId }: UseEvaluationRepor
         }
     }, [loadData, evaluationId, userId]);
 
-    return { inputData, rawEvaluation: evaluationData, loading, error, reload: loadData };
+    return { inputData, rawEvaluation: evaluationData, availableEvaluations, loading, error, reload: loadData };
 }

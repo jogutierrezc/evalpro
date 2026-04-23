@@ -313,29 +313,55 @@ export class PrismaBrain {
         const openRouterKey = import.meta.env.VITE_OPENROUTER_API_KEY;
         const googleKey = import.meta.env.VITE_GOOGLE_AI_KEY;
 
+        console.log('[PrismaBrain] Keys check:', { 
+            hasOpenRouter: !!openRouterKey, 
+            hasGoogle: !!googleKey,
+            openRouterModel: import.meta.env.VITE_OPENROUTER_MODEL 
+        });
+
+        let lastError = null;
+
         // 1. Try OpenRouter first
         if (openRouterKey && !openRouterKey.includes('your_openrouter_key')) {
             try {
+                // ... (existing OpenRouter code)
                 const model = import.meta.env.VITE_OPENROUTER_MODEL || "google/gemini-2.0-flash-exp:free";
+                const siteUrl = import.meta.env.VITE_SITE_URL || 'http://localhost:5174';
+                const siteName = import.meta.env.VITE_SITE_NAME || 'EvalPro UDES';
+
                 const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
                     method: "POST",
                     headers: {
                         "Authorization": `Bearer ${openRouterKey}`,
-                        "HTTP-Referer": import.meta.env.VITE_SITE_URL || 'http://localhost:5174',
-                        "X-Title": import.meta.env.VITE_SITE_NAME || 'EvalPro UDES',
+                        "HTTP-Referer": siteUrl,
+                        "X-Title": siteName,
                         "Content-Type": "application/json"
                     },
                     body: JSON.stringify({
                         "model": model,
-                        "messages": [{ "role": "user", "content": prompt }]
+                        "messages": [
+                            { 
+                                "role": "system", 
+                                "content": "Eres el Sistema de Inteligencia Prisma de la Universidad de Santander (UDES). Tu objetivo es proporcionar análisis de desempeño humano profundamente profesionales, constructivos y estratégicos. Utilizas un lenguaje corporativo pero empático, enfocado en el crecimiento y la excelencia académica y administrativa." 
+                            },
+                            { "role": "user", "content": prompt }
+                        ],
+                        "response_format": { "type": "json_object" }
                     })
                 });
                 const data = await response.json();
+                
                 if (data.choices?.[0]?.message?.content) {
                     return data.choices[0].message.content;
                 }
-            } catch (err) {
-                console.error("OpenRouter error:", err);
+                
+                if (data.error) {
+                    const errorMsg = data.error.message || JSON.stringify(data.error);
+                    throw new Error(`OpenRouter API Error: ${errorMsg}`);
+                }
+            } catch (err: any) {
+                console.error("OpenRouter Error:", err);
+                lastError = err;
             }
         }
 
@@ -346,12 +372,13 @@ export class PrismaBrain {
                 const result = await model.generateContent(prompt);
                 const response = await result.response;
                 return response.text();
-            } catch (err) {
+            } catch (err: any) {
                 console.error("Google AI error:", err);
+                lastError = err;
             }
         }
 
-        throw new Error("No AI providers configured");
+        throw lastError || new Error("No AI providers configured. Please check your .env file.");
     }
 
     static getCategories(): string[] {
@@ -360,7 +387,25 @@ export class PrismaBrain {
 
     static async enrichWithAi(result: AnalysisResult): Promise<AnalysisResult> {
         try {
-            const prompt = `Actúa como Mentor. Competencia: ${result.category}. Puntaje: ${result.score}. Genera un JSON con "analisis" y "accionSugerida". Responde solo JSON.`;
+            const prompt = `
+            Realiza un análisis profundo para el colaborador en la competencia: "${result.category}".
+            Puntaje obtenido: ${result.score}/5.0.
+            Arquetipo detectado: ${result.arquetipo}.
+            Riesgo: ${result.nivelRiesgo}.
+
+            Contexto Institucional UDES (Universidad de Santander):
+            Esta competencia es fundamental para los pilares de la UDES: Calidad Académica, Integridad Institucional y Compromiso Social.
+            
+            Instrucciones:
+            1. Proporciona un "analisis" reflexivo (máximo 450 caracteres) que explique cómo este puntaje impacta su rol dentro de la comunidad universitaria.
+            2. Define una "accionSugerida" (máximo 300 caracteres) con recomendaciones pedagógicas, de liderazgo o gestión técnica específicas para el entorno UDES.
+            
+            Responde estrictamente en formato JSON:
+            {
+                "analisis": "texto del análisis profundo...",
+                "accionSugerida": "texto de la acción estratégica..."
+            }
+            `;
             const content = await this.callAI(prompt);
             const cleanContent = content.replace(/```json\n|\n```/g, '').trim();
             const aiData = JSON.parse(cleanContent);
@@ -371,13 +416,31 @@ export class PrismaBrain {
                 arquetipo: `${result.arquetipo} ✨`
             };
         } catch (error) {
+            console.error("Error in enrichWithAi:", error);
             return result;
         }
     }
 
     static async enrichWithAiForManager(result: AnalysisResult, evaluatedName: string): Promise<AnalysisResult> {
         try {
-            const prompt = `Guía estratégica para el Líder de ${evaluatedName}. Competencia: ${result.category}. Puntaje: ${result.score}. Genera un JSON con "analisis" y "accionSugerida". Responde solo JSON.`;
+            const prompt = `
+            Genera una guía estratégica de alto nivel para el Líder sobre el desempeño de: ${evaluatedName}.
+            Competencia evaluada: "${result.category}".
+            Puntaje: ${result.score}/5.0.
+            Arquetipo: ${result.arquetipo}.
+
+            Contexto UDES: Buscamos excelencia administrativa y académica.
+            
+            Instrucciones para el Líder:
+            1. En "analisis", describe con enfoque gerencial cómo el desempeño de ${evaluatedName} influye en la eficiencia de la oficina y el cumplimiento del Plan de Desarrollo Institucional (máximo 450 caracteres).
+            2. En "accionSugerida", proporciona 2 pasos concretos de gestión (feedback, delegación o capacitación) que el líder debe ejecutar (máximo 300 caracteres).
+            
+            Responde estrictamente en formato JSON:
+            {
+                "analisis": "análisis estratégico para el líder...",
+                "accionSugerida": "estrategia de gestión detallada..."
+            }
+            `;
             const content = await this.callAI(prompt);
             const cleanContent = content.replace(/```json\n|\n```/g, '').trim();
             const aiData = JSON.parse(cleanContent);
@@ -388,6 +451,7 @@ export class PrismaBrain {
                 arquetipo: `${result.arquetipo} 👥`
             };
         } catch (error) {
+            console.error("Error in enrichWithAiForManager:", error);
             return result;
         }
     }

@@ -1,0 +1,82 @@
+{
+  "hash": "a2c2c7d9",
+  "configHash": "7f0a4cc1",
+  "lockfileHash": "f322664a",
+  "browserHash": "6b2c6a9f",
+  "optimized": {
+    "react": {
+      "src": "../../node_modules/react/index.js",
+      "file": "react.js",
+      "fileHash": "09ce145d",
+      "needsInterop": true
+    },
+    "react-dom": {
+      "src": "../../node_modules/react-dom/index.js",
+      "file": "react-dom.js",
+      "fileHash": "288d379d",
+      "needsInterop": true
+    },
+    "react/jsx-dev-runtime": {
+      "src": "../../node_modules/react/jsx-dev-runtime.js",
+      "file": "react_jsx-dev-runtime.js",
+      "fileHash": "df01bb3b",
+      "needsInterop": true
+    },
+    "react/jsx-runtime": {
+      "src": "../../node_modules/react/jsx-runtime.js",
+      "file": "react_jsx-runtime.js",
+      "fileHash": "724031f8",
+      "needsInterop": true
+    },
+    "@google/generative-ai": {
+      "src": "../../node_modules/@google/generative-ai/dist/index.mjs",
+      "file": "@google_generative-ai.js",
+      "fileHash": "86eb0261",
+      "needsInterop": false
+    },
+    "@lottiefiles/dotlottie-react": {
+      "src": "../../node_modules/@lottiefiles/dotlottie-react/dist/browser/index.js",
+      "file": "@lottiefiles_dotlottie-react.js",
+      "fileHash": "f98cbf14",
+      "needsInterop": false
+    },
+    "@supabase/supabase-js": {
+      "src": "../../node_modules/@supabase/supabase-js/dist/index.mjs",
+      "file": "@supabase_supabase-js.js",
+      "fileHash": "0cc0bf85",
+      "needsInterop": false
+    },
+    "react-dom/client": {
+      "src": "../../node_modules/react-dom/client.js",
+      "file": "react-dom_client.js",
+      "fileHash": "03599085",
+      "needsInterop": true
+    },
+    "recharts": {
+      "src": "../../node_modules/recharts/es6/index.js",
+      "file": "recharts.js",
+      "fileHash": "92552f71",
+      "needsInterop": false
+    },
+    "xlsx": {
+      "src": "../../node_modules/xlsx/xlsx.mjs",
+      "file": "xlsx.js",
+      "fileHash": "bdde2cd0",
+      "needsInterop": false
+    }
+  },
+  "chunks": {
+    "chunk-BC63SET5": {
+      "file": "chunk-BC63SET5.js"
+    },
+    "chunk-QFD2GQ4D": {
+      "file": "chunk-QFD2GQ4D.js"
+    },
+    "chunk-TWJRYSII": {
+      "file": "chunk-TWJRYSII.js"
+    },
+    "chunk-DC5AMYBS": {
+      "file": "chunk-DC5AMYBS.js"
+    }
+  }
+}
