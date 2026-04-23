@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { User, TrendingUp, Shield, Zap, Target, BookOpen, AlertCircle, CheckCircle, ChevronDown, ChevronUp, BarChart2, Briefcase, Brain, Layout, Users, Sparkles, Printer } from 'lucide-react';
+import { User, TrendingUp, Shield, Zap, Target, BookOpen, AlertCircle, CheckCircle, ChevronDown, ChevronUp, BarChart2, Briefcase, Brain, Layout, Users, Sparkles, Printer, Calendar } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useEvaluationReport } from '../hooks/useEvaluationReport';
+import { usePeriods } from '../hooks/usePeriods';
 import { PrismaBrain, AnalysisResult } from '../lib/prisma-engine';
 import { supabase } from '../lib/supabase';
 import { GoogleAiReport } from '../components/GoogleAiReport';
@@ -152,9 +153,22 @@ interface PrismaReportProps {
 
 const PrismaReport: React.FC<PrismaReportProps> = ({ targetUserId, evaluationId, viewMode = 'self', targetUserName }) => {
     const { user } = useAuth();
+    const { periods, activePeriod } = usePeriods();
     const userIdToFetch = targetUserId || user?.id;
+    const [selectedPeriodId, setSelectedPeriodId] = useState<string>('all');
     const [selectedEvalId, setSelectedEvalId] = useState<string | undefined>(evaluationId);
-    const { rawEvaluation, availableEvaluations, loading } = useEvaluationReport({ userId: userIdToFetch, evaluationId: selectedEvalId });
+    
+    const { rawEvaluation, availableEvaluations, loading } = useEvaluationReport({ 
+        userId: userIdToFetch, 
+        evaluationId: selectedEvalId,
+        periodId: selectedPeriodId
+    });
+
+    useEffect(() => {
+        if (activePeriod && !selectedEvalId) {
+            setSelectedPeriodId(activePeriod.id);
+        }
+    }, [activePeriod]);
     const [aiResults, setAiResults] = useState<AnalysisResult[] | null>(null);
     const [isEnhancing, setIsEnhancing] = useState(false);
 
@@ -461,28 +475,44 @@ const PrismaReport: React.FC<PrismaReportProps> = ({ targetUserId, evaluationId,
                                  }
                              </p>
 
-                             {/* Selector de Evaluación */}
-                             {availableEvaluations.length > 1 && (
-                                 <div className="mt-6 flex flex-col sm:flex-row items-start sm:items-center gap-3">
-                                     <span className="text-indigo-300 text-sm font-medium">Cambiar Evaluación:</span>
-                                     <select 
-                                         value={selectedEvalId || rawEvaluation?.id || ''}
-                                         onChange={(e) => setSelectedEvalId(e.target.value)}
-                                         className="bg-indigo-800/80 border border-indigo-700 text-white rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 backdrop-blur-sm min-w-[200px]"
-                                     >
-                                         {availableEvaluations.map(ev => {
-                                             const date = new Date(ev.created_at).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
-                                             const isEvaluator = ev.evaluator_id === user?.id && ev.evaluated_id !== user?.id;
-                                             const roleLabel = isEvaluator ? '👉 [Como Evaluador]' : '👤 [Mi Resultado]';
-                                             return (
-                                                 <option key={ev.id} value={ev.id}>
-                                                     {date} - {ev.template?.name} {roleLabel}
+                             {/* Selector de Periodo y Evaluación */}
+                             <div className="mt-6 flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                                 {periods.length > 0 && (
+                                     <div className="flex items-center gap-2 bg-indigo-800/50 border border-indigo-700/50 px-4 py-2 rounded-xl">
+                                         <Calendar className="w-4 h-4 text-indigo-300" />
+                                         <select
+                                             className="bg-transparent border-none text-white text-sm focus:ring-0 cursor-pointer font-medium"
+                                             value={selectedPeriodId}
+                                             onChange={(e) => {
+                                                 setSelectedPeriodId(e.target.value);
+                                                 setSelectedEvalId(undefined);
+                                             }}
+                                         >
+                                             <option value="all" className="text-slate-900">Todos los periodos</option>
+                                             {periods.map(p => (
+                                                 <option key={p.id} value={p.id} className="text-slate-900">{p.year}</option>
+                                             ))}
+                                         </select>
+                                     </div>
+                                 )}
+
+                                 {availableEvaluations.length > 0 && (
+                                     <div className="flex items-center gap-2 bg-indigo-800/50 border border-indigo-700/50 px-4 py-2 rounded-xl">
+                                         <Target className="w-4 h-4 text-indigo-300" />
+                                         <select 
+                                             className="bg-transparent border-none text-white text-sm focus:ring-0 cursor-pointer font-medium"
+                                             value={selectedEvalId || availableEvaluations[0]?.id}
+                                             onChange={(e) => setSelectedEvalId(e.target.value)}
+                                         >
+                                             {availableEvaluations.map(ev => (
+                                                 <option key={ev.id} value={ev.id} className="text-slate-900">
+                                                     {ev.template?.name} - {new Date(ev.created_at).toLocaleDateString()}
                                                  </option>
-                                             );
-                                         })}
-                                     </select>
-                                 </div>
-                             )}
+                                             ))}
+                                         </select>
+                                     </div>
+                                 )}
+                                                                             </div>
                         </div>
 
                         <div className="flex items-center gap-4">

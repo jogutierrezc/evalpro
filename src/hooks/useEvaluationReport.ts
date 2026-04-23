@@ -5,9 +5,10 @@ import { EvaluacionInput, TipoExamenVaf } from '../lib/ai-report-logic';
 interface UseEvaluationReportProps {
     evaluationId?: string;
     userId?: string; // If provided and no evaluationId, fetches latest self-evaluation
+    periodId?: string; // Filter evaluations by period
 }
 
-export function useEvaluationReport({ evaluationId, userId }: UseEvaluationReportProps) {
+export function useEvaluationReport({ evaluationId, userId, periodId }: UseEvaluationReportProps) {
     const [inputData, setInputData] = useState<EvaluacionInput | null>(null);
     const [evaluationData, setEvaluationData] = useState<any | null>(null);
     const [availableEvaluations, setAvailableEvaluations] = useState<any[]>([]);
@@ -23,7 +24,7 @@ export function useEvaluationReport({ evaluationId, userId }: UseEvaluationRepor
 
             // 1. Fetch ALL available evaluations for this user to allow switching
             if (userId) {
-                const { data: allEvals, error: listError } = await supabase
+                let listQuery = supabase
                     .from('evaluations')
                     .select(`
                         id,
@@ -36,7 +37,13 @@ export function useEvaluationReport({ evaluationId, userId }: UseEvaluationRepor
                         evaluated:users!evaluated_id(full_name)
                     `)
                     .or(`evaluated_id.eq.${userId},evaluator_id.eq.${userId}`)
-                    .eq('status', 'completed')
+                    .eq('status', 'completed');
+
+                if (periodId && periodId !== 'all') {
+                    listQuery = listQuery.eq('period_id', periodId);
+                }
+
+                const { data: allEvals, error: listError } = await listQuery
                     .order('created_at', { ascending: false });
 
                 if (!listError && allEvals) {
@@ -45,14 +52,23 @@ export function useEvaluationReport({ evaluationId, userId }: UseEvaluationRepor
             }
 
             // 2. Fetch specific or latest evaluation data
-            const targetId = evaluationId || (userId ? (await supabase
-                .from('evaluations')
-                .select('id')
-                .eq('evaluated_id', userId)
-                .eq('status', 'completed')
-                .order('created_at', { ascending: false })
-                .limit(1)
-                .maybeSingle())?.data?.id : null);
+            let targetId = evaluationId;
+            if (!targetId && userId) {
+                let latestQuery = supabase
+                    .from('evaluations')
+                    .select('id')
+                    .eq('evaluated_id', userId)
+                    .eq('status', 'completed')
+                    .order('created_at', { ascending: false })
+                    .limit(1);
+                
+                if (periodId && periodId !== 'all') {
+                    latestQuery = latestQuery.eq('period_id', periodId);
+                }
+                
+                const { data: latest } = await latestQuery.maybeSingle();
+                targetId = latest?.id;
+            }
 
             if (targetId) {
                 const { data, error } = await supabase

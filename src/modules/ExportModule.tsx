@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
-import { Download, Filter, ClipboardCheck } from 'lucide-react';
+import { Download, Filter, ClipboardCheck, Calendar } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { usePeriods } from '../hooks/usePeriods';
 
 interface EvaluationRow {
   id: string;
@@ -62,20 +63,27 @@ export default function ExportModule() {
   const [filterCampus, setFilterCampus] = useState('all');
   const [filterOffice, setFilterOffice] = useState('all');
   const [filterTemplate, setFilterTemplate] = useState('all');
-  const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState('');
+  
+  const { periods, activePeriod } = usePeriods();
+  const [selectedPeriodId, setSelectedPeriodId] = useState<string>('all');
+
+  useEffect(() => {
+    if (activePeriod) {
+        setSelectedPeriodId(activePeriod.id);
+    }
+  }, [activePeriod]);
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [selectedPeriodId]);
 
   const loadData = async () => {
     try {
       setLoading(true);
 
-      // We only load a minimal set of evaluations to populate the filter dropdowns.
       // The full data for export will be fetched on-demand when the user clicks "Exportar".
-      const { data: evals, error } = await supabase
+      let query = supabase
         .from('evaluations')
         .select(`
           id,
@@ -88,7 +96,13 @@ export default function ExportModule() {
           evaluated:users!evaluated_id ( full_name, campus, office:offices ( name ) ),
           template:evaluation_templates ( name )
         `)
-        .eq('status', 'completed')
+        .eq('status', 'completed');
+
+      if (selectedPeriodId !== 'all') {
+        query = query.eq('period_id', selectedPeriodId);
+      }
+
+      const { data: evals, error } = await query
         .order('created_at', { ascending: false })
         .limit(2000); // Sufficient for populating filter lists
 
@@ -525,7 +539,24 @@ export default function ExportModule() {
           <h2 className="text-lg font-semibold text-gray-900">Filtros</h2>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Periodo de Evaluación</label>
+            <div className="flex items-center gap-2 bg-slate-50 border border-gray-300 rounded-lg px-3 py-2">
+              <Calendar className="w-4 h-4 text-indigo-500" />
+              <select
+                value={selectedPeriodId}
+                onChange={(e) => setSelectedPeriodId(e.target.value)}
+                className="w-full bg-transparent border-none text-sm focus:ring-0 cursor-pointer font-medium p-0"
+              >
+                <option value="all">Todos los tiempos</option>
+                {periods.map(p => (
+                  <option key={p.id} value={p.id}>{p.year}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Campus</label>
             <select
