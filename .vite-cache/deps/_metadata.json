@@ -7,70 +7,70 @@
     "react": {
       "src": "../../node_modules/react/index.js",
       "file": "react.js",
-      "fileHash": "09ce145d",
+      "fileHash": "6ed5a08e",
       "needsInterop": true
     },
     "react-dom": {
       "src": "../../node_modules/react-dom/index.js",
       "file": "react-dom.js",
-      "fileHash": "288d379d",
+      "fileHash": "8994a53f",
       "needsInterop": true
     },
     "react/jsx-dev-runtime": {
       "src": "../../node_modules/react/jsx-dev-runtime.js",
       "file": "react_jsx-dev-runtime.js",
-      "fileHash": "df01bb3b",
+      "fileHash": "fa513426",
       "needsInterop": true
     },
     "react/jsx-runtime": {
       "src": "../../node_modules/react/jsx-runtime.js",
       "file": "react_jsx-runtime.js",
-      "fileHash": "724031f8",
+      "fileHash": "ed68bc31",
       "needsInterop": true
     },
     "@google/generative-ai": {
       "src": "../../node_modules/@google/generative-ai/dist/index.mjs",
       "file": "@google_generative-ai.js",
-      "fileHash": "86eb0261",
+      "fileHash": "fa09a160",
       "needsInterop": false
     },
     "@lottiefiles/dotlottie-react": {
       "src": "../../node_modules/@lottiefiles/dotlottie-react/dist/browser/index.js",
       "file": "@lottiefiles_dotlottie-react.js",
-      "fileHash": "f98cbf14",
+      "fileHash": "5b47afe3",
       "needsInterop": false
     },
     "@supabase/supabase-js": {
       "src": "../../node_modules/@supabase/supabase-js/dist/index.mjs",
       "file": "@supabase_supabase-js.js",
-      "fileHash": "0cc0bf85",
+      "fileHash": "b799766d",
       "needsInterop": false
     },
     "react-dom/client": {
       "src": "../../node_modules/react-dom/client.js",
       "file": "react-dom_client.js",
-      "fileHash": "03599085",
+      "fileHash": "28a4ad19",
       "needsInterop": true
     },
     "recharts": {
       "src": "../../node_modules/recharts/es6/index.js",
       "file": "recharts.js",
-      "fileHash": "92552f71",
+      "fileHash": "c9d2fb60",
       "needsInterop": false
     },
     "xlsx": {
       "src": "../../node_modules/xlsx/xlsx.mjs",
       "file": "xlsx.js",
-      "fileHash": "bdde2cd0",
+      "fileHash": "5e72e360",
       "needsInterop": false
     }
   },
   "chunks": {
-    "chunk-BC63SET5": {
-      "file": "chunk-BC63SET5.js"
-    },
     "chunk-QFD2GQ4D": {
       "file": "chunk-QFD2GQ4D.js"
+    },
+    "chunk-BC63SET5": {
+      "file": "chunk-BC63SET5.js"
     },
     "chunk-TWJRYSII": {
       "file": "chunk-TWJRYSII.js"

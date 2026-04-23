@@ -325,7 +325,7 @@ export class PrismaBrain {
         if (openRouterKey && !openRouterKey.includes('your_openrouter_key')) {
             try {
                 // ... (existing OpenRouter code)
-                const model = import.meta.env.VITE_OPENROUTER_MODEL || "google/gemini-2.0-flash-exp:free";
+                const model = import.meta.env.VITE_OPENROUTER_MODEL || "openrouter/auto";
                 const siteUrl = import.meta.env.VITE_SITE_URL || 'http://localhost:5174';
                 const siteName = import.meta.env.VITE_SITE_NAME || 'EvalPro UDES';
 
@@ -342,11 +342,10 @@ export class PrismaBrain {
                         "messages": [
                             { 
                                 "role": "system", 
-                                "content": "Eres el Sistema de Inteligencia Prisma de la Universidad de Santander (UDES). Tu objetivo es proporcionar análisis de desempeño humano profundamente profesionales, constructivos y estratégicos. Utilizas un lenguaje corporativo pero empático, enfocado en el crecimiento y la excelencia académica y administrativa." 
+                                "content": "Eres el Sistema de Inteligencia Prisma de la Universidad de Santander (UDES). Tu objetivo es proporcionar análisis de desempeño humano profundamente profesionales, constructivos y estratégicos. Utilizas un lenguaje corporativo pero empático, enfocado en el crecimiento y la excelencia académica y administrativa. SIEMPRE responde en formato JSON puro." 
                             },
                             { "role": "user", "content": prompt }
-                        ],
-                        "response_format": { "type": "json_object" }
+                        ]
                     })
                 });
                 const data = await response.json();
@@ -388,27 +387,26 @@ export class PrismaBrain {
     static async enrichWithAi(result: AnalysisResult): Promise<AnalysisResult> {
         try {
             const prompt = `
-            Realiza un análisis profundo para el colaborador en la competencia: "${result.category}".
+            Realiza un análisis profundo y estratégico para el colaborador en la competencia: "${result.category}".
             Puntaje obtenido: ${result.score}/5.0.
             Arquetipo detectado: ${result.arquetipo}.
-            Riesgo: ${result.nivelRiesgo}.
+            Nivel de Riesgo: ${result.nivelRiesgo}.
 
             Contexto Institucional UDES (Universidad de Santander):
-            Esta competencia es fundamental para los pilares de la UDES: Calidad Académica, Integridad Institucional y Compromiso Social.
+            Esta competencia es vital para la Calidad Académica e Integridad Institucional.
             
             Instrucciones:
-            1. Proporciona un "analisis" reflexivo (máximo 450 caracteres) que explique cómo este puntaje impacta su rol dentro de la comunidad universitaria.
-            2. Define una "accionSugerida" (máximo 300 caracteres) con recomendaciones pedagógicas, de liderazgo o gestión técnica específicas para el entorno UDES.
+            1. Proporciona un "analisis" reflexivo y profesional (máximo 450 caracteres) que explique el impacto de este desempeño en su trayectoria.
+            2. Define una "accionSugerida" (máximo 300 caracteres) con pasos concretos de crecimiento profesional.
             
-            Responde estrictamente en formato JSON:
+            IMPORTANTE: Responde ÚNICAMENTE con el objeto JSON, sin texto adicional.
             {
-                "analisis": "texto del análisis profundo...",
-                "accionSugerida": "texto de la acción estratégica..."
+                "analisis": "...",
+                "accionSugerida": "..."
             }
             `;
             const content = await this.callAI(prompt);
-            const cleanContent = content.replace(/```json\n|\n```/g, '').trim();
-            const aiData = JSON.parse(cleanContent);
+            const aiData = this.extractJson(content);
             return {
                 ...result,
                 analisis: aiData.analisis || result.analisis,
@@ -421,29 +419,40 @@ export class PrismaBrain {
         }
     }
 
+    static extractJson(content: string): any {
+        try {
+            // Intentar limpiar bloques de código markdown
+            const jsonMatch = content.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                return JSON.parse(jsonMatch[0]);
+            }
+            return JSON.parse(content);
+        } catch (e) {
+            console.error("Failed to parse AI JSON:", content);
+            throw new Error("Invalid AI response format");
+        }
+    }
+
     static async enrichWithAiForManager(result: AnalysisResult, evaluatedName: string): Promise<AnalysisResult> {
         try {
             const prompt = `
-            Genera una guía estratégica de alto nivel para el Líder sobre el desempeño de: ${evaluatedName}.
-            Competencia evaluada: "${result.category}".
+            Genera una guía estratégica gerencial para el Líder sobre el desempeño de: ${evaluatedName}.
+            Competencia: "${result.category}".
             Puntaje: ${result.score}/5.0.
             Arquetipo: ${result.arquetipo}.
 
-            Contexto UDES: Buscamos excelencia administrativa y académica.
-            
             Instrucciones para el Líder:
-            1. En "analisis", describe con enfoque gerencial cómo el desempeño de ${evaluatedName} influye en la eficiencia de la oficina y el cumplimiento del Plan de Desarrollo Institucional (máximo 450 caracteres).
-            2. En "accionSugerida", proporciona 2 pasos concretos de gestión (feedback, delegación o capacitación) que el líder debe ejecutar (máximo 300 caracteres).
+            1. En "analisis", describe con enfoque de gestión de talento cómo el desempeño de ${evaluatedName} influye en la oficina (máximo 450 caracteres).
+            2. En "accionSugerida", proporciona 2 pasos de liderazgo (feedback o delegación) específicos (máximo 300 caracteres).
             
-            Responde estrictamente en formato JSON:
+            Responde ÚNICAMENTE el objeto JSON:
             {
-                "analisis": "análisis estratégico para el líder...",
-                "accionSugerida": "estrategia de gestión detallada..."
+                "analisis": "...",
+                "accionSugerida": "..."
             }
             `;
             const content = await this.callAI(prompt);
-            const cleanContent = content.replace(/```json\n|\n```/g, '').trim();
-            const aiData = JSON.parse(cleanContent);
+            const aiData = this.extractJson(content);
             return {
                 ...result,
                 analisis: aiData.analisis || result.analisis,
