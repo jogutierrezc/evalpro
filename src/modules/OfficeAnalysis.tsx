@@ -15,7 +15,8 @@ import {
     Link,
     PieChart,
     ChevronDown,
-    ChevronUp
+    ChevronUp,
+    Layers
 } from 'lucide-react';
 
 // Helper to normalize text for matching
@@ -363,6 +364,130 @@ export default function OfficeAnalysis({ results }: Props) {
             }
         }
 
+        // --- V. ANÁLISIS COMPARATIVO POR TIPO DE EXAMEN ---
+        const templateMap: Record<string, {
+            name: string;
+            sum: number;
+            count: number;
+            sections: Record<string, { sum: number; count: number }>;
+        }> = {};
+
+        validResults.forEach(r => {
+            const tName = r.templateName || 'Sin Tipo';
+            if (!templateMap[tName]) {
+                templateMap[tName] = { name: tName, sum: 0, count: 0, sections: {} };
+            }
+            templateMap[tName].sum += (Number(r.avgScore) || 0);
+            templateMap[tName].count += 1;
+            (r.sectionsSummary || []).forEach(s => {
+                if (s.avg !== null) {
+                    if (!templateMap[tName].sections[s.sectionName]) {
+                        templateMap[tName].sections[s.sectionName] = { sum: 0, count: 0 };
+                    }
+                    templateMap[tName].sections[s.sectionName].sum += s.avg;
+                    templateMap[tName].sections[s.sectionName].count += 1;
+                }
+            });
+        });
+
+        const templateNames = Object.keys(templateMap).sort();
+        const allSectionNames = Array.from(new Set(
+            validResults.flatMap(r => (r.sectionsSummary || []).map(s => s.sectionName))
+        )).sort();
+
+        const byTemplate = templateNames.map(name => {
+            const tmpl = templateMap[name];
+            const sections: Record<string, number> = {};
+            allSectionNames.forEach(secName => {
+                const secData = tmpl.sections[secName];
+                sections[secName] = secData && secData.count > 0
+                    ? Math.round((secData.sum / secData.count) * 100) / 100
+                    : 0;
+            });
+            return {
+                name,
+                globalAvg: tmpl.count > 0 ? tmpl.sum / tmpl.count : 0,
+                count: tmpl.count,
+                sections
+            };
+        });
+
+        // Detect main disparities (largest gaps between two template types per section)
+        const disparities: Array<{
+            sectionName: string;
+            templateA: string;
+            scoreA: number;
+            templateB: string;
+            scoreB: number;
+            gap: number;
+        }> = [];
+
+        allSectionNames.forEach(secName => {
+            const scores = byTemplate.map(t => ({ name: t.name, score: t.sections[secName] || 0 }));
+            for (let i = 0; i < scores.length; i++) {
+                for (let j = i + 1; j < scores.length; j++) {
+                    const gap = Math.abs(scores[i].score - scores[j].score);
+                    if (gap > 0.3) { // threshold for meaningful difference
+                        disparities.push({
+                            sectionName: secName,
+                            templateA: scores[i].name,
+                            scoreA: scores[i].score,
+                            templateB: scores[j].name,
+                            scoreB: scores[j].score,
+                            gap: Math.round(gap * 100) / 100
+                        });
+                    }
+                }
+            }
+        });
+
+        disparities.sort((a, b) => b.gap - a.gap);
+
+        // Generate textual analysis
+        const templateComparisonTexts: string[] = [];
+        if (byTemplate.length >= 2) {
+            // Compare global averages
+            const sortedByAvg = [...byTemplate].sort((a, b) => b.globalAvg - a.globalAvg);
+            const best = sortedByAvg[0];
+            const worst = sortedByAvg[sortedByAvg.length - 1];
+            templateComparisonTexts.push(
+                `El promedio global más alto se registra en "${best.name}" (${best.globalAvg.toFixed(2)}), mientras que "${worst.name}" presenta el más bajo (${worst.globalAvg.toFixed(2)}), con una diferencia de ${(best.globalAvg - worst.globalAvg).toFixed(2)} puntos.`
+            );
+
+            // Top disparities
+            if (disparities.length > 0) {
+                const topDisp = disparities.slice(0, 3);
+                topDisp.forEach(d => {
+                    templateComparisonTexts.push(
+                        `En la competencia "${d.sectionName}" hay una brecha de ${d.gap.toFixed(2)} puntos entre "${d.templateA}" (${d.scoreA.toFixed(2)}) y "${d.templateB}" (${d.scoreB.toFixed(2)}).`
+                    );
+                });
+            }
+
+            // Check for auto-evaluation vs manager evaluation patterns
+            const autoEval = byTemplate.find(t =>
+                t.name.toLowerCase().includes('auto') || t.name.toLowerCase().includes('autoevaluacion')
+            );
+            const managerEval = byTemplate.find(t =>
+                t.name.toLowerCase().includes('jefe') || t.name.toLowerCase().includes('líder') ||
+                t.name.toLowerCase().includes('lider') || t.name.toLowerCase().includes('manager')
+            );
+            if (autoEval && managerEval) {
+                const diff = autoEval.globalAvg - managerEval.globalAvg;
+                if (Math.abs(diff) > 0.3) {
+                    if (diff > 0) {
+                        templateComparisonTexts.push(
+                            `Se detecta una disparidad en la autopercepción: la autoevaluación (${autoEval.globalAvg.toFixed(2)}) es significativamente más alta que la evaluación del líder (${managerEval.globalAvg.toFixed(2)}), lo que sugiere una posible sobreestimación o falta de feedback objetivo.`
+                        );
+                    } else {
+                        templateComparisonTexts.push(
+                            `La evaluación del líder (${managerEval.globalAvg.toFixed(2)}) supera a la autoevaluación (${autoEval.globalAvg.toFixed(2)}), indicando autocritica o que el líder percibe un desempeño superior al que el colaborador se atribuye.`
+                        );
+                    }
+                }
+            }
+        }
+
         return {
             globalScore,
             teamSections,
@@ -374,7 +499,14 @@ export default function OfficeAnalysis({ results }: Props) {
             focusedActions,
             strategicProposals,
             predictiveAnalysis,
-            correlationMap
+            correlationMap,
+            comparativeAnalysis: {
+                byTemplate,
+                allSectionNames,
+                templateNames,
+                disparities,
+                templateComparisonTexts
+            }
         };
     }, [results]);
 
@@ -386,7 +518,7 @@ export default function OfficeAnalysis({ results }: Props) {
         );
     }
 
-    const { globalScore, teamSections, membersWithStandouts, competenciesAnalysis, strengths, weaknesses, prismaPlan, focusedActions, strategicProposals, predictiveAnalysis, correlationMap } = analysis;
+    const { globalScore, teamSections, membersWithStandouts, competenciesAnalysis, strengths, weaknesses, prismaPlan, focusedActions, strategicProposals, predictiveAnalysis, correlationMap, comparativeAnalysis } = analysis;
 
     return (
         <div className="space-y-8 animate-in fade-in duration-500">
@@ -482,8 +614,8 @@ export default function OfficeAnalysis({ results }: Props) {
                                 <div className="flex items-center gap-2">
                                     <div className="flex -space-x-2 overflow-hidden">
                                         {comp.metAverageMembers.slice(0, 5).map((m, i) => (
-                                            <div key={i} className="inline-block h-6 w-6 rounded-full ring-2 ring-white bg-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-600" title={m.evaluated?.full_name}>
-                                                {m.evaluated?.full_name?.charAt(0)}
+                                            <div key={i} className="inline-block h-6 w-6 rounded-full ring-2 ring-white bg-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-600" title={m.evaluatedName}>
+                                                {m.evaluatedName?.charAt(0)}
                                             </div>
                                         ))}
                                         {comp.metAverageMembers.length > 5 && (
@@ -517,8 +649,8 @@ export default function OfficeAnalysis({ results }: Props) {
                                     {idx + 1}
                                 </div>
                                 <div>
-                                    <h4 className="font-bold text-slate-800">{member.evaluated?.full_name}</h4>
-                                    <p className="text-xs text-slate-500">{member.evaluated?.role || 'Miembro del equipo'}</p>
+                                    <h4 className="font-bold text-slate-800">{member.evaluatedName}</h4>
+                                    <p className="text-xs text-slate-500">{member.evaluatedRole || 'Miembro del equipo'}</p>
 
                                     {/* Standout Categories */}
                                     <div className="mt-2 flex flex-wrap gap-2">
@@ -549,6 +681,222 @@ export default function OfficeAnalysis({ results }: Props) {
                     ))}
                 </div>
             </div>
+
+            {/* --- ANÁLISIS COMPARATIVO POR TIPO DE EXAMEN --- */}
+            {comparativeAnalysis && comparativeAnalysis.byTemplate.length >= 2 && (
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                    <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-6 text-white">
+                        <div className="flex items-center gap-3">
+                            <Layers className="w-6 h-6" />
+                            <div>
+                                <h3 className="text-xl font-bold">Análisis Comparativo por Tipo de Examen</h3>
+                                <p className="text-indigo-200 text-sm mt-1">
+                                    Comparación de resultados entre los {comparativeAnalysis.byTemplate.length} tipos de evaluación aplicados
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="p-6 space-y-8">
+
+                        {/* Radar Chart Comparativo */}
+                        <div>
+                            <h4 className="font-bold text-slate-800 text-lg mb-4">Mapa de Competencias por Tipo de Examen</h4>
+                            <div className="flex flex-col items-center">
+                                <svg width={380} height={380} className="overflow-visible">
+                                    {(() => {
+                                        const center = 190;
+                                        const radius = 130;
+                                        const levels = 5;
+                                        const data = comparativeAnalysis.allSectionNames;
+                                        const templateData = comparativeAnalysis.byTemplate;
+                                        const angleSlice = (Math.PI * 2) / data.length;
+                                        const getCoords = (value: number, index: number) => {
+                                            const angle = index * angleSlice - Math.PI / 2;
+                                            const r = (value / 5) * radius;
+                                            return { x: center + r * Math.cos(angle), y: center + r * Math.sin(angle) };
+                                        };
+                                        const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899'];
+
+                                        return (
+                                            <g>
+                                                {/* Background levels */}
+                                                {[...Array(levels)].map((_, level) => {
+                                                    const lr = (radius / levels) * (level + 1);
+                                                    const pts = data.map((_, i) => {
+                                                        const a = i * angleSlice - Math.PI / 2;
+                                                        return `${center + lr * Math.cos(a)},${center + lr * Math.sin(a)}`;
+                                                    }).join(' ');
+                                                    return (
+                                                        <g key={level}>
+                                                            <polygon points={pts} fill="none" stroke="#e2e8f0" strokeWidth="1" />
+                                                            <text x={center} y={center - lr - 5} className="text-[10px] fill-slate-400" textAnchor="middle">{level + 1}</text>
+                                                        </g>
+                                                    );
+                                                })}
+
+                                                {/* Axes */}
+                                                {data.map((_, i) => {
+                                                    const c = getCoords(5, i);
+                                                    return <line key={`axis-${i}`} x1={center} y1={center} x2={c.x} y2={c.y} stroke="#e2e8f0" strokeWidth="1" />;
+                                                })}
+
+                                                {/* Labels */}
+                                                {data.map((name, i) => {
+                                                    const a = i * angleSlice - Math.PI / 2;
+                                                    const lr = radius + 22;
+                                                    const x = center + lr * Math.cos(a);
+                                                    const y = center + lr * Math.sin(a);
+                                                    let anchor = 'middle';
+                                                    if (x > center + 10) anchor = 'start';
+                                                    if (x < center - 10) anchor = 'end';
+                                                    return (
+                                                        <text key={`label-${i}`} x={x} y={y} className="text-[10px] fill-slate-600 font-semibold uppercase" textAnchor={anchor} dominantBaseline="middle">
+                                                            {name.length > 14 ? name.substring(0, 12) + '...' : name}
+                                                        </text>
+                                                    );
+                                                })}
+
+                                                {/* Polygons per template type */}
+                                                {templateData.map((t, tIdx) => {
+                                                    const color = colors[tIdx % colors.length];
+                                                    const pts = data.map((secName, i) => {
+                                                        const val = t.sections[secName] || 0;
+                                                        const c = getCoords(val, i);
+                                                        return `${c.x},${c.y}`;
+                                                    }).join(' ');
+                                                    return (
+                                                        <g key={t.name}>
+                                                            <polygon points={pts} fill={color} fillOpacity="0.08" stroke={color} strokeWidth="2" />
+                                                            {data.map((secName, i) => {
+                                                                const val = t.sections[secName] || 0;
+                                                                const c = getCoords(val, i);
+                                                                return <circle key={`pt-${tIdx}-${i}`} cx={c.x} cy={c.y} r="3" fill={color} stroke="white" strokeWidth="1" />;
+                                                            })}
+                                                        </g>
+                                                    );
+                                                })}
+                                            </g>
+                                        );
+                                    })()}
+                                </svg>
+
+                                {/* Legend */}
+                                <div className="flex flex-wrap justify-center gap-4 mt-2">
+                                    {comparativeAnalysis.byTemplate.map((t, idx) => {
+                                        const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899'];
+                                        return (
+                                            <div key={t.name} className="flex items-center gap-2 text-xs font-medium text-slate-600">
+                                                <span className="w-3 h-3 rounded-full" style={{ backgroundColor: colors[idx % colors.length] }}></span>
+                                                {t.name} <span className="text-slate-400">({t.count} eval.)</span>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Tabla Comparativa */}
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                                <thead>
+                                    <tr className="bg-slate-50">
+                                        <th className="px-4 py-3 text-left font-semibold text-slate-600">Competencia</th>
+                                        {comparativeAnalysis.byTemplate.map(t => (
+                                            <th key={t.name} className="px-4 py-3 text-center font-semibold text-slate-600">{t.name}</th>
+                                        ))}
+                                        <th className="px-4 py-3 text-center font-semibold text-slate-400">Brecha Máx.</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {comparativeAnalysis.allSectionNames.map(secName => {
+                                        const scores = comparativeAnalysis.byTemplate.map(t => t.sections[secName] || 0);
+                                        const maxScore = Math.max(...scores);
+                                        const minScore = Math.min(...scores);
+                                        const gap = Math.round((maxScore - minScore) * 100) / 100;
+                                        return (
+                                            <tr key={secName} className="hover:bg-slate-50 transition-colors">
+                                                <td className="px-4 py-2 font-medium text-slate-700">{secName}</td>
+                                                {comparativeAnalysis.byTemplate.map(t => {
+                                                    const score = t.sections[secName] || 0;
+                                                    const isBest = score === maxScore && maxScore > 0;
+                                                    const isWorst = score === minScore && minScore > 0 && maxScore !== minScore;
+                                                    return (
+                                                        <td key={t.name} className={`px-4 py-2 text-center font-bold ${
+                                                            isBest ? 'text-emerald-600' : isWorst ? 'text-red-500' : 'text-slate-700'
+                                                        }`}>
+                                                            {score > 0 ? score.toFixed(2) : '-'}
+                                                        </td>
+                                                    );
+                                                })}
+                                                <td className="px-4 py-2 text-center">
+                                                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold ${
+                                                        gap > 0.5 ? 'bg-red-100 text-red-700' :
+                                                        gap > 0.3 ? 'bg-yellow-100 text-yellow-700' :
+                                                        'bg-green-100 text-green-700'
+                                                    }`}>
+                                                        {gap.toFixed(2)}
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                    {/* Global Average Row */}
+                                    <tr className="bg-indigo-50 font-semibold">
+                                        <td className="px-4 py-3 text-indigo-800">Promedio Global</td>
+                                        {comparativeAnalysis.byTemplate.map(t => {
+                                            const allScores = comparativeAnalysis.allSectionNames.map(s => t.sections[s] || 0).filter(v => v > 0);
+                                            const avg = allScores.length > 0 ? allScores.reduce((a, b) => a + b, 0) / allScores.length : 0;
+                                            const allTmplAvgs = comparativeAnalysis.byTemplate.map(t2 => {
+                                                const s2 = comparativeAnalysis.allSectionNames.map(s => t2.sections[s] || 0).filter(v => v > 0);
+                                                return s2.length > 0 ? s2.reduce((a, b) => a + b, 0) / s2.length : 0;
+                                            });
+                                            const maxAvg = Math.max(...allTmplAvgs);
+                                            const minAvg = Math.min(...allTmplAvgs);
+                                            const isBest = avg === maxAvg && maxAvg > 0;
+                                            const isWorst = avg === minAvg && minAvg > 0 && maxAvg !== minAvg;
+                                            return (
+                                                <td key={t.name} className={`px-4 py-3 text-center text-base ${
+                                                    isBest ? 'text-emerald-600' : isWorst ? 'text-red-500' : 'text-indigo-800'
+                                                }`}>
+                                                    {avg.toFixed(2)}
+                                                </td>
+                                            );
+                                        })}
+                                        <td className="px-4 py-3 text-center text-indigo-800">
+                                            {(() => {
+                                                const avgs = comparativeAnalysis.byTemplate.map(t => {
+                                                    const s = comparativeAnalysis.allSectionNames.map(sn => t.sections[sn] || 0).filter(v => v > 0);
+                                                    return s.length > 0 ? s.reduce((a, b) => a + b, 0) / s.length : 0;
+                                                }).filter(v => v > 0);
+                                                return avgs.length >= 2 ? (Math.max(...avgs) - Math.min(...avgs)).toFixed(2) : '-';
+                                            })()}
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {/* Análisis Textual */}
+                        {comparativeAnalysis.templateComparisonTexts.length > 0 && (
+                            <div className="bg-indigo-50 rounded-xl p-5 border border-indigo-100">
+                                <h4 className="font-bold text-indigo-900 mb-3 flex items-center gap-2">
+                                    <BrainCircuit className="w-5 h-5" />
+                                    Análisis de Disparidad entre Tipos de Examen
+                                </h4>
+                                <ul className="space-y-3">
+                                    {comparativeAnalysis.templateComparisonTexts.map((text, i) => (
+                                        <li key={i} className="flex items-start gap-2 text-sm text-indigo-800">
+                                            <div className="mt-1.5 w-1.5 h-1.5 rounded-full bg-indigo-400 shrink-0" />
+                                            {text}
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
 
             {/* PRISMA SYSTEM SECTION - ENHANCED */}
             <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 relative overflow-hidden">

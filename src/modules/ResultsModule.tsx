@@ -805,29 +805,49 @@ export function ResultsModule() {
           </div>
         ) : (
           <div className="space-y-4">
-            {/* Filtro por Campus */}
+            {/* Filtros por Campus y Tipo de Formulario */}
             <div className="bg-white rounded-lg border border-gray-200 p-4">
               <div className="flex items-center gap-2 text-sm font-medium text-gray-600 mb-3">
                 <Filter className="w-4 h-4" />
                 <span>Filtros</span>
               </div>
-              <select
-                value={filterCampus}
-                onChange={(e) => setFilterCampus(e.target.value)}
-                className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm w-full md:w-64"
-              >
-                <option value="">Todos los campus</option>
-                {uniqueCampuses.map(campus => (
-                  <option key={campus} value={campus}>{campus}</option>
-                ))}
-              </select>
+              <div className="flex flex-col md:flex-row gap-3">
+                <select
+                  value={filterCampus}
+                  onChange={(e) => {
+                    setFilterCampus(e.target.value);
+                    setOfficeCurrentPage(1);
+                  }}
+                  className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm w-full md:w-64"
+                >
+                  <option value="">Todos los campus</option>
+                  {uniqueCampuses.map(campus => (
+                    <option key={campus} value={campus}>{campus}</option>
+                  ))}
+                </select>
+                <select
+                  value={filterFormType}
+                  onChange={(e) => {
+                    setFilterFormType(e.target.value);
+                    setOfficeCurrentPage(1);
+                  }}
+                  className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm w-full md:w-64"
+                >
+                  <option value="">Todos los tipos de formulario</option>
+                  {uniqueFormTypes.map(type => (
+                    <option key={type} value={type}>{type}</option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             {/* Tabla Resumen por Oficina */}
             {(() => {
-              const filteredByOffice = detailedResults.filter(r => 
-                !filterCampus || r.evaluatedCampus === filterCampus
-              );
+              const filteredByOffice = detailedResults.filter(r => {
+                const matchesCampus = !filterCampus || r.evaluatedCampus === filterCampus;
+                const matchesFormType = !filterFormType || r.templateName === filterFormType;
+                return matchesCampus && matchesFormType;
+              });
 
               const officeGroups = filteredByOffice.reduce((acc, r) => {
                 const office = r.evaluatedOffice;

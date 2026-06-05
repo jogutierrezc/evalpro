@@ -7,6 +7,7 @@ import { AdminModule } from './modules/AdminModule';
 import { EvaluationsModule } from './modules/EvaluationsModule';
 import EvaluationsManagement from './modules/admin/EvaluationsManagement';
 import { ResultsModule } from './modules/ResultsModule';
+import VafAnalyticsModule from './modules/admin/VafAnalyticsModule';
 
 import { ReportsManagement } from './modules/admin/ReportsManagement';
 import { UserGuideModule } from './modules/UserGuideModule';
@@ -24,6 +25,21 @@ function AppContent() {
     const moduleParam = params.get('module');
     return moduleParam || 'dashboard';
   });
+
+  // Public view for VAF Analytics (no auth required) — must be checked BEFORE auth guard
+  if (activeModule === 'vaf-analytics') {
+    if (loading) {
+      return (
+        <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">Cargando...</p>
+          </div>
+        </div>
+      );
+    }
+    return <VafAnalyticsModule publicMode={true} />;
+  }
 
   if (loading) {
     return (
