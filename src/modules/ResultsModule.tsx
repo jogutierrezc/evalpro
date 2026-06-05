@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, Evaluation } from '../lib/supabase';
-import { BarChart3, Eye, Trash2, X, Search, Filter, AlertCircle, ChevronLeft, ChevronRight, Building2 } from 'lucide-react';
+import { BarChart3, Eye, Trash2, X, Search, Filter, AlertCircle, ChevronLeft, ChevronRight, Building2, RefreshCw } from 'lucide-react';
 import SectionAnalysis, { SectionSummaryRow } from './SectionAnalysis';
 import OfficeAnalysis from './OfficeAnalysis';
 import CampusAnalysis from './CampusAnalysis';
@@ -19,9 +19,10 @@ interface EvaluationListItem {
   evaluated_role?: string;
   evaluator_office?: string;
   evaluated_office?: string;
-  evaluator_campus?: string;
-  evaluated_campus?: string;
-  template_name?: string;
+  evaluator_campus: string;
+  evaluated_campus: string;
+  template_name: string;
+  results?: any;
 }
 
 export interface ResultWithDetails {
@@ -40,6 +41,19 @@ export interface ResultWithDetails {
   sectionsSummary?: SectionSummaryRow[];
 }
 
+const normalizeValue = (val: any): number => {
+  if (val === null || val === undefined || val === '') return 0;
+  if (typeof val === 'number') return val;
+  if (typeof val === 'string') {
+    const parsed = parseFloat(val.replace(',', '.'));
+    return isNaN(parsed) ? 0 : parsed;
+  }
+  if (typeof val === 'object') {
+    return Number(val.value || val.rating || val.score || val.response || 0);
+  }
+  return 0;
+};
+
 // Helper for pagination
 const getVisiblePages = (current: number, total: number) => {
   if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
@@ -56,6 +70,9 @@ export function ResultsModule() {
   const [detailedResults, setDetailedResults] = useState<ResultWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingDetailed, setLoadingDetailed] = useState(false);
+  const [detailedLoaded, setDetailedLoaded] = useState(false);
+  const [allDataLoaded, setAllDataLoaded] = useState(false);
+  const [totalInDB, setTotalInDB] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<'individual' | 'office' | 'campus' | 'university'>('individual');
   
   // Filters
@@ -93,42 +110,69 @@ export function ResultsModule() {
     loadEvaluations();
   }, [user]);
 
-  // Load detailed results when switching to aggregate views
+  // Reset sub-selections when changing main view
   useEffect(() => {
-    if (viewMode !== 'individual' && detailedResults.length === 0) {
-      loadDetailedResults();
-    }
-    // Reset sub-selections when changing main view
     setSelectedCampus(null);
   }, [viewMode]);
 
   // OPTIMIZED: Load only evaluation basics without sections/questions/responses
-  const loadEvaluations = async () => {
+  const loadEvaluations = async (fetchAll = false) => {
     try {
       setLoading(true);
-
-      // Get evaluations with basic info only - FILTER BY COMPLETED STATUS ONLY
-      // Use joins to avoid 400 error with too many IDs in .in() filter
-      const { data: evals, error } = await supabase
+      
+      // Get total count first
+      const { count } = await supabase
         .from('evaluations')
-        .select(`
-          id, 
-          evaluator_id, 
-          evaluated_id, 
-          template_id, 
-          created_at, 
-          status,
-          evaluator:users!evaluator_id ( full_name, campus, role, office:offices ( name ) ),
-          evaluated:users!evaluated_id ( full_name, campus, role, office:offices ( name ) ),
-          template:evaluation_templates ( name )
-        `)
-        .eq('status', 'completed')
-        .order('created_at', { ascending: false });
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'completed');
+      
+      setTotalInDB(count);
 
-      if (error) throw error;
+      let allEvals: any[] = [];
+      let page = 0;
+      const pageSize = 1000;
+      let hasMore = true;
+
+      // If not fetchAll, only get the first page (Preview)
+      while (hasMore) {
+        const { data: evals, error } = await supabase
+          .from('evaluations')
+          .select(`
+            id, 
+            evaluator_id, 
+            evaluated_id, 
+            template_id, 
+            created_at, 
+            status,
+            evaluator:users!evaluator_id ( full_name, campus, role, office:offices ( name ) ),
+            evaluated:users!evaluated_id ( full_name, campus, role, office:offices ( name ) ),
+            template:evaluation_templates ( name ),
+            results:evaluation_results ( overall_score, category_scores )
+          `)
+          .eq('status', 'completed')
+          .order('created_at', { ascending: false })
+          .range(page * pageSize, (page + 1) * pageSize - 1);
+
+        if (error) throw error;
+        
+        if (evals && evals.length > 0) {
+          allEvals = [...allEvals, ...evals];
+          if (evals.length < pageSize || !fetchAll) {
+            hasMore = false;
+          } else {
+            page++;
+          }
+        } else {
+          hasMore = false;
+        }
+      }
+
+      setAllDataLoaded(fetchAll || (count !== null && allEvals.length >= count));
 
       // Transform data
-      const evaluations: EvaluationListItem[] = (evals || []).map((e: any) => {
+      const evaluations: EvaluationListItem[] = allEvals.map((e: any) => {
+        // Enforce the relation is an array or object safely
+        const resultsData = Array.isArray(e.results) ? e.results[0] : e.results;
         return {
           id: e.id,
           evaluator_id: e.evaluator_id,
@@ -144,6 +188,7 @@ export function ResultsModule() {
           evaluator_campus: normalizeCampus(e.evaluator?.campus),
           evaluated_campus: normalizeCampus(e.evaluated?.campus),
           template_name: e.template?.name,
+          results: resultsData
         };
       });
 
@@ -166,173 +211,188 @@ export function ResultsModule() {
     }
   };
 
-  // Load detailed results with sections/questions/responses for aggregate views
   const loadDetailedResults = async () => {
     try {
       setLoadingDetailed(true);
+      
+      // 1. Get all completed evaluations (paging)
+      let allEvalsFull: any[] = [];
+      let page = 0;
+      const pageSize = 1000;
+      let hasMore = true;
 
-      // Use allEvaluations as base - only load sections/questions once per UNIQUE template
-      const evaluationsToLoad = allEvaluations;
-      const uniqueTemplates = new Set(evaluationsToLoad.map(e => e.template_id));
+      while (hasMore) {
+        const { data: evals, error } = await supabase
+          .from('evaluations')
+          .select(`
+            id, evaluated_id, evaluator_id, template_id, created_at, status,
+            evaluator:users!evaluator_id ( full_name, campus, office:offices ( name ) ),
+            evaluated:users!evaluated_id ( full_name, campus, role, office:offices ( name ) ),
+            template:evaluation_templates ( name ),
+            results:evaluation_results ( overall_score, category_scores )
+          `)
+          .eq('status', 'completed')
+          .range(page * pageSize, (page + 1) * pageSize - 1);
 
-      // Step 1: Load all sections and questions for each UNIQUE template (not per evaluation)
-      const templateDataMap = new Map<string, {
-        sections: any[];
-        questions: any[];
-      }>();
-
-      const templateDataPromises = Array.from(uniqueTemplates).map(async (templateId) => {
-        const [{ data: sections }, { data: questions }] = await Promise.all([
-          supabase.from('evaluation_sections').select('*').eq('template_id', templateId),
-          supabase.from('evaluation_questions').select('*').eq('template_id', templateId),
-        ]);
-        templateDataMap.set(templateId, { sections: sections || [], questions: questions || [] });
-      });
-
-      await Promise.all(templateDataPromises);
-
-      // Step 2: Load ALL responses in chunks to avoid 400 error
-      const evaluationIds = evaluationsToLoad.map(e => e.id);
-      const chunks = [];
-      const chunkSize = 50;
-      for (let i = 0; i < evaluationIds.length; i += chunkSize) {
-        chunks.push(evaluationIds.slice(i, i + chunkSize));
-      }
-
-      let allResponses: any[] = [];
-      for (const chunk of chunks) {
-        const { data } = await supabase
-          .from('evaluation_responses')
-          .select('*')
-          .in('evaluation_id', chunk);
-        
-        if (data) {
-          allResponses = [...allResponses, ...data];
+        if (error) throw error;
+        if (evals && evals.length > 0) {
+          allEvalsFull = [...allEvalsFull, ...evals];
+          hasMore = evals.length === pageSize;
+          page++;
+        } else {
+          hasMore = false;
         }
       }
 
-      const responseMap = new Map<string, any[]>();
-      (allResponses || []).forEach(r => {
-        if (!responseMap.has(r.evaluation_id)) {
-          responseMap.set(r.evaluation_id, []);
-        }
-        responseMap.get(r.evaluation_id)!.push(r);
-      });
+      if (allEvalsFull.length === 0) {
+        setDetailedResults([]);
+        setDetailedLoaded(true);
+        return;
+      }
 
-      // Step 3: Process each evaluation to build ResultWithDetails
-      const detailed: ResultWithDetails[] = evaluationsToLoad.map((evalItem) => {
-        const templateData = templateDataMap.get(evalItem.template_id);
-        const responses = responseMap.get(evalItem.id) || [];
-
-        if (!templateData) {
-          return null; // Skip if no template data
-        }
-
-        // Build response map for this evaluation
-        const respMap: Record<string, any> = {};
-        responses.forEach((r) => { respMap[r.question_id] = r.response_value; });
-
-        // Build section summaries with proper weight-based averages
-        const sectionsSummary: SectionSummaryRow[] = templateData.sections.map((s) => {
-          const qs = templateData.questions.filter((q: any) => q.section_id === s.id);
-          const qDetails = qs.map((q: any) => ({
-            id: q.id,
-            text: q.question_text || '',
-            type: q.question_type,
-            weight: Number(q.weight || 0),
-            response: respMap[q.id]
-          }));
-
-          // Get only rating questions with valid responses
-          const ratingQs = qDetails.filter((q) => q.type === 'rating' && q.response !== undefined && q.response !== null);
-          const hasWeights = ratingQs.some((q) => Number(q.weight || 0) > 0);
-          
-          let avg: number | null = null;
-          let sectionWeight = 0;
-
-          if (ratingQs.length > 0) {
-            if (hasWeights) {
-              // Weighted average using question weights
-              let ssum = 0, wsum = 0;
-              ratingQs.forEach((q) => {
-                const v = Number(q.response);
-                const w = Number(q.weight || 0);
-                if (!isNaN(v) && w > 0) { 
-                  ssum += v * w; 
-                  wsum += w; 
-                }
-              });
-              avg = wsum > 0 ? Math.round((ssum / wsum) * 100) / 100 : null;
-              // Section weight = sum of question weights
-              sectionWeight = wsum;
-            } else {
-              // Simple arithmetic mean if no weights defined
-              const vals = ratingQs.map((q) => Number(q.response)).filter(v => !isNaN(v));
-              avg = vals.length > 0 ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100 : null;
-              // If no explicit weights, use number of questions as implicit weight
-              sectionWeight = ratingQs.length;
-            }
+      // 2. Fetch Templates (Sections & Questions) with Paging
+      const uniqueTemplateIds = Array.from(new Set(allEvalsFull.map(e => e.template_id)));
+      
+      const fetchAllRows = async (table: string, filterField: string, filterValues: any[]) => {
+        let results: any[] = [];
+        const chunkCount = 100;
+        for (let i = 0; i < filterValues.length; i += chunkCount) {
+          const chunk = filterValues.slice(i, i + chunkCount);
+          let innerPage = 0;
+          let innerHasMore = true;
+          while (innerHasMore) {
+            const { data, error } = await supabase
+              .from(table).select('*').in(filterField, chunk)
+              .range(innerPage * 1000, (innerPage + 1) * 1000 - 1);
+            if (error) throw error;
+            if (data && data.length > 0) {
+              results = [...results, ...data];
+              innerHasMore = data.length === 1000;
+              innerPage++;
+            } else { innerHasMore = false; }
           }
-
-          return {
-            sectionId: s.id,
-            sectionName: s.name || s.title || `Sección ${s.id}`,
-            avg,
-            weight: sectionWeight,
-            questions: qDetails
-          };
-        });
-
-        // Normalize weights to percentages (for display)
-        const totalWeight = sectionsSummary.reduce((sum, s) => sum + s.weight, 0);
-        const originalWeights = sectionsSummary.map(s => s.weight); // Store original weights before normalization
-        sectionsSummary.forEach(s => {
-          s.weight = totalWeight > 0 ? Math.round((s.weight / totalWeight) * 100) : 0;
-        });
-
-        // Calculate global score as weighted average of section scores
-        let globalScore = 0;
-        const validSections = sectionsSummary.filter(s => s.avg !== null && s.avg !== undefined);
-        
-        if (validSections.length > 0 && totalWeight > 0) {
-          // Use original weights for calculation, normalized weights just for display
-          let ssum = 0, wsum = 0;
-          validSections.forEach((s, idx) => {
-            const sectionScore = Number(s.avg) || 0;
-            const sectionWeight = originalWeights[sectionsSummary.indexOf(s)];
-            if (!isNaN(sectionScore) && sectionWeight > 0) {
-              ssum += sectionScore * sectionWeight;
-              wsum += sectionWeight;
-            }
-          });
-          globalScore = wsum > 0 ? Math.round((ssum / wsum) * 100) / 100 : 0;
-        } else if (validSections.length > 0) {
-          // Fallback to simple average if no weights defined
-          const scores = validSections.map(s => Number(s.avg)).filter(v => !isNaN(v));
-          globalScore = scores.length > 0 ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 100) / 100 : 0;
         }
+        return results;
+      };
 
-        // Filter out results with 0 score if they are considered incomplete
-        if (globalScore === 0) return null;
+      const [sectionsList, questionsList] = await Promise.all([
+        fetchAllRows('evaluation_sections', 'template_id', uniqueTemplateIds),
+        fetchAllRows('evaluation_questions', 'template_id', uniqueTemplateIds)
+      ]);
+
+      const sectionsByTemplate = new Map<string, any[]>();
+      sectionsList.forEach(s => {
+        if (!sectionsByTemplate.has(s.template_id)) sectionsByTemplate.set(s.template_id, []);
+        sectionsByTemplate.get(s.template_id)!.push(s);
+      });
+
+      const questionsByTemplate = new Map<string, any[]>();
+      questionsList.forEach(q => {
+        if (!questionsByTemplate.has(q.template_id)) questionsByTemplate.set(q.template_id, []);
+        questionsByTemplate.get(q.template_id)!.push(q);
+      });
+
+      // 3. Fetch Responses in batches
+      const evalIds = allEvalsFull.map(e => e.id);
+      const respByEval = new Map<string, Record<string, any>>();
+      for (let i = 0; i < evalIds.length; i += 30) {
+        const chunk = evalIds.slice(i, i + 30);
+        let respPage = 0;
+        let respHasMore = true;
+        while (respHasMore) {
+          const { data: respData, error } = await supabase
+            .from('evaluation_responses')
+            .select('evaluation_id, question_id, response_value')
+            .in('evaluation_id', chunk)
+            .range(respPage * 1000, (respPage + 1) * 1000 - 1);
+          if (error) throw error;
+          if (respData && respData.length > 0) {
+            respData.forEach(r => {
+              if (!respByEval.has(r.evaluation_id)) respByEval.set(r.evaluation_id, {});
+              respByEval.get(r.evaluation_id)![r.question_id] = r.response_value;
+            });
+            respHasMore = respData.length === 1000;
+            respPage++;
+          } else { respHasMore = false; }
+        }
+      }
+
+      // 4. Final Mapping with Fallback
+      const normVal = (val: any): number => {
+        if (val === null || val === undefined || val === '') return 0;
+        if (typeof val === 'number') return val;
+        if (typeof val === 'string') {
+          const parsed = parseFloat(val.replace(',', '.'));
+          return isNaN(parsed) ? 0 : parsed;
+        }
+        if (typeof val === 'object') return Number(val.value || val.rating || val.score || 0);
+        return 0;
+      };
+
+      const detailed: ResultWithDetails[] = allEvalsFull.map(evalItem => {
+        const templateSections = sectionsByTemplate.get(evalItem.template_id) || [];
+        const templateQuestions = questionsByTemplate.get(evalItem.template_id) || [];
+        const responses = respByEval.get(evalItem.id) || {};
+        
+        const dbResArr = evalItem.results;
+        const dbRes = Array.isArray(dbResArr) ? dbResArr[0] : dbResArr;
+        const catScores = dbRes?.category_scores || {};
+
+        const sectionsSummary: SectionSummaryRow[] = templateSections
+          .sort((a, b) => (a.order_index || 0) - (b.order_index || 0))
+          .map(s => {
+            const sectionQuestions = templateQuestions.filter(q => q.section_id === s.id);
+            const ratingQuestions = sectionQuestions.filter(q => q.question_type === 'rating');
+            
+            let avg: number | null = null;
+            if (ratingQuestions.length > 0) {
+              const vals = ratingQuestions.map(q => normVal(responses[q.id])).filter(v => v > 0);
+              if (vals.length > 0) avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+            }
+
+            if ((avg === null || avg === 0) && Object.keys(catScores).length > 0) {
+              const dbVal = catScores[s.name] || catScores[s.title];
+              if (dbVal !== undefined && dbVal !== null) avg = Number(dbVal);
+            }
+
+            return {
+              sectionId: s.id,
+              sectionName: s.name || s.title || `Sección ${s.id}`,
+              avg: avg !== null ? Math.round(avg * 100) / 100 : null,
+              weight: ratingQuestions.length,
+              questions: []
+            };
+          });
+
+        const validSections = sectionsSummary.filter(s => s.avg !== null && s.avg > 0);
+        let globalScore = validSections.length > 0 
+          ? validSections.reduce((sum, s) => sum + (s.avg || 0), 0) / validSections.length
+          : 0;
+        
+        if (globalScore === 0 && dbRes?.overall_score) {
+          globalScore = Number(dbRes.overall_score);
+        }
 
         return {
           id: evalItem.id,
           evaluatedId: evalItem.evaluated_id,
-          evaluatedName: evalItem.evaluated_name || 'N/A',
-          evaluatedRole: evalItem.evaluated_role,
-          evaluatorName: evalItem.evaluator_name || 'N/A',
-          evaluatedOffice: evalItem.evaluated_office || 'N/A',
-          evaluatorOffice: evalItem.evaluator_office || 'N/A',
-          evaluatedCampus: normalizeCampus(evalItem.evaluated_campus) || 'Bucaramanga',
-          evaluatorCampus: normalizeCampus(evalItem.evaluator_campus) || 'Bucaramanga',
-          templateName: evalItem.template_name || 'N/A',
+          evaluatedName: evalItem.evaluated?.full_name || 'N/A',
+          evaluatedRole: evalItem.evaluated?.role || '',
+          evaluatorName: evalItem.evaluator?.full_name || 'N/A',
+          evaluatedOffice: evalItem.evaluated?.office?.name || 'N/A',
+          evaluatorOffice: evalItem.evaluator?.office?.name || 'N/A',
+          evaluatedCampus: normalizeCampus(evalItem.evaluated?.campus) || 'Bucaramanga',
+          evaluatorCampus: normalizeCampus(evalItem.evaluator?.campus) || 'Bucaramanga',
+          templateName: evalItem.template?.name || 'N/A',
           date: evalItem.created_at,
-          avgScore: globalScore,
+          avgScore: Math.round(globalScore * 100) / 100,
           sectionsSummary
         };
-      }).filter(Boolean) as ResultWithDetails[];
+      });
 
       setDetailedResults(detailed);
+      setDetailedLoaded(true);
+      setAllDataLoaded(true);
     } catch (error) {
       console.error('Error loading detailed results:', error);
     } finally {
@@ -340,7 +400,6 @@ export function ResultsModule() {
     }
   };
 
-  // Extract unique filter values
   const uniqueOffices = useMemo(() => {
     const offices = new Set(allEvaluations.map(e => e.evaluated_office).filter(Boolean));
     return Array.from(offices).sort();
@@ -449,7 +508,8 @@ export function ResultsModule() {
       </div>
 
       {user?.role !== 'employee' && (
-        <div className="mb-6 flex gap-2">
+        <div className="mb-6 flex items-center justify-between">
+          <div className="flex gap-2">
           <button
             onClick={() => {
               setViewMode('individual');
@@ -494,7 +554,22 @@ export function ResultsModule() {
             </>
           )}
         </div>
-      )}
+        
+        <div className="flex items-center gap-2">
+          {detailedLoaded && (
+            <button
+              onClick={loadDetailedResults}
+              disabled={loadingDetailed}
+              className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 text-slate-600 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors shadow-sm disabled:opacity-50"
+              title="Vuelve a cruzar todos los datos de la base de datos"
+            >
+              <RefreshCw className={`w-4 h-4 ${loadingDetailed ? 'animate-spin' : ''}`} />
+              Recalcular Analítica
+            </button>
+          )}
+        </div>
+      </div>
+    )}
 
       {viewMode === 'individual' || user?.role === 'employee' ? (
         <div className="space-y-4">
@@ -504,6 +579,23 @@ export function ResultsModule() {
               <Filter className="w-4 h-4" />
               <span>Filtros {activeFiltersCount > 0 && `(${activeFiltersCount})`}</span>
             </div>
+
+            {totalInDB && allEvaluations.length < totalInDB && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <BarChart3 className="w-4 h-4 text-blue-600 animate-pulse" />
+                  <p className="text-xs text-blue-800">
+                    Vista previa activa: <strong>{allEvaluations.length}</strong> de <strong>{totalInDB}</strong> registros cargados.
+                  </p>
+                </div>
+                <button 
+                  onClick={() => loadEvaluations(true)} 
+                  className="px-3 py-1 bg-blue-600 text-white rounded text-xs font-bold hover:bg-blue-700 transition-colors shadow-sm"
+                >
+                  Cargar Histórico Completo
+                </button>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
               <div className="relative">
@@ -700,6 +792,16 @@ export function ResultsModule() {
         loadingDetailed ? (
           <div className="flex items-center justify-center h-64">
             <div className="text-gray-500">Cargando análisis detallado...</div>
+          </div>
+        ) : !detailedLoaded ? (
+          <div className="flex flex-col items-center justify-center h-64 gap-4">
+            <p className="text-gray-500 text-sm">Haga clic en el botón para cargar el análisis por oficina.</p>
+            <button
+              onClick={loadDetailedResults}
+              className="px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
+            >
+              Cargar Análisis por Oficina
+            </button>
           </div>
         ) : (
           <div className="space-y-4">
@@ -909,6 +1011,16 @@ export function ResultsModule() {
           <div className="flex items-center justify-center h-64">
             <div className="text-gray-500">Cargando análisis detallado...</div>
           </div>
+        ) : !detailedLoaded ? (
+          <div className="flex flex-col items-center justify-center h-64 gap-4">
+            <p className="text-gray-500 text-sm">Haga clic en el botón para cargar el análisis por campus.</p>
+            <button
+              onClick={loadDetailedResults}
+              className="px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
+            >
+              Cargar Análisis por Campus
+            </button>
+          </div>
         ) : (
           <div className="space-y-4">
             {/* Filtro por Tipo de Formulario */}
@@ -1020,6 +1132,16 @@ export function ResultsModule() {
         loadingDetailed ? (
           <div className="flex items-center justify-center h-64">
             <div className="text-gray-500">Cargando análisis detallado...</div>
+          </div>
+        ) : !detailedLoaded ? (
+          <div className="flex flex-col items-center justify-center h-64 gap-4">
+            <p className="text-gray-500 text-sm">Haga clic en el botón para cargar la vista general.</p>
+            <button
+              onClick={loadDetailedResults}
+              className="px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
+            >
+              Cargar Vista General
+            </button>
           </div>
         ) : (
           <div className="space-y-4">

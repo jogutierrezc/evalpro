@@ -21,6 +21,18 @@ export const MyCollaboratorsModule = () => {
     const [loading, setLoading] = useState(true);
     const [selectedCollaborator, setSelectedCollaborator] = useState<Collaborator | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
+    
+    // Robust normalization helper from ExportModule
+    const normalizeValue = (val: any): number => {
+        if (val === null || val === undefined || val === '') return 0;
+        if (typeof val === 'number') return val;
+        if (typeof val === 'string') {
+            const parsed = parseFloat(val.replace(',', '.'));
+            return isNaN(parsed) ? 0 : parsed;
+        }
+        if (typeof val === 'object') return Number(val.value || val.rating || val.score || val.response || 0);
+        return 0;
+    };
 
     useEffect(() => {
         if (user) {
@@ -32,16 +44,18 @@ export const MyCollaboratorsModule = () => {
         try {
             setLoading(true);
             
-            // Fetch evaluations where current user is evaluator
+            // 1. Fetch evaluations based on role
             const { data: evaluations, error } = await supabase
                 .from('evaluations')
                 .select(`
                     id,
+                    evaluator_id,
+                    evaluated_id,
                     created_at,
-                    evaluated:users!evaluated_id(id, full_name, email, role),
-                    responses:evaluation_responses(response_value)
+                    evaluated:users!evaluated_id(id, full_name, email, role, office_id),
+                    responses:evaluation_responses(response_value),
+                    results:evaluation_results(overall_score, category_scores)
                 `)
-                .eq('evaluator_id', user?.id)
                 .eq('status', 'completed')
                 .order('created_at', { ascending: false });
 
@@ -50,18 +64,57 @@ export const MyCollaboratorsModule = () => {
             // Process and deduplicate users
             const uniqueUsersMap = new Map<string, Collaborator>();
             
+            const roleLower = (user?.role || '').toLowerCase();
+            const managerKeywords = ['director', 'programa', 'lider', 'vaf', 'proceso', 'rectoria', 'vicerectoria', 'jefe', 'office_manager'];
+            const isAdmin = roleLower === 'admin' || roleLower.includes('administrador');
+            const isManager = managerKeywords.some(k => roleLower.includes(k));
+
             evaluations?.forEach((ev: any) => {
-                if (ev.evaluated && ev.evaluated.id !== user?.id) { // Filter out self
+                // Filter by role:
+                // 1. Admin sees everything
+                // 2. Manager sees their office
+                // 3. Others see those they evaluated
+                let shouldInclude = false;
+                if (isAdmin) {
+                    shouldInclude = true;
+                } else if (isManager && user?.office_id && ev.evaluated?.office_id === user.office_id) {
+                    shouldInclude = true;
+                } else if (ev.evaluator_id === user?.id) {
+                    shouldInclude = true;
+                }
+
+                if (shouldInclude && ev.evaluated && ev.evaluated.id !== user?.id) { 
                     if (!uniqueUsersMap.has(ev.evaluated.id)) {
-                        // Calculate score for the latest evaluation
-                        let score = "0.0";
-                        if (ev.responses && ev.responses.length > 0) {
-                            const total = ev.responses.reduce((acc: number, curr: any) => {
-                                const val = Number(curr.response_value);
-                                return acc + (isNaN(val) ? 0 : val);
-                            }, 0);
-                            score = (total / ev.responses.length).toFixed(1);
+                        const dbResult = Array.isArray(ev.results) ? ev.results[0] : ev.results;
+                        let scoreNum = 0;
+
+                        // 1. Prioridad: overall_score (si es > 0)
+                        const storedScore = normalizeValue(dbResult?.overall_score);
+                        if (storedScore > 0) {
+                            scoreNum = storedScore;
                         }
+
+                        // 2. Fallback: category_scores (promedio de categorías si overall_score es 0)
+                        if (scoreNum === 0 && dbResult?.category_scores) {
+                            const cats = dbResult.category_scores;
+                            const values = Object.values(cats).map(v => normalizeValue(v)).filter(v => v > 0);
+                            if (values.length > 0) {
+                                scoreNum = values.reduce((a, b) => a + b, 0) / values.length;
+                            }
+                        }
+
+                        // 3. Fallback: Calcular desde respuestas si sigue siendo 0
+                        if (scoreNum === 0 && ev.responses && ev.responses.length > 0) {
+                            const validResponses = ev.responses
+                                .map((r: any) => normalizeValue(r.response_value))
+                                .filter((v: number) => v > 0);
+
+                            if (validResponses.length > 0) {
+                                scoreNum = validResponses.reduce((acc: number, curr: number) => acc + curr, 0) / validResponses.length;
+                            }
+                        }
+
+                        const score = scoreNum.toFixed(1);
 
                         uniqueUsersMap.set(ev.evaluated.id, {
                             ...ev.evaluated,

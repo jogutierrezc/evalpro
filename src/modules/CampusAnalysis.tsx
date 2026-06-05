@@ -355,7 +355,7 @@ export default function CampusAnalysis({ campusName, results, organizationAverag
     const { globalScore, campusSections, offices, competenciesAnalysis } = analysis;
 
     // Validations to prevent undefined errors
-    if (!globalScore || globalScore === undefined) {
+    if (globalScore === undefined || isNaN(globalScore)) {
         return (
             <div className="bg-red-50 border border-red-200 rounded-lg p-4">
                 <p className="text-red-800">Error: No se pudo calcular el análisis del campus. Verifica que haya datos disponibles.</p>
@@ -515,8 +515,8 @@ export default function CampusAnalysis({ campusName, results, organizationAverag
 
                                     {/* Standout Categories */}
                                     <div className="mt-2 flex flex-wrap gap-2">
-                                        {office.standouts.map((s, i) => (
-                                            <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[10px] font-semibold border border-indigo-100">
+                                        {office.standouts.map((s) => (
+                                            <span key={s} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[10px] font-semibold border border-indigo-100">
                                                 <Award className="w-3 h-3" /> {s}
                                             </span>
                                         ))}
@@ -590,8 +590,8 @@ export default function CampusAnalysis({ campusName, results, organizationAverag
                                         <CheckCircle2 className="w-5 h-5" /> Fortalezas Clave
                                     </h3>
                                     <ul className="space-y-2">
-                                        {aiReport.strengths?.map((s: string, i: number) => (
-                                            <li key={i} className="flex items-start gap-2 text-emerald-700 text-sm">
+                                        {aiReport.strengths?.map((s: string) => (
+                                            <li key={s} className="flex items-start gap-2 text-emerald-700 text-sm">
                                                 <div className="mt-1.5 w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
                                                 {s}
                                             </li>

@@ -65,6 +65,7 @@ export interface Evaluation {
   template_id: string;
   evaluator_id: string;
   evaluated_id: string;
+  period_id: string | null;
   status: 'pending' | 'in_progress' | 'completed';
   started_at: string | null;
   completed_at: string | null;

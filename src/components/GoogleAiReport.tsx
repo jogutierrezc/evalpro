@@ -16,14 +16,18 @@ export const GoogleAiReport: React.FC<GoogleAiReportProps> = ({ results, globalS
     return (
         <div className="space-y-8 animate-in fade-in duration-700">
             {/* AI Header Badge */}
-            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 rounded-2xl p-6 flex items-center gap-4">
-                <div className="bg-white p-3 rounded-full shadow-sm">
-                    <Sparkles className="w-6 h-6 text-indigo-600" />
+            <div className="bg-gradient-to-r from-slate-900 to-indigo-900 border border-indigo-500/30 rounded-3xl p-8 flex flex-col md:flex-row items-center gap-6 shadow-xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl -mr-32 -mt-32"></div>
+                <div className="bg-white/10 backdrop-blur-md p-4 rounded-2xl border border-white/20 shadow-inner">
+                    <Sparkles className="w-8 h-8 text-amber-300 animate-pulse" />
                 </div>
-                <div>
-                    <h3 className="font-bold text-indigo-900 text-lg">Análisis Potenciado por Google Gemini</h3>
-                    <p className="text-indigo-700/80 text-sm">
-                        Este reporte ha sido generado analizando tus patrones de respuesta con inteligencia artificial avanzada para ofrecerte una perspectiva profunda y personalizada.
+                <div className="text-center md:text-left relative z-10">
+                    <h3 className="font-bold text-white text-xl md:text-2xl mb-2 flex items-center justify-center md:justify-start gap-2">
+                        Reporte Prisma AI Universal
+                        <span className="text-[10px] bg-indigo-500/30 text-indigo-200 px-2 py-0.5 rounded-full border border-indigo-400/30 uppercase tracking-widest font-normal">OpenRouter</span>
+                    </h3>
+                    <p className="text-indigo-100/80 text-sm md:text-base max-w-2xl leading-relaxed">
+                        Análisis cognitivo avanzado mediante redes neuronales. Hemos procesado tus competencias con modelos de lenguaje de última generación para ofrecerte una perspectiva estratégica de tu perfil profesional en la UDES.
                     </p>
                 </div>
             </div>

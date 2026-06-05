@@ -514,73 +514,10 @@ export function EvaluationsModule({ onNavigate }: EvaluationsModuleProps) {
         return;
       }
 
-      // Default: no active period — show templates according to user's role (non-admins)
-      let tplList: EvaluationTemplate[] = [];
-      if (user && (user.role as string) !== 'admin') {
-        // Load all form types and pick those that include the user's role
-        const { data: allFormTypes, error: ftErr } = await supabase.from('form_types').select('*');
-        if (ftErr) throw ftErr;
-        // include types that include user's role OR that target the user's role via relations (as evaluator or evaluated)
-        let relKeysAll: string[] = [];
-        if (user) {
-          const canonical = canonicalRole || (user.role as string);
-          const { data: relsAllData } = await supabase.from('form_type_relations').select('form_type_key, evaluated_role_key, evaluator_role_key');
-          const userRoleNorm = normalizeStr(canonical);
-          const relevantRelsAll = (relsAllData || []).filter((r: any) => {
-            return normalizeStr(r.evaluated_role_key) === userRoleNorm || normalizeStr(r.evaluator_role_key) === userRoleNorm;
-          });
-          relKeysAll = relevantRelsAll.map((r: any) => r.form_type_key);
-        }
-        const allowedKeysForUser = Array.from(new Set([...(allFormTypes || []).filter((ft: any) => Array.isArray(ft.roles) ? ft.roles.includes(canonicalRole) : false).map((ft: any) => ft.key), ...relKeysAll]));
-
-        if (allowedKeysForUser.length === 0) {
-          setAvailableSoftTemplates([]);
-          setTakenTemplatesMap({});
-          return;
-        }
-
-        const { data: templates, error: tplErr } = await supabase
-          .from('evaluation_templates')
-          .select('*')
-          .eq('is_active', true)
-          .in('type', allowedKeysForUser)
-          .order('created_at', { ascending: false });
-
-        if (tplErr) throw tplErr;
-
-        tplList = templates || [];
-      } else {
-        // admin: show all active templates
-        const { data: templates, error: tplErr } = await supabase.from('evaluation_templates').select('*').eq('is_active', true).order('created_at', { ascending: false });
-        if (tplErr) throw tplErr;
-        tplList = templates || [];
-      }
-      setAvailableSoftTemplates(tplList);
-
-      if (!user || tplList.length === 0) {
-        setTakenTemplatesMap({});
-        return;
-      }
-
-      const templateIds = tplList.map((t) => t.id);
-
-      // fetch evaluations for this user that use these templates
-      const personIdLookup = await getPersonIdForUser(user);
-      const evaluatedLookupId = personIdLookup || user.id;
-      const { data: existingEvals, error: evalErr } = await supabase
-        .from('evaluations')
-        .select('template_id')
-        .eq('evaluated_id', evaluatedLookupId)
-        .in('template_id', templateIds);
-
-      if (evalErr) throw evalErr;
-
-      const taken: Record<string, boolean> = {};
-      (existingEvals || []).forEach((e: any) => {
-        if (e.template_id) taken[e.template_id] = true;
-      });
-
-      setTakenTemplatesMap(taken);
+      // Default: no active period — NO ALLOW NEW EVALUATIONS
+      setAvailableSoftTemplates([]);
+      setTakenTemplatesMap({});
+      return;
     } catch (error) {
       console.error('Error loading available soft-skill templates:', error);
     }
@@ -597,6 +534,7 @@ export function EvaluationsModule({ onNavigate }: EvaluationsModuleProps) {
             template_id: template.id,
             evaluator_id: user.id,
             evaluated_id: user.id,
+            period_id: activePeriod?.id || null,
             status: 'pending',
           },
         ])
@@ -629,6 +567,7 @@ export function EvaluationsModule({ onNavigate }: EvaluationsModuleProps) {
             template_id: template.id,
             evaluator_id: evaluatorId,
             evaluated_id: evaluatedId,
+            period_id: activePeriod?.id || null,
             status: 'pending',
           },
         ])
@@ -662,6 +601,7 @@ export function EvaluationsModule({ onNavigate }: EvaluationsModuleProps) {
             template_id: template.id,
             evaluator_id: collabId,
             evaluated_id: collabId,
+            period_id: activePeriod?.id || null,
             status: 'pending',
           },
         ])

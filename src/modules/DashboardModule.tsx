@@ -12,9 +12,11 @@ import {
   ChevronDown,
   ChevronUp,
   Search,
-  Check
+  Check,
+  Calendar
 } from 'lucide-react';
 import { EvaluationForm } from './evaluations/EvaluationForm';
+import { HistoricalScoresChart } from '../components/HistoricalScoresChart';
 
 export function DashboardModule() {
   const { user } = useAuth();
@@ -43,6 +45,10 @@ export function DashboardModule() {
 
   const [selectedEvaluation, setSelectedEvaluation] = useState<Evaluation | null>(null);
   const [userEvaluationsMap, setUserEvaluationsMap] = useState<Record<string, Evaluation>>({});
+  const [historyTargetUser, setHistoryTargetUser] = useState<{id: string, name: string} | null>(null);
+  const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [periods, setPeriods] = useState<any[]>([]);
+  const [selectedPeriodId, setSelectedPeriodId] = useState<string>('all');
 
   useEffect(() => {
     let mounted = true;
@@ -51,20 +57,26 @@ export function DashboardModule() {
       if (!mounted) return;
       setLoading(true);
       await loadRoles();
+      await loadPeriods();
       await loadStats();
       await loadUserEvaluations();
-      // We need to trigger template calculation here or ensure it runs after roles/stats
-      // The separate useEffect for availableTemplates depends on 'availableTemplates' state which is set in loadStats?
-      // No, loadStats sets availableTemplates.
+      await loadAllUsers();
       setLoading(false);
     };
 
     if (user) {
       init();
+      setHistoryTargetUser({ id: user.id, name: user.full_name });
     }
 
     return () => { mounted = false; };
   }, [user]);
+
+  useEffect(() => {
+    if (isAdmin) {
+      loadStats();
+    }
+  }, [selectedPeriodId]);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -437,6 +449,43 @@ export function DashboardModule() {
     return asStr;
   };
 
+  const loadPeriods = async () => {
+    try {
+      const { data } = await supabase
+        .from('evaluation_periods')
+        .select('*')
+        .order('start_date', { ascending: false });
+      
+      const periodsList = data || [];
+      setPeriods(periodsList);
+
+      // Find active period for default selection
+      const now = new Date();
+      const today = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().slice(0, 10);
+      const active = periodsList.find(p => p.start_date <= today && p.end_date >= today);
+      
+      if (active) {
+        setSelectedPeriodId(active.id);
+      }
+    } catch (err) {
+      console.warn('Error loading periods:', err);
+    }
+  };
+
+  const loadAllUsers = async () => {
+    if (user?.role !== 'admin' && user?.role !== 'office_manager') return;
+    try {
+      let query = supabase.from('users').select('*');
+      if (user.role === 'office_manager') {
+        query = query.eq('office_id', user.office_id);
+      }
+      const { data } = await query;
+      setAllUsers(data || []);
+    } catch (err) {
+      console.warn('Error loading all users for history selector:', err);
+    }
+  };
+
   const loadStats = async () => {
     console.log('[Dashboard] === loadStats CALLED ===');
     console.log('[Dashboard] User:', user?.full_name, 'Role:', user?.role);
@@ -445,12 +494,21 @@ export function DashboardModule() {
       console.log('[Dashboard] Normalized roleKey:', roleKey);
 
       if (user?.role === 'admin' || roleKey === 'admin') {
-        console.log('[Dashboard] User is ADMIN - loading admin stats');
+        console.log('[Dashboard] User is ADMIN - loading admin stats for period:', selectedPeriodId);
+        
+        let pendingQuery = supabase.from('evaluations').select('id', { count: 'exact', head: true }).neq('status', 'completed');
+        let completedQuery = supabase.from('evaluations').select('id', { count: 'exact', head: true }).eq('status', 'completed');
+
+        if (selectedPeriodId !== 'all') {
+          pendingQuery = pendingQuery.eq('period_id', selectedPeriodId);
+          completedQuery = completedQuery.eq('period_id', selectedPeriodId);
+        }
+
         const [employeesRes, officesRes, pendingRes, completedRes, rolesRes, usersData] = await Promise.all([
           supabase.from('users').select('id', { count: 'exact', head: true }),
           supabase.from('offices').select('id', { count: 'exact', head: true }),
-          supabase.from('evaluations').select('id', { count: 'exact', head: true }).neq('status', 'completed'),
-          supabase.from('evaluations').select('id', { count: 'exact', head: true }).eq('status', 'completed'),
+          pendingQuery,
+          completedQuery,
           supabase.from('roles').select('id', { count: 'exact', head: true }),
           supabase.from('users').select('campus'),
         ]);
@@ -625,10 +683,47 @@ export function DashboardModule() {
           availableCount = 0;
         }
 
+        // Calculate "Pendientes por realizar" (Templates available * Collaborators not yet evaluated)
+        let totalPendingToPerform = 0;
+        if (availableCount > 0) {
+          // Get collaborators
+          const { data: collaborators } = await supabase
+            .from('users')
+            .select('id')
+            .eq('manager_id', user.id);
+          
+          const collabIds = (collaborators || []).map(c => c.id);
+          const allTargetIds = [user.id, ...collabIds];
+
+          // Check how many evaluations exist for these targets in the active period
+          let existingQuery = supabase
+            .from('evaluations')
+            .select('template_id, evaluated_id')
+            .in('evaluated_id', allTargetIds);
+          
+          if (period) {
+            existingQuery = existingQuery.eq('period_id', period.id);
+          }
+
+          const { data: existing } = await existingQuery;
+          const existingSet = new Set((existing || []).map(e => `${e.template_id}-${e.evaluated_id}`));
+
+          // For each template, check which targets are missing it
+          const availableTemplatesList = (availableTemplates.length > 0 ? availableTemplates : (await supabase.from('evaluation_templates').select('*').eq('is_active', true).in('type', finalAllowed)).data || []);
+          
+          availableTemplatesList.forEach((tpl: any) => {
+            allTargetIds.forEach(targetId => {
+              if (!existingSet.has(`${tpl.id}-${targetId}`)) {
+                totalPendingToPerform++;
+              }
+            });
+          });
+        }
+
         setStats({
           totalEmployees: 0,
           totalOffices: 0,
-          pendingEvaluations: pendingRes.count || 0,
+          pendingEvaluations: (pendingRes.count || 0) + totalPendingToPerform,
           completedEvaluations: completedRes.count || 0,
           totalRoles: 0,
         });
@@ -721,9 +816,35 @@ export function DashboardModule() {
       <div className="max-w-7xl mx-auto">
 
         {/* Welcome Section */}
-        <div className="mb-8">
-          <h2 className="text-2xl font-bold text-slate-800">Panel de Control</h2>
-          <p className="text-slate-500 mt-1">Bienvenido de nuevo, gestiona tus evaluaciones y rendimiento.</p>
+        <div className="mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-bold text-slate-800">Panel de Control</h2>
+            <p className="text-slate-500 mt-1">Bienvenido de nuevo, gestiona tus evaluaciones y rendimiento.</p>
+          </div>
+          
+          {isAdmin && periods.length > 0 && (
+            <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-xl shadow-sm border border-slate-100">
+               <Calendar className="w-4 h-4 text-indigo-500" />
+               <span className="text-sm font-medium text-slate-600">Periodo:</span>
+               <select 
+                 className="text-sm font-bold text-slate-800 bg-transparent border-none focus:ring-0 cursor-pointer"
+                 value={selectedPeriodId}
+                 onChange={(e) => setSelectedPeriodId(e.target.value)}
+               >
+                 <option value="all">Todos los tiempos</option>
+                 {periods.map(p => {
+                    const now = new Date();
+                    const today = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().slice(0, 10);
+                    const isActive = p.start_date <= today && p.end_date >= today;
+                    return (
+                      <option key={p.id} value={p.id}>
+                        {p.year} {isActive ? '(Activo)' : ''}
+                      </option>
+                    );
+                 })}
+               </select>
+            </div>
+          )}
         </div>
 
         {/* Stats Grid */}
@@ -787,9 +908,36 @@ export function DashboardModule() {
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-
-          {/* Left Column: Exams (Takes up 2/3 on desktop) */}
+          {/* Historical Scores Section - Full width above or in main area */}
           <div className="lg:col-span-2 space-y-6">
+            {(isAdmin || user?.role === 'office_manager') && (
+              <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <UserIcon className="w-4 h-4 text-slate-400" />
+                  <span className="text-sm font-medium text-slate-600">Ver historial de:</span>
+                  <select 
+                    className="text-sm font-bold text-slate-800 bg-transparent border-none focus:ring-0 cursor-pointer"
+                    value={historyTargetUser?.id || ''}
+                    onChange={(e) => {
+                      const selected = allUsers.find(u => u.id === e.target.value);
+                      if (selected) setHistoryTargetUser({ id: selected.id, name: selected.full_name });
+                    }}
+                  >
+                    <option value={user?.id}>Mí mismo</option>
+                    {allUsers.filter(u => u.id !== user?.id).map(u => (
+                      <option key={u.id} value={u.id}>{u.full_name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {historyTargetUser && (
+              <HistoricalScoresChart 
+                userId={historyTargetUser.id} 
+                userName={historyTargetUser.name} 
+              />
+            )}
 
             {/* Pending Evaluations Section */}
             {inProgressEvaluations.length > 0 && (

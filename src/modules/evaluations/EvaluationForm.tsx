@@ -105,19 +105,32 @@ export function EvaluationForm({ evaluation, onClose }: EvaluationFormProps) {
   };
 
   const handleSave = async (complete: boolean = false) => {
+    // Pre-validation: Don't allow saving if there are no responses but there are questions
+    if (questions.length > 0 && Object.keys(responses).length === 0) {
+      alert('No se han detectado respuestas para guardar. Por favor responde al menos una pregunta.');
+      return;
+    }
+
     setSaving(true);
 
     try {
-      await supabase
-        .from('evaluation_responses')
-        .delete()
-        .eq('evaluation_id', evaluation.id);
-
       const responsesToInsert = Object.entries(responses).map(([questionId, value]) => ({
         evaluation_id: evaluation.id,
         question_id: questionId,
         response_value: value,
       }));
+
+      // Only delete and re-insert if we have data or if the form is empty
+      if (questions.length > 0 && responsesToInsert.length === 0) {
+        throw new Error('No hay respuestas para procesar.');
+      }
+
+      const { error: deleteError } = await supabase
+        .from('evaluation_responses')
+        .delete()
+        .eq('evaluation_id', evaluation.id);
+      
+      if (deleteError) throw deleteError;
 
       if (responsesToInsert.length > 0) {
         const { error: responsesError } = await supabase
