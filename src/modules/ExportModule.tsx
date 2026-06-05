@@ -63,6 +63,7 @@ export default function ExportModule() {
   const [filterCampus, setFilterCampus] = useState('all');
   const [filterOffice, setFilterOffice] = useState('all');
   const [filterTemplate, setFilterTemplate] = useState('all');
+  const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState('');
   
   const { periods, activePeriod } = usePeriods();
