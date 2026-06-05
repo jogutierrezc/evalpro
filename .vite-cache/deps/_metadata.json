@@ -7,55 +7,55 @@
     "react": {
       "src": "../../node_modules/react/index.js",
       "file": "react.js",
-      "fileHash": "5ae0b57b",
+      "fileHash": "3d12ad1c",
       "needsInterop": true
     },
     "react/jsx-dev-runtime": {
       "src": "../../node_modules/react/jsx-dev-runtime.js",
       "file": "react_jsx-dev-runtime.js",
-      "fileHash": "dddad620",
+      "fileHash": "e7aa44f2",
       "needsInterop": true
     },
     "react/jsx-runtime": {
       "src": "../../node_modules/react/jsx-runtime.js",
       "file": "react_jsx-runtime.js",
-      "fileHash": "6ff4611b",
+      "fileHash": "f058d863",
       "needsInterop": true
     },
     "@google/generative-ai": {
       "src": "../../node_modules/@google/generative-ai/dist/index.mjs",
       "file": "@google_generative-ai.js",
-      "fileHash": "f1111096",
+      "fileHash": "e50d6ed5",
       "needsInterop": false
     },
     "@lottiefiles/dotlottie-react": {
       "src": "../../node_modules/@lottiefiles/dotlottie-react/dist/browser/index.js",
       "file": "@lottiefiles_dotlottie-react.js",
-      "fileHash": "e848408e",
+      "fileHash": "b97413a0",
       "needsInterop": false
     },
     "@supabase/supabase-js": {
       "src": "../../node_modules/@supabase/supabase-js/dist/module/index.js",
       "file": "@supabase_supabase-js.js",
-      "fileHash": "56616549",
+      "fileHash": "c3b78c9f",
       "needsInterop": false
     },
     "react-dom/client": {
       "src": "../../node_modules/react-dom/client.js",
       "file": "react-dom_client.js",
-      "fileHash": "394e19f0",
+      "fileHash": "71f5669c",
       "needsInterop": true
     },
     "recharts": {
       "src": "../../node_modules/recharts/es6/index.js",
       "file": "recharts.js",
-      "fileHash": "bffef580",
+      "fileHash": "88d4d09b",
       "needsInterop": false
     },
     "xlsx": {
       "src": "../../node_modules/xlsx/xlsx.mjs",
       "file": "xlsx.js",
-      "fileHash": "486ded12",
+      "fileHash": "84e5a041",
       "needsInterop": false
     }
   },
