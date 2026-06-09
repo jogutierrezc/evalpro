@@ -22,7 +22,26 @@ const mapCategoryScores = (categoryScores: Record<string, number> | null | undef
   return Object.entries(categoryScores).map(([competency, score]) => ({ competency, score: Number(score) }));
 };
 
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+};
+
+function setCorsHeaders(res: any) {
+  Object.entries(corsHeaders).forEach(([key, value]) => res.setHeader(key, value));
+}
+
 export default async function handler(req: any, res: any) {
+  // Handle CORS preflight
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, corsHeaders);
+    return res.end();
+  }
+
+  // Set CORS headers on all responses
+  setCorsHeaders(res);
+
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed. Use GET.' });
   }
