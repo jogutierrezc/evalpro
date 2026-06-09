@@ -60,19 +60,7 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Error buscando colaborador en users.', details: userError.message });
     }
 
-    let collaborator = user;
-    if (!collaborator) {
-      const { data: oldRecord, error: oldError } = await supabase
-        .from('colaboradores')
-        .select('id, identification, full_name, role, office_id, manager_id, campus')
-        .eq('identification', documento)
-        .maybeSingle();
-
-      if (oldError) {
-        return res.status(500).json({ error: 'Error buscando colaborador en colaboradores.', details: oldError.message });
-      }
-      collaborator = oldRecord;
-    }
+    const collaborator = user;
 
     if (!collaborator) {
       return res.status(404).json({ error: 'No se encontró un colaborador con ese documento.' });
