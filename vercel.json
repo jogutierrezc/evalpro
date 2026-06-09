@@ -5,8 +5,10 @@
     "installCommand": "npm install",
     "framework": "vite",
     "rewrites": [
-        {
-            "source": "/(.*)",
+        {            "source": "/api/(.*)",
+            "destination": "/api/$1"
+        },
+        {            "source": "/(.*)",
             "destination": "/index.html"
         }
     ],
