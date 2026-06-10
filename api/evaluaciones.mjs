@@ -96,7 +96,7 @@ export default async function handler(req, res) {
         ? supabase.from('evaluation_sections').select('id, template_id, title, category, order_index').in('template_id', templateIds)
         : Promise.resolve({ data: [], error: null }),
       templateIds.length
-        ? supabase.from('evaluation_questions').select('id, template_id, section_id, question_text, question_type, options, category, order_index').in('template_id', templateIds)
+        ? supabase.from('evaluation_questions').select('id, template_id, section_id, question_text, question_type, options, order_index').in('template_id', templateIds)
         : Promise.resolve({ data: [], error: null }),
       evaluationIds.length
         ? supabase.from('evaluation_responses').select('id, evaluation_id, question_id, response_value, created_at').in('evaluation_id', evaluationIds)
