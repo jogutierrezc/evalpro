@@ -54,6 +54,14 @@ const normalizeCampus = (campus: string | null | undefined) => {
   return campus;
 };
 
+const roundExportValue = (value: number | null | undefined): number | null => {
+  if (value === null || value === undefined || Number.isNaN(value)) return null;
+  const floorTenths = Math.floor(value * 10) / 10;
+  const firstDecimalDigit = Math.floor(value * 10) % 10;
+  const rounded = firstDecimalDigit >= 6 ? floorTenths + 0.1 : floorTenths;
+  return Number(rounded.toFixed(1));
+};
+
 export default function ExportModule() {
   const [loading, setLoading] = useState(true);
   const [evaluations, setEvaluations] = useState<EvaluationRow[]>([]);
@@ -313,7 +321,7 @@ export default function ExportModule() {
           return {
             sectionId: s.id,
             sectionName: s.name || s.title || `Sección ${s.id}`,
-            avg: avg !== null ? Math.round(avg * 100) / 100 : null,
+            avg: avg !== null ? roundExportValue(avg) : null,
             weight: ratingQuestions.length,
             questions: []
           };
@@ -341,7 +349,7 @@ export default function ExportModule() {
         templateId: evalItem.template_id,
         templateName: evalItem.template?.name || 'N/A',
         sectionsSummary,
-        avgScore: Math.round(globalScore * 100) / 100,
+        avgScore: roundExportValue(globalScore),
         status: evalItem.status
       });
     });
@@ -458,11 +466,11 @@ export default function ExportModule() {
       const templateAverages = templateNames.map((t) => {
         const entry = u.templateScores[t];
         if (!entry || entry.count === 0) return '';
-        return Math.round((entry.sum / entry.count) * 100) / 100;
+        return roundExportValue(entry.sum / entry.count) ?? '';
       });
 
       const validAverages = templateAverages.filter((v) => typeof v === 'number') as number[];
-      const overallAvg = validAverages.length > 0 ? Math.round((validAverages.reduce((a, b) => a + b, 0) / validAverages.length) * 100) / 100 : '';
+      const overallAvg = validAverages.length > 0 ? roundExportValue(validAverages.reduce((a, b) => a + b, 0) / validAverages.length) ?? '' : '';
 
       return [
         u.name,
