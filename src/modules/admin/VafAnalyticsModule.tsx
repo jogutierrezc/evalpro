@@ -10,7 +10,7 @@ import {
   MapPin, Briefcase, FileText, AlertCircle, CheckCircle2, X,
   BarChart2, Layers, Building2, RefreshCw, ChevronLeft, ChevronRight,
   Trophy, Award, History, ArrowUp, ArrowDown,
-  Sparkles, Activity, BrainCircuit
+  Sparkles, Activity, BrainCircuit, Gauge
 } from 'lucide-react';
 import AnaliticaTab from './analytics/AnaliticaTab';
 
@@ -75,7 +75,7 @@ interface Props {
 }
 
 export default function VafAnalyticsModule({ publicMode }: Props) {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'comparativa' | 'colaboradores' | 'analitica'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'comparativa' | 'colaboradores' | 'analitica' | 'indicadores'>('dashboard');
   const [evaluations, setEvaluations] = useState<VafEvaluation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -543,6 +543,183 @@ export default function VafAnalyticsModule({ publicMode }: Props) {
     return filteredData.slice(start, start + collabPageSize);
   }, [filteredData, collabPage, collabPageSize]);
 
+  // ─── INDICADORES DATA ───
+  const [indicatorsLoading, setIndicatorsLoading] = useState(false);
+  const [indicatorsSections, setIndicatorsSections] = useState<string[]>([]);
+  const [selectedIndSection, setSelectedIndSection] = useState<string>('');
+  const [indicatorsRanking, setIndicatorsRanking] = useState<{
+    section: string;
+    leaders: { leaderName: string; leaderId: string; avgScore: number; count: number; campus: string; office: string }[];
+    templateBreakdown: { templateName: string; avg: number; count: number }[];
+    globalAvg: number;
+    globalCount: number;
+  }[]>([]);
+
+  // Fetch section-level data when tab is indicadores
+  useEffect(() => {
+    if (activeTab !== 'indicadores' || filteredData.length === 0 || evaluations.length === 0) return;
+    (async () => {
+      setIndicatorsLoading(true);
+      try {
+        // Get unique template IDs from filtered evaluations
+        const templateIds = Array.from(new Set(filteredData.map(e => e.templateId))).filter(Boolean);
+        if (templateIds.length === 0) { setIndicatorsLoading(false); return; }
+
+        // 1. Fetch sections for these templates
+        const { data: sectionsData } = await supabase
+          .from('evaluation_sections')
+          .select('id, template_id, title')
+          .in('template_id', templateIds);
+        const sections = (sectionsData || []) as { id: string; template_id: string; title: string }[];
+
+        // 2. Fetch questions for these templates
+        const { data: questionsData } = await supabase
+          .from('evaluation_questions')
+          .select('id, template_id, section_id, question_type')
+          .in('template_id', templateIds);
+        const questions = (questionsData || []) as { id: string; template_id: string; section_id: string | null; question_type: string }[];
+
+        // 3. Build map: section_id → section title
+        const sectionTitleMap = new Map<string, string>();
+        sections.forEach(s => sectionTitleMap.set(s.id, s.title));
+
+        // 4. Build map: question_id → section_id
+        const questionSectionMap = new Map<string, string>();
+        questions.forEach(q => { if (q.section_id) questionSectionMap.set(q.id, q.section_id); });
+
+        // 5. Fetch all responses for the filtered evaluations' IDs
+        const evalIds = filteredData.map(e => e.id).filter(Boolean);
+        const allResponses: any[] = [];
+        for (let i = 0; i < evalIds.length; i += 100) {
+          const chunk = evalIds.slice(i, i + 100);
+          const { data: respData } = await supabase
+            .from('evaluation_responses')
+            .select('evaluation_id, question_id, response_value')
+            .in('evaluation_id', chunk);
+          if (respData) allResponses.push(...respData);
+        }
+
+        // 6. Compute per-evaluation per-section scores
+        // Map: evaluation_id → { section_title → { sum: number, count: number } }
+        const evalSectionScores = new Map<string, Map<string, { sum: number; count: number }>>();
+
+        allResponses.forEach((r: any) => {
+          const sectionId = questionSectionMap.get(r.question_id);
+          if (!sectionId) return;
+          const sectionTitle = sectionTitleMap.get(sectionId);
+          if (!sectionTitle) return;
+
+          const val = Number(r.response_value);
+          if (isNaN(val) || val <= 0) return;
+
+          if (!evalSectionScores.has(r.evaluation_id)) {
+            evalSectionScores.set(r.evaluation_id, new Map());
+          }
+          const sectionMap = evalSectionScores.get(r.evaluation_id)!;
+          if (!sectionMap.has(sectionTitle)) {
+            sectionMap.set(sectionTitle, { sum: 0, count: 0 });
+          }
+          const d = sectionMap.get(sectionTitle)!;
+          d.sum += val;
+          d.count += 1;
+        });
+
+        // 7. Build evaluator lookup: evaluation_id → evaluator info
+        const evalEvaluatorMap = new Map<string, { id: string; name: string; campus: string; office: string }>();
+        filteredData.forEach(e => {
+          evalEvaluatorMap.set(e.id, {
+            id: e.evaluatorId,
+            name: e.evaluatorName,
+            campus: e.campus,
+            office: e.office
+          });
+        });
+
+        // 8. Aggregate: section_title → { evaluator_id → { sum, count } }
+        // Also track: section_title → { template → { sum, count } }
+        const sectionLeaderAgg = new Map<string, Map<string, { sum: number; count: number; campus: string; office: string; leaderName: string }>>();
+        const sectionTemplateAgg = new Map<string, Map<string, { sum: number; count: number }>>();
+
+        evalSectionScores.forEach((sectionMap, evalId) => {
+          const evaluator = evalEvaluatorMap.get(evalId);
+          if (!evaluator) return;
+
+          const evalData = filteredData.find(e => e.id === evalId);
+          const templateName = evalData?.templateName || 'N/A';
+
+          sectionMap.forEach((score, sectionTitle) => {
+            const avg = score.count > 0 ? score.sum / score.count : 0;
+
+            // Per leader
+            if (!sectionLeaderAgg.has(sectionTitle)) {
+              sectionLeaderAgg.set(sectionTitle, new Map());
+            }
+            const leaderMap = sectionLeaderAgg.get(sectionTitle)!;
+            if (!leaderMap.has(evaluator.id)) {
+              leaderMap.set(evaluator.id, { sum: 0, count: 0, campus: evaluator.campus, office: evaluator.office, leaderName: evaluator.name });
+            }
+            const l = leaderMap.get(evaluator.id)!;
+            l.sum += avg;
+            l.count += 1;
+
+            // Per template
+            if (!sectionTemplateAgg.has(sectionTitle)) {
+              sectionTemplateAgg.set(sectionTitle, new Map());
+            }
+            const tmplMap = sectionTemplateAgg.get(sectionTitle)!;
+            if (!tmplMap.has(templateName)) {
+              tmplMap.set(templateName, { sum: 0, count: 0 });
+            }
+            const t = tmplMap.get(templateName)!;
+            t.sum += avg;
+            t.count += 1;
+          });
+        });
+
+        // 9. Build final ranking data
+        const allSectionTitles = Array.from(sectionLeaderAgg.keys()).sort();
+        const ranking: typeof indicatorsRanking = [];
+
+        allSectionTitles.forEach(sectionTitle => {
+          const leaderMap = sectionLeaderAgg.get(sectionTitle)!;
+          const tmplMap = sectionTemplateAgg.get(sectionTitle)!;
+
+          const leaders = Array.from(leaderMap.entries())
+            .map(([id, d]) => ({
+              leaderName: d.leaderName,
+              leaderId: id,
+              avgScore: Number((d.sum / d.count).toFixed(2)),
+              count: d.count,
+              campus: d.campus,
+              office: d.office
+            }))
+            .sort((a, b) => b.avgScore - a.avgScore);
+
+          const templateBreakdown = Array.from(tmplMap.entries())
+            .map(([name, d]) => ({ templateName: name, avg: Number((d.sum / d.count).toFixed(2)), count: d.count }))
+            .sort((a, b) => b.avg - a.avg);
+
+          const allScores = Array.from(leaderMap.values());
+          const globalSum = allScores.reduce((s, d) => s + d.sum, 0);
+          const globalCount = allScores.reduce((s, d) => s + d.count, 0);
+          const globalAvg = globalCount > 0 ? Number((globalSum / globalCount).toFixed(2)) : 0;
+
+          ranking.push({ section: sectionTitle, leaders, templateBreakdown, globalAvg, globalCount });
+        });
+
+        setIndicatorsRanking(ranking);
+        setIndicatorsSections(allSectionTitles);
+        if (allSectionTitles.length > 0 && !selectedIndSection) {
+          setSelectedIndSection(allSectionTitles[0]);
+        }
+      } catch (err) {
+        console.error('Error loading indicators data:', err);
+      } finally {
+        setIndicatorsLoading(false);
+      }
+    })();
+  }, [activeTab, filteredData, evaluations]);
+
   const getVisiblePages = (current: number, total: number) => {
     if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
     if (current <= 4) return [1, 2, 3, 4, 5, '...', total];
@@ -628,6 +805,8 @@ export default function VafAnalyticsModule({ publicMode }: Props) {
               className={`flex items-center gap-2 px-4 py-1.5 text-sm font-medium rounded-md transition-all ${activeTab === 'colaboradores' ? 'bg-white shadow-sm text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}><Users className="w-4 h-4" /> Colaboradores</button>
             <button onClick={() => setActiveTab('analitica')}
               className={`flex items-center gap-2 px-4 py-1.5 text-sm font-medium rounded-md transition-all ${activeTab === 'analitica' ? 'bg-white shadow-sm text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}><BrainCircuit className="w-4 h-4" /> Analítica</button>
+            <button onClick={() => { setActiveTab('indicadores'); }}
+              className={`flex items-center gap-2 px-4 py-1.5 text-sm font-medium rounded-md transition-all ${activeTab === 'indicadores' ? 'bg-white shadow-sm text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}><Gauge className="w-4 h-4" /> Indicadores</button>
           </div>
         </div>
       </div>
@@ -1206,6 +1385,365 @@ export default function VafAnalyticsModule({ publicMode }: Props) {
             uniqueTemplates={uniqueTemplates}
             globalMetrics={globalMetrics}
           />
+        )}
+
+        {/* ─── INDICADORES ─── */}
+        {activeTab === 'indicadores' && (
+          <div className="flex flex-col gap-6">
+            {/* Hero */}
+            <div className="bg-gradient-to-br from-emerald-700 to-teal-800 rounded-2xl p-6 text-white shadow-lg">
+              <div className="flex items-center gap-4 mb-3">
+                <div className="bg-white/20 p-3 rounded-xl">
+                  <Gauge className="w-8 h-8" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold">Indicadores por Sección</h2>
+                  <p className="text-emerald-200 text-sm">Promedios estandarizados por sección de evaluación y ranking de líderes</p>
+                </div>
+              </div>
+              <p className="text-emerald-100 text-sm max-w-3xl">
+                Analiza el desempeño desglosado por cada sección de los instrumentos de evaluación.
+                Las secciones se estandarizan por nombre y se comparan entre tipos de examen.
+              </p>
+            </div>
+
+            {/* Section selector */}
+            {indicatorsSections.length > 0 ? (
+              <>
+                <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+                  <div className="flex flex-wrap gap-2 items-center">
+                    <span className="text-sm font-semibold text-gray-700 mr-2">Sección:</span>
+                    {indicatorsSections.map(s => (
+                      <button key={s}
+                        onClick={() => setSelectedIndSection(s)}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all border ${
+                          selectedIndSection === s
+                            ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                            : 'bg-white text-gray-600 border-gray-300 hover:border-emerald-400 hover:text-emerald-700'
+                        }`}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {indicatorsRanking.filter(r => r.section === selectedIndSection).map(sectionData => {
+                  const allLeaders = sectionData.leaders;
+                  const top10 = allLeaders.slice(0, 10);
+                  const worst10 = allLeaders.length > 10 ? [...allLeaders].slice(-10).reverse() : [];
+                  const top100 = allLeaders.slice(0, 100);
+                  const maxScore = top10.length > 0 ? top10[0].avgScore : 0;
+
+                  return (
+                    <div key={sectionData.section} className="flex flex-col gap-6">
+                      {/* Summary cards */}
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div className="bg-white rounded-lg p-5 shadow-sm border border-gray-200 border-l-4 border-l-emerald-500">
+                          <p className="text-gray-500 text-xs font-semibold uppercase">Promedio Global</p>
+                          <h3 className="text-2xl font-bold text-gray-800 mt-1">{sectionData.globalAvg.toFixed(2)}</h3>
+                          <p className="text-xs text-gray-400 mt-1">/ 5.0 · {sectionData.globalCount} evaluaciones</p>
+                        </div>
+                        <div className="bg-white rounded-lg p-5 shadow-sm border border-gray-200 border-l-4 border-l-blue-500">
+                          <p className="text-gray-500 text-xs font-semibold uppercase">Total Líderes</p>
+                          <h3 className="text-2xl font-bold text-gray-800 mt-1">{sectionData.leaders.length}</h3>
+                          <p className="text-xs text-gray-400 mt-1">Evaluadores únicos</p>
+                        </div>
+                        <div className="bg-white rounded-lg p-5 shadow-sm border border-gray-200 border-l-4 border-l-amber-500">
+                          <p className="text-gray-500 text-xs font-semibold uppercase">Mejor Promedio</p>
+                          <h3 className="text-2xl font-bold text-gray-800 mt-1">{top10.length > 0 ? top10[0].avgScore.toFixed(2) : '-'}</h3>
+                          <p className="text-xs text-gray-400 mt-1 truncate">{top10.length > 0 ? top10[0].leaderName : '-'}</p>
+                        </div>
+                        <div className="bg-white rounded-lg p-5 shadow-sm border border-gray-200 border-l-4 border-l-red-500">
+                          <p className="text-gray-500 text-xs font-semibold uppercase">Último Promedio</p>
+                          <h3 className="text-2xl font-bold text-gray-800 mt-1">{top10.length > 0 ? top10[top10.length - 1].avgScore.toFixed(2) : '-'}</h3>
+                          <p className="text-xs text-gray-400 mt-1">Top 10 mínimo</p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {/* Top 10 Best */}
+                        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5">
+                          <h3 className="text-sm font-bold text-gray-700 uppercase mb-4 border-b pb-2 flex items-center gap-2">
+                            <ArrowUp className="w-4 h-4 text-emerald-600" /> Top 10 Mejores — &ldquo;{sectionData.section}&rdquo;
+                          </h3>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="bg-slate-50">
+                                  <th className="px-3 py-2 text-left font-semibold text-slate-600">#</th>
+                                  <th className="px-3 py-2 text-left font-semibold text-slate-600">Líder</th>
+                                  <th className="px-3 py-2 text-center font-semibold text-slate-600">Promedio</th>
+                                  <th className="px-3 py-2 text-center font-semibold text-slate-600">Evals</th>
+                                  <th className="px-3 py-2 text-center font-semibold text-slate-600">Campus</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {top10.map((leader, idx) => (
+                                  <tr key={leader.leaderId} className="hover:bg-emerald-50 transition-colors">
+                                    <td className="px-3 py-2">
+                                      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white ${
+                                        idx === 0 ? 'bg-yellow-500' : idx === 1 ? 'bg-gray-400' : idx === 2 ? 'bg-amber-700' : 'bg-emerald-100 text-emerald-700'
+                                      }`}>{idx + 1}</div>
+                                    </td>
+                                    <td className="px-3 py-2 font-medium text-slate-700">{leader.leaderName}</td>
+                                    <td className="px-3 py-2 text-center">
+                                      <span className={`font-bold ${
+                                        leader.avgScore >= 4.0 ? 'text-emerald-600' : leader.avgScore >= 3.0 ? 'text-amber-600' : 'text-red-600'
+                                      }`}>{leader.avgScore.toFixed(2)}</span>
+                                    </td>
+                                    <td className="px-3 py-2 text-center text-slate-500">{leader.count}</td>
+                                    <td className="px-3 py-2 text-center text-slate-500 text-xs">{leader.campus}</td>
+                                  </tr>
+                                ))}
+                                {top10.length === 0 && (
+                                  <tr><td colSpan={5} className="px-3 py-8 text-center text-slate-400">Sin datos</td></tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+
+                        {/* Top 10 Worst */}
+                        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5">
+                          <h3 className="text-sm font-bold text-gray-700 uppercase mb-4 border-b pb-2 flex items-center gap-2">
+                            <ArrowDown className="w-4 h-4 text-red-500" /> Top 10 Por Mejorar — &ldquo;{sectionData.section}&rdquo;
+                          </h3>
+                          {worst10.length > 0 ? (
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-sm">
+                                <thead>
+                                  <tr className="bg-slate-50">
+                                    <th className="px-3 py-2 text-left font-semibold text-slate-600">#</th>
+                                    <th className="px-3 py-2 text-left font-semibold text-slate-600">Líder</th>
+                                    <th className="px-3 py-2 text-center font-semibold text-slate-600">Promedio</th>
+                                    <th className="px-3 py-2 text-center font-semibold text-slate-600">Evals</th>
+                                    <th className="px-3 py-2 text-center font-semibold text-slate-600">Campus</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                  {worst10.map((leader, idx) => {
+                                    const rank = allLeaders.length - idx;
+                                    return (
+                                      <tr key={leader.leaderId} className="hover:bg-red-50 transition-colors">
+                                        <td className="px-3 py-2">
+                                          <div className="w-7 h-7 rounded-full bg-red-100 flex items-center justify-center text-xs font-bold text-red-700">{rank}</div>
+                                        </td>
+                                        <td className="px-3 py-2 font-medium text-slate-700">{leader.leaderName}</td>
+                                        <td className="px-3 py-2 text-center">
+                                          <span className="font-bold text-red-600">{leader.avgScore.toFixed(2)}</span>
+                                        </td>
+                                        <td className="px-3 py-2 text-center text-slate-500">{leader.count}</td>
+                                        <td className="px-3 py-2 text-center text-slate-500 text-xs">{leader.campus}</td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-center h-32 text-gray-400 text-sm">
+                              No hay suficientes líderes para mostrar peores (mínimo 11 requeridos)
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Top 100 Ranking Table */}
+                      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5">
+                        <h3 className="text-sm font-bold text-gray-700 uppercase mb-4 border-b pb-2 flex items-center gap-2">
+                          <Trophy className="w-4 h-4 text-yellow-500" /> Ranking Completo Top 100 — &ldquo;{sectionData.section}&rdquo;
+                        </h3>
+                        <p className="text-xs text-slate-500 mb-3">Mostrando {top100.length} de {allLeaders.length} líderes ordenados por promedio descendente.</p>
+                        <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+                          <table className="w-full text-sm">
+                            <thead className="sticky top-0 bg-white">
+                              <tr className="bg-slate-50 border-b-2 border-slate-200">
+                                <th className="px-3 py-2 text-left font-semibold text-slate-600 w-12">#</th>
+                                <th className="px-3 py-2 text-left font-semibold text-slate-600">Líder</th>
+                                <th className="px-3 py-2 text-center font-semibold text-slate-600">Promedio</th>
+                                <th className="px-3 py-2 text-center font-semibold text-slate-600">Evals</th>
+                                <th className="px-3 py-2 text-center font-semibold text-slate-600">Campus</th>
+                                <th className="px-3 py-2 text-center font-semibold text-slate-600">Oficina</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {top100.map((leader, idx) => (
+                                <tr key={leader.leaderId} className={`hover:bg-blue-50 transition-colors ${idx < 3 ? 'bg-amber-50/50' : idx >= top100.length - 3 ? 'bg-red-50/50' : ''}`}>
+                                  <td className="px-3 py-2">
+                                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white ${
+                                      idx === 0 ? 'bg-yellow-500' : idx === 1 ? 'bg-gray-400' : idx === 2 ? 'bg-amber-700' : idx < 10 ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
+                                    }`}>{idx + 1}</div>
+                                  </td>
+                                  <td className="px-3 py-2 font-medium text-slate-700">{leader.leaderName}</td>
+                                  <td className={`px-3 py-2 text-center font-bold ${
+                                    leader.avgScore >= 4.0 ? 'text-emerald-600' : leader.avgScore >= 3.0 ? 'text-amber-600' : 'text-red-600'
+                                  }`}>{leader.avgScore.toFixed(2)}</td>
+                                  <td className="px-3 py-2 text-center text-slate-500">{leader.count}</td>
+                                  <td className="px-3 py-2 text-center text-slate-500 text-xs">{leader.campus}</td>
+                                  <td className="px-3 py-2 text-center text-slate-500 text-xs">{leader.office}</td>
+                                </tr>
+                              ))}
+                              {top100.length === 0 && (
+                                <tr><td colSpan={6} className="px-3 py-8 text-center text-slate-400">Sin datos</td></tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      {/* Template breakdown */}
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5">
+                          <h3 className="text-sm font-bold text-gray-700 uppercase mb-4 border-b pb-2 flex items-center gap-2">
+                            <Layers className="w-4 h-4" /> Desglose por Tipo de Examen
+                          </h3>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="bg-slate-50">
+                                  <th className="px-3 py-2 text-left font-semibold text-slate-600">Instrumento</th>
+                                  <th className="px-3 py-2 text-center font-semibold text-slate-600">Promedio</th>
+                                  <th className="px-3 py-2 text-center font-semibold text-slate-600">Evaluaciones</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {sectionData.templateBreakdown.map(t => (
+                                  <tr key={t.templateName} className="hover:bg-slate-50 transition-colors">
+                                    <td className="px-3 py-2 font-medium text-slate-700">{t.templateName}</td>
+                                    <td className={`px-3 py-2 text-center font-bold ${t.avg >= 4.0 ? 'text-emerald-600' : t.avg >= 3.0 ? 'text-amber-600' : 'text-red-600'}`}>{t.avg.toFixed(2)}</td>
+                                    <td className="px-3 py-2 text-center text-slate-500">{t.count}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+
+                        {/* Template breakdown chart */}
+                        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 flex flex-col">
+                          <h3 className="text-sm font-bold text-gray-700 uppercase mb-4 border-b pb-2">Comparativa por Instrumento</h3>
+                          {sectionData.templateBreakdown.length > 0 ? (
+                            <div className="flex-grow min-h-[250px]">
+                              <ResponsiveContainer width="100%" height={250}>
+                                <BarChart data={sectionData.templateBreakdown} margin={{ top: 5, right: 20, left: 0, bottom: 50 }}>
+                                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                  <XAxis dataKey="templateName" tick={{ fontSize: 10 }} angle={-20} textAnchor="end" height={60} />
+                                  <YAxis domain={[0, 5]} />
+                                  <RechartsTooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }} />
+                                  <Bar dataKey="avg" name="Promedio" fill="#118DFF" radius={[4, 4, 0, 0]} maxBarSize={50} />
+                                </BarChart>
+                              </ResponsiveContainer>
+                            </div>
+                          ) : <div className="flex-grow flex items-center justify-center text-gray-400">Sin datos</div>}
+                        </div>
+                      </div>
+
+                      {/* Bar chart of top 10 - moved to bottom */}
+                      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 flex flex-col">
+                        <h3 className="text-sm font-bold text-gray-700 uppercase mb-4 border-b pb-2">Gráfico Top 10 — &ldquo;{sectionData.section}&rdquo;</h3>
+                        {top10.length > 0 ? (
+                          <div className="flex-grow min-h-[300px]">
+                            <ResponsiveContainer width="100%" height={300}>
+                              <BarChart data={top10} layout="vertical" margin={{ top: 5, right: 30, left: 80, bottom: 5 }} barSize={18}>
+                                <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
+                                <XAxis type="number" domain={[0, 5]} />
+                                <YAxis dataKey="leaderName" type="category" tick={{ fontSize: 11 }} width={100} />
+                                <RechartsTooltip formatter={(value: number) => [value.toFixed(2), 'Promedio']}
+                                  contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }} />
+                                <Bar dataKey="avgScore" name="Promedio" radius={[0, 4, 4, 0]}>
+                                  {top10.map((entry, idx) => (
+                                    <Cell key={`cell-${idx}`} fill={entry.avgScore >= 4.0 ? '#00B050' : entry.avgScore >= 3.0 ? '#F2C811' : '#E81123'} />
+                                  ))}
+                                </Bar>
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+                        ) : <div className="flex-grow flex items-center justify-center text-gray-400">Sin datos</div>}
+                      </div>
+
+                      {/* Section comparison: all sections */}
+                      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5">
+                        <h3 className="text-sm font-bold text-gray-700 uppercase mb-4 border-b pb-2 flex items-center gap-2">
+                          <Gauge className="w-4 h-4" /> Comparativa Global entre Secciones
+                        </h3>
+                        {indicatorsRanking.length > 0 ? (
+                          <div className="min-h-[250px]">
+                            <ResponsiveContainer width="100%" height={250}>
+                              <BarChart data={indicatorsRanking.map(r => ({
+                                name: r.section,
+                                avg: r.globalAvg,
+                                leaders: r.leaders.length
+                              }))} margin={{ top: 5, right: 20, left: 0, bottom: 60 }}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                <XAxis dataKey="name" tick={{ fontSize: 10 }} angle={-20} textAnchor="end" height={60} />
+                                <YAxis domain={[0, 5]} />
+                                <RechartsTooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }} />
+                                <Bar dataKey="avg" name="Promedio Global" radius={[4, 4, 0, 0]} maxBarSize={40}>
+                                  {indicatorsRanking.map((entry, idx) => (
+                                    <Cell key={`cell-${idx}`} fill={entry.globalAvg >= 4.0 ? '#00B050' : entry.globalAvg >= 3.0 ? '#F2C811' : '#E81123'} />
+                                  ))}
+                                </Bar>
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+                        ) : <div className="flex items-center justify-center h-[250px] text-gray-400">Sin datos</div>}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* All sections summary table */}
+                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 overflow-x-auto">
+                  <h3 className="text-sm font-bold text-gray-700 uppercase mb-4 border-b pb-2">Resumen de todas las Secciones</h3>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-slate-50">
+                        <th className="px-3 py-2 text-left font-semibold text-slate-600">Sección</th>
+                        <th className="px-3 py-2 text-center font-semibold text-slate-600">Prom. Global</th>
+                        <th className="px-3 py-2 text-center font-semibold text-slate-600"># Líderes</th>
+                        <th className="px-3 py-2 text-center font-semibold text-slate-600">Mejor Líder</th>
+                        <th className="px-3 py-2 text-center font-semibold text-slate-600">Prom. Líder</th>
+                        <th className="px-3 py-2 text-center font-semibold text-slate-600">Evaluaciones</th>
+                        <th className="px-3 py-2 text-center font-semibold text-slate-600"># Instrumentos</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {indicatorsRanking.map(sd => {
+                        const bestLeader = sd.leaders.length > 0 ? sd.leaders[0] : null;
+                        return (
+                          <tr key={sd.section} className="hover:bg-slate-50 transition-colors">
+                            <td className="px-3 py-2 font-medium text-slate-700">{sd.section}</td>
+                            <td className={`px-3 py-2 text-center font-bold ${sd.globalAvg >= 4.0 ? 'text-emerald-600' : sd.globalAvg >= 3.0 ? 'text-amber-600' : 'text-red-600'}`}>{sd.globalAvg.toFixed(2)}</td>
+                            <td className="px-3 py-2 text-center text-slate-500">{sd.leaders.length}</td>
+                            <td className="px-3 py-2 text-center text-slate-500">{bestLeader ? bestLeader.leaderName : '-'}</td>
+                            <td className="px-3 py-2 text-center text-slate-500">{bestLeader ? bestLeader.avgScore.toFixed(2) : '-'}</td>
+                            <td className="px-3 py-2 text-center text-slate-500">{sd.globalCount}</td>
+                            <td className="px-3 py-2 text-center text-slate-500">{sd.templateBreakdown.length}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : (
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center">
+                {indicatorsLoading ? (
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-emerald-600"></div>
+                    <p className="text-gray-500">Cargando datos de secciones...</p>
+                  </div>
+                ) : (
+                  <>
+                    <Gauge className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                    <h3 className="text-lg font-bold text-gray-600 mb-2">No hay datos de secciones disponibles</h3>
+                    <p className="text-sm text-gray-400">Se requieren evaluaciones completadas con preguntas agrupadas en secciones.</p>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
         )}
       </main>
 

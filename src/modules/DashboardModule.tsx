@@ -49,6 +49,7 @@ export function DashboardModule() {
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [periods, setPeriods] = useState<any[]>([]);
   const [selectedPeriodId, setSelectedPeriodId] = useState<string>('all');
+  const [activePeriod, setActivePeriod] = useState<null | { id: string; year: number; start_date: string; end_date: string }>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -466,6 +467,7 @@ export function DashboardModule() {
       
       if (active) {
         setSelectedPeriodId(active.id);
+        setActivePeriod(active);
       }
     } catch (err) {
       console.warn('Error loading periods:', err);
@@ -625,32 +627,27 @@ export function DashboardModule() {
 
             console.log('[Dashboard] Allowed for role:', allowedForRole);
 
-            // Try explicit relations too
+            // Try explicit relations too — flexible matching with normalizeStr
             let relAllowed: string[] = [];
+            const normalizeStr = (s: any) => (s || '').toString().toLowerCase().normalize('NFD').replace(/[^\w\s-]/g, '').replace(/[\u0300-\u036f]/g, '').trim();
             try {
-              // Try with normalized roleKey first
-              const { data: rels1, error: relsError1 } = await supabase
+              const { data: allRelations } = await supabase
                 .from('form_type_relations')
                 .select('form_type_key,evaluator_role_key')
-                .in('form_type_key', allowedFormTypeKeys)
-                .eq('evaluator_role_key', roleKey);
+                .in('form_type_key', allowedFormTypeKeys);
 
-              // Also try with original user.role
-              const { data: rels2, error: relsError2 } = await supabase
-                .from('form_type_relations')
-                .select('form_type_key,evaluator_role_key')
-                .in('form_type_key', allowedFormTypeKeys)
-                .eq('evaluator_role_key', user?.role);
-
-              console.log('[Dashboard] Relations query:', {
-                rels1, relsError1,
-                rels2, relsError2,
-                roleKey,
-                originalRole: user?.role
+              const matches = (allRelations || []).filter((r: any) => {
+                const relNorm = normalizeStr(r.evaluator_role_key || '');
+                const userNorm = normalizeStr(roleKey);
+                const origNorm = normalizeStr(user?.role || '');
+                const userKeyNorm = normalizeStr(userRoleKey);
+                const userLabelNorm = normalizeStr(userRoleLabel);
+                return relNorm === userNorm || relNorm === origNorm || relNorm === userKeyNorm || relNorm === userLabelNorm;
               });
 
-              const allRels = [...(rels1 || []), ...(rels2 || [])];
-              relAllowed = Array.from(new Set(allRels.map((r: any) => r.form_type_key)));
+              relAllowed = Array.from(new Set(matches.map((r: any) => r.form_type_key)));
+
+              console.log('[Dashboard] Relations (flexible):', { matches, relAllowed });
             } catch (e) {
               console.debug('[Dashboard] no relations table or query failed', e);
             }
@@ -846,6 +843,31 @@ export function DashboardModule() {
             </div>
           )}
         </div>
+
+        {/* Active Period Banner - For all users */}
+        {activePeriod && (
+          <div className="mb-6 p-4 rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 shadow-sm">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+              <span className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Período Activo</span>
+            </div>
+            <div className="text-lg font-bold text-gray-900">Período {activePeriod.year}</div>
+            <div className="text-sm text-gray-600 mt-0.5">
+              <span className="font-medium">Inicio:</span> {new Date(activePeriod.start_date).toLocaleDateString('es-CO', { year: 'numeric', month: 'long', day: 'numeric' })} &nbsp;|&nbsp;
+              <span className="font-medium">Cierre:</span> {new Date(activePeriod.end_date).toLocaleDateString('es-CO', { year: 'numeric', month: 'long', day: 'numeric' })}
+            </div>
+            <div className="text-xs text-gray-500 mt-1">
+              {(() => {
+                const now = new Date();
+                const end = new Date(activePeriod.end_date);
+                const daysLeft = Math.ceil((end.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+                if (daysLeft > 0) return `Quedan ${daysLeft} día${daysLeft !== 1 ? 's' : ''} para completar las evaluaciones.`;
+                if (daysLeft === 0) return 'Último día del período de evaluación.';
+                return 'El período de evaluación ha finalizado.';
+              })()}
+            </div>
+          </div>
+        )}
 
         {/* Stats Grid */}
         <div className={`grid grid-cols-1 ${isAdmin ? 'md:grid-cols-2 lg:grid-cols-5' : 'md:grid-cols-3'} gap-6 mb-10`}>
