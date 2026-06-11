@@ -56,10 +56,7 @@ const normalizeCampus = (campus: string | null | undefined) => {
 
 const roundExportValue = (value: number | null | undefined): number | null => {
   if (value === null || value === undefined || Number.isNaN(value)) return null;
-  const floorTenths = Math.floor(value * 10) / 10;
-  const firstDecimalDigit = Math.floor(value * 10) % 10;
-  const rounded = firstDecimalDigit >= 6 ? floorTenths + 0.1 : floorTenths;
-  return Number(rounded.toFixed(1));
+  return Math.round(value * 10) / 10;
 };
 
 export default function ExportModule() {

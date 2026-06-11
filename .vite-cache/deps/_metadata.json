@@ -1,61 +1,61 @@
 {
-  "hash": "6ad29e0d",
+  "hash": "de2faf51",
   "configHash": "a86a31af",
-  "lockfileHash": "4773143c",
-  "browserHash": "e648dcc4",
+  "lockfileHash": "9166300e",
+  "browserHash": "f0f04383",
   "optimized": {
     "react": {
       "src": "../../node_modules/react/index.js",
       "file": "react.js",
-      "fileHash": "3d12ad1c",
+      "fileHash": "1b847935",
       "needsInterop": true
     },
     "react/jsx-dev-runtime": {
       "src": "../../node_modules/react/jsx-dev-runtime.js",
       "file": "react_jsx-dev-runtime.js",
-      "fileHash": "e7aa44f2",
+      "fileHash": "006f587f",
       "needsInterop": true
     },
     "react/jsx-runtime": {
       "src": "../../node_modules/react/jsx-runtime.js",
       "file": "react_jsx-runtime.js",
-      "fileHash": "f058d863",
+      "fileHash": "b2578f75",
       "needsInterop": true
     },
     "@google/generative-ai": {
       "src": "../../node_modules/@google/generative-ai/dist/index.mjs",
       "file": "@google_generative-ai.js",
-      "fileHash": "e50d6ed5",
+      "fileHash": "b80190f3",
       "needsInterop": false
     },
     "@lottiefiles/dotlottie-react": {
       "src": "../../node_modules/@lottiefiles/dotlottie-react/dist/browser/index.js",
       "file": "@lottiefiles_dotlottie-react.js",
-      "fileHash": "b97413a0",
+      "fileHash": "03906a0f",
       "needsInterop": false
     },
     "@supabase/supabase-js": {
       "src": "../../node_modules/@supabase/supabase-js/dist/module/index.js",
       "file": "@supabase_supabase-js.js",
-      "fileHash": "c3b78c9f",
+      "fileHash": "4b8874bc",
       "needsInterop": false
     },
     "react-dom/client": {
       "src": "../../node_modules/react-dom/client.js",
       "file": "react-dom_client.js",
-      "fileHash": "71f5669c",
+      "fileHash": "15c886ef",
       "needsInterop": true
     },
     "recharts": {
       "src": "../../node_modules/recharts/es6/index.js",
       "file": "recharts.js",
-      "fileHash": "88d4d09b",
+      "fileHash": "35de566e",
       "needsInterop": false
     },
     "xlsx": {
       "src": "../../node_modules/xlsx/xlsx.mjs",
       "file": "xlsx.js",
-      "fileHash": "84e5a041",
+      "fileHash": "9df6e30b",
       "needsInterop": false
     }
   },
@@ -63,11 +63,11 @@
     "browser-J6IYAAS7": {
       "file": "browser-J6IYAAS7.js"
     },
-    "chunk-7W32CK3N": {
-      "file": "chunk-7W32CK3N.js"
-    },
     "chunk-UHINIFCJ": {
       "file": "chunk-UHINIFCJ.js"
+    },
+    "chunk-7W32CK3N": {
+      "file": "chunk-7W32CK3N.js"
     },
     "chunk-5HDAWWHN": {
       "file": "chunk-5HDAWWHN.js"
