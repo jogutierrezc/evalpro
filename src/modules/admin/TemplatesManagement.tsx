@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase, EvaluationTemplate } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
-import { Plus, Edit2, Trash2, Eye } from 'lucide-react';
+import { Plus, Edit2, Trash2, Eye, Copy } from 'lucide-react';
 import { TemplateForm } from './TemplateForm';
 import { TemplatePreview } from './TemplatePreview';
 import TemplateImport from './TemplateImport';
@@ -102,6 +102,118 @@ export function TemplatesManagement() {
       employee_to_manager: 'Evaluación Colaborador a Jefe',
     };
     return labels[type] || type;
+  };
+
+  const handleDuplicate = async (template: EvaluationTemplate) => {
+    try {
+      // 1. Fetch sections and questions for this template
+      const { data: sections, error: secsErr } = await supabase
+        .from('evaluation_sections')
+        .select('*')
+        .eq('template_id', template.id)
+        .order('order_index');
+
+      if (secsErr) throw secsErr;
+
+      const questionsBySection = new Map<string, any[]>();
+      if (sections && sections.length > 0) {
+        const sectionIds = sections.map(s => s.id);
+        for (let i = 0; i < sectionIds.length; i += 30) {
+          const chunk = sectionIds.slice(i, i + 30);
+          const { data: qs, error: qsErr } = await supabase
+            .from('evaluation_questions')
+            .select('*')
+            .in('section_id', chunk)
+            .order('order_in_section');
+          if (qsErr) throw qsErr;
+          (qs || []).forEach(q => {
+            if (!questionsBySection.has(q.section_id)) questionsBySection.set(q.section_id, []);
+            questionsBySection.get(q.section_id)!.push(q);
+          });
+        }
+      } else {
+        // Fallback: fetch orphan questions (no section)
+        const { data: orphanQs, error: orphanErr } = await supabase
+          .from('evaluation_questions')
+          .select('*')
+          .eq('template_id', template.id)
+          .is('section_id', null)
+          .order('order_index');
+        if (orphanErr) throw orphanErr;
+        if (orphanQs && orphanQs.length > 0) {
+          questionsBySection.set('__orphan__', orphanQs);
+        }
+      }
+
+      // 2. Create the new template as a copy
+      const duplicateName = `Copia de ${template.name}`;
+      const { data: newTemplate, error: tmplErr } = await supabase
+        .from('evaluation_templates')
+        .insert([{
+          name: duplicateName,
+          description: template.description,
+          type: template.type,
+          job_position: template.job_position,
+          is_active: false, // Inactive by default so user can review before enabling
+          categories: (template as any).categories || [],
+          created_by: user?.id,
+        }])
+        .select()
+        .single();
+
+      if (tmplErr) throw tmplErr;
+      const newTemplateId = newTemplate.id;
+
+      // 3. Duplicate sections and their questions
+      const sectionIdMap = new Map<string, string>(); // old section id -> new section id
+
+      for (let sIndex = 0; sIndex < (sections || []).length; sIndex++) {
+        const sec = sections![sIndex];
+        const { data: newSec, error: secErr } = await supabase
+          .from('evaluation_sections')
+          .insert([{
+            template_id: newTemplateId,
+            title: sec.title,
+            order_index: sec.order_index ?? sIndex,
+            domain_key: sec.domain_key || null,
+            category: sec.category || null,
+          }])
+          .select()
+          .single();
+
+        if (secErr) throw secErr;
+        sectionIdMap.set(sec.id, newSec.id);
+      }
+
+      // 4. Duplicate questions (batched per section)
+      for (const [oldSectionId, questions] of questionsBySection.entries()) {
+        if (questions.length === 0) continue;
+
+        const newSectionId = oldSectionId === '__orphan__' ? null : (sectionIdMap.get(oldSectionId) || null);
+        if (oldSectionId !== '__orphan__' && !newSectionId) continue;
+
+        const questionsToInsert = questions.map((q: any, qi: number) => ({
+          template_id: newTemplateId,
+          section_id: newSectionId,
+          question_text: q.question_text,
+          question_type: q.question_type || 'rating',
+          options: q.options || null,
+          weight: q.weight ?? 0,
+          order_index: q.order_index ?? qi,
+          order_in_section: q.order_in_section ?? qi + 1,
+        }));
+
+        const { error: qErr } = await supabase.from('evaluation_questions').insert(questionsToInsert);
+        if (qErr) throw qErr;
+      }
+
+      // 5. Reload and show success
+      loadTemplates();
+      alert(`Formulario "${duplicateName}" creado exitosamente.`);
+    } catch (error) {
+      console.error('Error duplicating template:', error);
+      alert('Error al duplicar el formulario. Ver consola para detalles.');
+    }
   };
 
   const handleToggleOfficeAccess = async (template: EvaluationTemplate) => {
@@ -233,6 +345,14 @@ export function TemplatesManagement() {
                     <div className={`px-2 py-1 rounded ${officeAccess[template.id] ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>{officeAccess[template.id] ? 'Habilitado en mi oficina' : 'No habilitado'}</div>
                   </label>
                 )}
+              <button
+                onClick={() => handleDuplicate(template)}
+                className="flex items-center gap-1 text-purple-600 hover:bg-purple-50 px-3 py-1.5 rounded transition-colors text-sm"
+                title="Duplicar formulario con sus preguntas"
+              >
+                <Copy className="w-4 h-4" />
+                Duplicar
+              </button>
               <button
                 onClick={() => handleEdit(template)}
                 className="flex items-center gap-1 text-blue-600 hover:bg-blue-50 px-3 py-1.5 rounded transition-colors text-sm"

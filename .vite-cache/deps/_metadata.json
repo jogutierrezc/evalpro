@@ -1,82 +1,88 @@
 {
-  "hash": "de2faf51",
-  "configHash": "a86a31af",
-  "lockfileHash": "9166300e",
-  "browserHash": "f0f04383",
+  "hash": "458168d5",
+  "configHash": "df630308",
+  "lockfileHash": "2389b4c0",
+  "browserHash": "862c4e64",
   "optimized": {
     "react": {
       "src": "../../node_modules/react/index.js",
       "file": "react.js",
-      "fileHash": "1b847935",
+      "fileHash": "b0c35ec1",
+      "needsInterop": true
+    },
+    "react-dom": {
+      "src": "../../node_modules/react-dom/index.js",
+      "file": "react-dom.js",
+      "fileHash": "8eddf161",
       "needsInterop": true
     },
     "react/jsx-dev-runtime": {
       "src": "../../node_modules/react/jsx-dev-runtime.js",
       "file": "react_jsx-dev-runtime.js",
-      "fileHash": "006f587f",
+      "fileHash": "ca0cb3fd",
       "needsInterop": true
     },
     "react/jsx-runtime": {
       "src": "../../node_modules/react/jsx-runtime.js",
       "file": "react_jsx-runtime.js",
-      "fileHash": "b2578f75",
+      "fileHash": "ab76b266",
       "needsInterop": true
     },
     "@google/generative-ai": {
       "src": "../../node_modules/@google/generative-ai/dist/index.mjs",
       "file": "@google_generative-ai.js",
-      "fileHash": "b80190f3",
+      "fileHash": "d5195755",
       "needsInterop": false
     },
     "@lottiefiles/dotlottie-react": {
       "src": "../../node_modules/@lottiefiles/dotlottie-react/dist/browser/index.js",
       "file": "@lottiefiles_dotlottie-react.js",
-      "fileHash": "03906a0f",
+      "fileHash": "cfa8173f",
       "needsInterop": false
     },
     "@supabase/supabase-js": {
-      "src": "../../node_modules/@supabase/supabase-js/dist/module/index.js",
+      "src": "../../node_modules/@supabase/supabase-js/dist/index.mjs",
       "file": "@supabase_supabase-js.js",
-      "fileHash": "4b8874bc",
+      "fileHash": "e3ebf852",
       "needsInterop": false
+    },
+    "exceljs": {
+      "src": "../../node_modules/exceljs/dist/exceljs.min.js",
+      "file": "exceljs.js",
+      "fileHash": "271a658f",
+      "needsInterop": true
     },
     "react-dom/client": {
       "src": "../../node_modules/react-dom/client.js",
       "file": "react-dom_client.js",
-      "fileHash": "15c886ef",
+      "fileHash": "e2cb6bb3",
       "needsInterop": true
     },
     "recharts": {
       "src": "../../node_modules/recharts/es6/index.js",
       "file": "recharts.js",
-      "fileHash": "35de566e",
+      "fileHash": "0e92c340",
       "needsInterop": false
     },
     "xlsx": {
       "src": "../../node_modules/xlsx/xlsx.mjs",
       "file": "xlsx.js",
-      "fileHash": "9df6e30b",
+      "fileHash": "54a17c26",
       "needsInterop": false
     }
   },
   "chunks": {
-    "browser-J6IYAAS7": {
-      "file": "browser-J6IYAAS7.js"
+    "chunk-Y64DX5DL": {
+      "file": "chunk-Y64DX5DL.js"
     },
-    "chunk-UHINIFCJ": {
-      "file": "chunk-UHINIFCJ.js"
+    "chunk-Q7AOECBT": {
+      "file": "chunk-Q7AOECBT.js"
     },
-    "chunk-7W32CK3N": {
-      "file": "chunk-7W32CK3N.js"
+    "chunk-7JZAKNLV": {
+      "file": "chunk-7JZAKNLV.js"
     },
-    "chunk-5HDAWWHN": {
-      "file": "chunk-5HDAWWHN.js"
-    },
-    "chunk-W4EHDCLL": {
-      "file": "chunk-W4EHDCLL.js"
-    },
-    "chunk-EWTE5DHJ": {
-      "file": "chunk-EWTE5DHJ.js"
+    "chunk-2TUXWMP5": {
+      "file": "chunk-2TUXWMP5.js"
     }
   }
 }

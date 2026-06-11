@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import { Download, Filter, ClipboardCheck, Calendar } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { usePeriods } from '../hooks/usePeriods';
@@ -59,6 +59,95 @@ const roundExportValue = (value: number | null | undefined): number | null => {
   return Math.round(value * 10) / 10;
 };
 
+// Clasifica el tipo VAF usando los mismos patrones que VafAnalyticsModule (getType)
+const getVafType = (name: string): 'leader' | 'equipo_vaf' | 'other' => {
+  const l = name.toLowerCase();
+  if (l.includes('jefe') || l.includes('líder') || l.includes('lider') || l.includes('manager') || l.includes('leader') || l.includes('lideres')) return 'leader';
+  if (l.includes('equipo vaf') || l.includes('equipovaf') || (l.includes('equipo') && l.includes('vaf'))) return 'equipo_vaf';
+  return 'other';
+};
+
+// ─── Colores para formato condicional según rango de nota ───
+const scoreColors: Record<string, { fill: string; font: string }> = {
+  high:   { fill: 'C6EFCE', font: '006100' },  // >= 4.0 - verde
+  medium: { fill: 'FFEB9C', font: '9C6500' }, // >= 3.0 - amarillo
+  low:    { fill: 'FFC7CE', font: '9C0006' }, // < 3.0 - rojo
+};
+
+// ─── Genera un Excel con formato condicional usando exceljs ───
+async function generateStyledExcel(
+  filename: string,
+  sheets: Array<{
+    name: string;
+    headers: string[];
+    rows: any[][];
+    scoreColumns: number[]; // índices 0-based de columnas que contienen notas
+  }>
+) {
+  const workbook = new ExcelJS.Workbook();
+
+  for (const def of sheets) {
+    const ws = workbook.addWorksheet(def.name);
+
+    // Estilo para el header
+    const headerRow = ws.addRow(def.headers);
+    headerRow.height = 22;
+    headerRow.eachCell((cell) => {
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF4472C4' },
+      };
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    });
+
+    // Filas de datos
+    def.rows.forEach((rowData) => {
+      const row = ws.addRow(rowData);
+      row.eachCell((cell: any, colNumber: number) => {
+        const cellIdx = colNumber - 1; // 1-based → 0-based
+        cell.alignment = { vertical: 'middle' };
+
+        if (def.scoreColumns.includes(cellIdx)) {
+          const raw = cell.value;
+          const num = typeof raw === 'number' ? raw : Number(raw);
+          if (!isNaN(num) && raw !== '' && raw !== null && raw !== undefined) {
+            const c = num >= 4.0 ? scoreColors.high
+              : num >= 3.0 ? scoreColors.medium
+              : scoreColors.low;
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${c.fill}` } };
+            cell.font = { bold: true, color: { argb: `FF${c.font}` } };
+            cell.alignment = { horizontal: 'center', vertical: 'middle' };
+            cell.numFmt = '0.0';
+          }
+        }
+      });
+    });
+
+    // Auto-ajuste de ancho de columnas
+    ws.columns.forEach((col: any, i: number) => {
+      const maxLen = Math.max(
+        def.headers[i]?.length || 0,
+        ...def.rows.map(r => String(r[i] ?? '').length),
+        0
+      );
+      col.width = Math.min(Math.max(maxLen + 3, 10), 50);
+    });
+  }
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 export default function ExportModule() {
   const [loading, setLoading] = useState(true);
   const [evaluations, setEvaluations] = useState<EvaluationRow[]>([]);
@@ -70,6 +159,8 @@ export default function ExportModule() {
   const [filterTemplate, setFilterTemplate] = useState('all');
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState('');
+
+
   
   const { periods, activePeriod } = usePeriods();
   const [selectedPeriodId, setSelectedPeriodId] = useState<string>('all');
@@ -374,7 +465,7 @@ export default function ExportModule() {
     return detailedResults;
   }, [detailedResults]);
 
-  const exportIndividual = (data: EvaluationDetail[]) => {
+  const exportIndividual = async (data: EvaluationDetail[]) => {
     if (data.length === 0) return;
 
     const templateSections = data[0]?.sectionsSummary || [];
@@ -412,13 +503,21 @@ export default function ExportModule() {
       ];
     });
 
-    const sheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, sheet, 'Exportar');
-    XLSX.writeFile(wb, `exportar_${filterTemplate.replace(/\s+/g, '_').toLowerCase()}.xlsx`);
+    // Score columns: todas las secciones (5 al 5+N-1) + Nota global (5+N)
+    const numSections = sectionNames.length;
+    const scoreCols: number[] = [];
+    for (let i = 0; i < numSections; i++) scoreCols.push(5 + i);
+    scoreCols.push(5 + numSections);
+
+    await generateStyledExcel(`exportar_${filterTemplate.replace(/\s+/g, '_').toLowerCase()}.xlsx`, [{
+      name: 'Exportar',
+      headers,
+      rows,
+      scoreColumns: scoreCols,
+    }]);
   };
 
-  const exportSummary = (data: EvaluationDetail[]) => {
+  const exportSummary = async (data: EvaluationDetail[]) => {
     const templateNames = Array.from(new Set(data.map(r => r.templateName))).sort();
 
     const byUser = new Map<string, {
@@ -479,10 +578,18 @@ export default function ExportModule() {
       ];
     });
 
-    const sheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, sheet, 'Exportar');
-    XLSX.writeFile(wb, 'exportar_resumen.xlsx');
+    // Score columns: todos los templates (4 al 4+N-1) + Nota promedio (4+N)
+    const numTemplates = templateNames.length;
+    const scoreCols: number[] = [];
+    for (let i = 0; i < numTemplates; i++) scoreCols.push(4 + i);
+    scoreCols.push(4 + numTemplates);
+
+    await generateStyledExcel('exportar_resumen.xlsx', [{
+      name: 'Exportar',
+      headers,
+      rows,
+      scoreColumns: scoreCols,
+    }]);
   };
 
   const handleExport = async () => {
@@ -498,13 +605,389 @@ export default function ExportModule() {
       }
 
       if (filterTemplate === 'all') {
-        exportSummary(data);
+        await exportSummary(data);
       } else {
-        exportIndividual(data);
+        await exportIndividual(data);
       }
     } catch (err) {
       console.error('Error during export', err);
       alert('Error al generar la exportación.');
+    } finally {
+      setIsExporting(false);
+      setExportProgress('');
+    }
+  };
+
+  // ─── VAF RESULTS ───
+  interface VafEvalRow {
+    evaluatedName: string;
+    office: string;
+    campus: string;
+    role: string;
+    vafType: string;         // 'Líder VAF' | 'Equipo VAF'
+    evaluatorName: string;
+    individualScore: number;
+    liderAvg: number | null;
+    equipoAvg: number | null;
+    notaTotal: number | null; // 60/40 weighted
+    nota5050: number | null;  // Simple average
+  }
+
+  const fetchVafResultsData = async (): Promise<VafEvalRow[]> => {
+    const pageSize = 1000;
+    let page = 0;
+    let hasMore = true;
+    const allEvals: any[] = [];
+    const allVafEvalIds: string[] = [];
+
+    // 1. Fetch all completed evaluations and identify VAF types
+    while (hasMore) {
+      setExportProgress(`Buscando evaluaciones... (Página ${page + 1})`);
+      const from = page * pageSize;
+      const to = from + pageSize - 1;
+
+      let query = supabase
+        .from('evaluations')
+        .select(`
+          id, evaluator_id, evaluated_id, template_id, created_at,
+          evaluator:users!evaluator_id ( full_name ),
+          evaluated:users!evaluated_id!inner ( full_name, campus, role, office:offices ( name ) ),
+          template:evaluation_templates!inner ( name )
+        `)
+        .eq('status', 'completed')
+        .order('created_at', { ascending: false })
+        .range(from, to);
+
+      if (selectedPeriodId !== 'all') {
+        query = query.eq('period_id', selectedPeriodId);
+      }
+
+      const { data: evals, error } = await query;
+      if (error) throw error;
+      if (!evals || evals.length === 0) {
+        hasMore = false;
+        break;
+      }
+
+      // Filter VAF types in memory
+      evals.forEach((e: any) => {
+        const tplName = e.template?.name || '';
+        const vafType = getVafType(tplName);
+        if (vafType !== 'other') {
+          allEvals.push({ ...e, _vafType: vafType });
+          allVafEvalIds.push(e.id);
+        }
+      });
+
+      hasMore = evals.length === pageSize;
+      page += 1;
+    }
+
+    if (allEvals.length === 0) return [];
+
+    // 2. Build score map: try evaluation_results.overall_score FIRST
+    setExportProgress(`Obteniendo puntajes de ${allEvals.length} evaluaciones VAF...`);
+    const scoreMap = new Map<string, number>();
+
+    for (let i = 0; i < allVafEvalIds.length; i += 100) {
+      const chunk = allVafEvalIds.slice(i, i + 100);
+      const { data: results } = await supabase
+        .from('evaluation_results')
+        .select('evaluation_id, overall_score')
+        .in('evaluation_id', chunk);
+      if (results) {
+        results.forEach(r => {
+          if (r.overall_score != null && r.overall_score !== 0) {
+            scoreMap.set(r.evaluation_id, Number(r.overall_score));
+          }
+        });
+      }
+    }
+
+    // 3. Fallback: compute score from responses for evals without overall_score
+    const evalIdsNoScore = allEvals.filter(e => !scoreMap.has(e.id)).map(e => e.id);
+    if (evalIdsNoScore.length > 0) {
+      setExportProgress(`Calculando puntajes desde respuestas para ${evalIdsNoScore.length} evaluaciones...`);
+      for (let i = 0; i < evalIdsNoScore.length; i += 30) {
+        const chunk = evalIdsNoScore.slice(i, i + 30);
+        const { data: responses } = await supabase
+          .from('evaluation_responses')
+          .select('evaluation_id, response_value, question:evaluation_questions(question_type)')
+          .in('evaluation_id', chunk);
+        if (responses) {
+          const grouped = new Map<string, number[]>();
+          responses.forEach((r: any) => {
+            if (!grouped.has(r.evaluation_id)) grouped.set(r.evaluation_id, []);
+            const val = Number(r.response_value);
+            if (!isNaN(val) && val > 0 && r.question?.question_type === 'rating') {
+              grouped.get(r.evaluation_id)!.push(val);
+            }
+          });
+          grouped.forEach((vals, eid) => {
+            if (vals.length > 0) {
+              scoreMap.set(eid, vals.reduce((a, b) => a + b, 0) / vals.length);
+            }
+          });
+        }
+      }
+    }
+
+    // 4. Collect individual evaluations with evaluator name
+    const individualEvals: {
+      evaluatedId: string;
+      evaluatedName: string;
+      office: string;
+      campus: string;
+      role: string;
+      vafType: string;
+      evaluatorName: string;
+      score: number;
+    }[] = [];
+
+    allEvals.forEach((e: any) => {
+      const score = scoreMap.get(e.id);
+      if (!score) return;
+
+      individualEvals.push({
+        evaluatedId: e.evaluated_id,
+        evaluatedName: e.evaluated?.full_name || 'N/A',
+        office: e.evaluated?.office?.name || 'N/A',
+        campus: normalizeCampus(e.evaluated?.campus),
+        role: e.evaluated?.role || 'N/A',
+        vafType: e._vafType === 'leader' ? 'Líder VAF' : 'Equipo VAF',
+        evaluatorName: e.evaluator?.full_name || 'N/A',
+        score: score,
+      });
+    });
+
+    // 5. Compute user aggregates for the summary columns
+    const userMap = new Map<string, { liderScores: number[]; equipoScores: number[] }>();
+    individualEvals.forEach(ev => {
+      if (!userMap.has(ev.evaluatedId)) userMap.set(ev.evaluatedId, { liderScores: [], equipoScores: [] });
+      const u = userMap.get(ev.evaluatedId)!;
+      if (ev.vafType === 'Líder VAF') u.liderScores.push(ev.score);
+      else u.equipoScores.push(ev.score);
+    });
+
+    const userAggregates = new Map<string, { liderAvg: number | null; equipoAvg: number | null; notaTotal: number | null; nota5050: number | null }>();
+    userMap.forEach((u, id) => {
+      const liderAvg = u.liderScores.length > 0
+        ? u.liderScores.reduce((a, b) => a + b, 0) / u.liderScores.length
+        : null;
+      const equipoAvg = u.equipoScores.length > 0
+        ? u.equipoScores.reduce((a, b) => a + b, 0) / u.equipoScores.length
+        : null;
+
+      let notaTotal: number | null = null;
+      let nota5050: number | null = null;
+
+      if (liderAvg !== null && equipoAvg !== null) {
+        notaTotal = (liderAvg * 0.6) + (equipoAvg * 0.4);
+        nota5050 = (liderAvg + equipoAvg) / 2;
+      } else if (liderAvg !== null) {
+        notaTotal = liderAvg;
+      } else if (equipoAvg !== null) {
+        notaTotal = equipoAvg;
+      }
+
+      userAggregates.set(id, {
+        liderAvg: liderAvg !== null ? roundExportValue(liderAvg) : null,
+        equipoAvg: equipoAvg !== null ? roundExportValue(equipoAvg) : null,
+        notaTotal: notaTotal !== null ? roundExportValue(notaTotal) : null,
+        nota5050: nota5050 !== null ? roundExportValue(nota5050) : null,
+      });
+    });
+
+    // 6. Build final rows: one per individual evaluation
+    const results: VafEvalRow[] = [];
+    individualEvals.forEach(ev => {
+      const agg = userAggregates.get(ev.evaluatedId)!;
+      results.push({
+        evaluatedName: ev.evaluatedName,
+        office: ev.office,
+        campus: ev.campus,
+        role: ev.role,
+        vafType: ev.vafType,
+        evaluatorName: ev.evaluatorName,
+        individualScore: roundExportValue(ev.score) ?? 0,
+        liderAvg: agg.liderAvg,
+        equipoAvg: agg.equipoAvg,
+        notaTotal: agg.notaTotal,
+        nota5050: agg.nota5050,
+      });
+    });
+
+    results.sort((a, b) => a.evaluatedName.localeCompare(b.evaluatedName));
+    return results;
+  };
+
+  const exportVafResults = async (data: VafEvalRow[]) => {
+    if (data.length === 0) return;
+
+    const headers = [
+      'Colaborador',
+      'Oficina',
+      'Campus',
+      'Cargo',
+      'Tipo VAF',
+      'Evaluador',
+      'Nota Individual',
+      'Prom. Líder VAF',
+      'Prom. Equipo VAF',
+      'Nota Total (60% Líder + 40% Equipo)',
+      'Nota 50/50',
+    ];
+
+    const rows = data.map((r) => [
+      r.evaluatedName,
+      r.office,
+      r.campus,
+      r.role,
+      r.vafType,
+      r.evaluatorName,
+      r.individualScore,
+      r.liderAvg ?? '',
+      r.equipoAvg ?? '',
+      r.notaTotal ?? '',
+      r.nota5050 ?? '',
+    ]);
+
+    // Columnas con notas: 0-based indices: Nota Individual(6), Prom. Líder(7), Prom. Equipo(8), Nota Total(9), Nota 50/50(10)
+    await generateStyledExcel('resultados_vaf.xlsx', [{
+      name: 'Resultados VAF',
+      headers,
+      rows,
+      scoreColumns: [6, 7, 8, 9, 10],
+    }]);
+  };
+
+  const handleExportVaf = async () => {
+    if (loading || isExporting) return;
+    try {
+      setIsExporting(true);
+      setExportProgress('Cargando evaluaciones VAF...');
+      const data = await fetchVafResultsData();
+
+      if (data.length === 0) {
+        alert('No se encontraron evaluaciones de tipo Líder VAF o Equipo VAF para el período seleccionado.');
+        return;
+      }
+
+      setExportProgress(`Generando Excel con ${data.length} registros...`);
+      await exportVafResults(data);
+    } catch (err) {
+      console.error('Error during VAF export', err);
+      alert('Error al generar la exportación VAF.');
+    } finally {
+      setIsExporting(false);
+      setExportProgress('');
+    }
+  };
+
+  // ─── Export VAF Computada (2 sheets: individual + summary) ───
+  const handleExportVafComputed = async () => {
+    if (loading || isExporting) return;
+    try {
+      setIsExporting(true);
+      setExportProgress('Cargando evaluaciones VAF...');
+      const data = await fetchVafResultsData();
+
+      if (data.length === 0) {
+        alert('No se encontraron evaluaciones de tipo Líder VAF o Equipo VAF para el período seleccionado.');
+        return;
+      }
+
+      setExportProgress(`Generando VAF Computada con ${data.length} registros...`);
+
+      // Build unique collaborators with their aggregates
+      const collabMap = new Map<string, {
+        name: string; office: string; campus: string; role: string;
+        liderEvs: VafEvalRow[]; equipoEvs: VafEvalRow[];
+      }>();
+
+      data.forEach(row => {
+        const key = row.evaluatedName + '|' + row.office + '|' + row.campus;
+        if (!collabMap.has(key)) {
+          collabMap.set(key, {
+            name: row.evaluatedName,
+            office: row.office,
+            campus: row.campus,
+            role: row.role,
+            liderEvs: [],
+            equipoEvs: [],
+          });
+        }
+        const c = collabMap.get(key)!;
+        if (row.vafType === 'Líder VAF') c.liderEvs.push(row);
+        else c.equipoEvs.push(row);
+      });
+
+      const collaborators = Array.from(collabMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+
+      // Sheet 1: Individual evaluations (detail)
+      const detailHeaders = [
+        'Colaborador', 'Oficina', 'Campus', 'Cargo',
+        'Tipo VAF', 'Evaluador', 'Nota Individual'
+      ];
+      const detailRows = data.map(r => [
+        r.evaluatedName, r.office, r.campus, r.role,
+        r.vafType, r.evaluatorName, r.individualScore
+      ]);
+
+      // Sheet 2: Summary by collaborator
+      const summaryHeaders = [
+        'Colaborador', 'Oficina', 'Campus', 'Cargo',
+        'Prom. Líder VAF', 'No. Eval. Líder',
+        'Prom. Equipo VAF', 'No. Eval. Equipo',
+        'Nota Total (60% / 40%)', 'Nota 50/50'
+      ];
+      const summaryRows = collaborators.map(c => {
+        const liderScores = c.liderEvs.map(e => e.individualScore);
+        const equipoScores = c.equipoEvs.map(e => e.individualScore);
+        const liderAvg = liderScores.length > 0
+          ? roundExportValue(liderScores.reduce((a, b) => a + b, 0) / liderScores.length)
+          : null;
+        const equipoAvg = equipoScores.length > 0
+          ? roundExportValue(equipoScores.reduce((a, b) => a + b, 0) / equipoScores.length)
+          : null;
+
+        let notaTotal: number | null = null;
+        let nota5050: number | null = null;
+        if (liderAvg !== null && equipoAvg !== null) {
+          notaTotal = roundExportValue(liderAvg * 0.6 + equipoAvg * 0.4);
+          nota5050 = roundExportValue((liderAvg + equipoAvg) / 2);
+        } else if (liderAvg !== null) {
+          notaTotal = liderAvg;
+        } else if (equipoAvg !== null) {
+          notaTotal = equipoAvg;
+        }
+
+        return [
+          c.name, c.office, c.campus, c.role,
+          liderAvg ?? '', liderScores.length,
+          equipoAvg ?? '', equipoScores.length,
+          notaTotal ?? '',
+          nota5050 ?? '',
+        ];
+      });
+
+      await generateStyledExcel('vaf_computada.xlsx', [
+        {
+          name: 'Detalle Individual',
+          headers: detailHeaders,
+          rows: detailRows,
+          scoreColumns: [6], // Nota Individual
+        },
+        {
+          name: 'Resumen por Colaborador',
+          headers: summaryHeaders,
+          rows: summaryRows,
+          scoreColumns: [4, 6, 8, 9], // Prom. Líder, Prom. Equipo, Nota Total, Nota 50/50
+        },
+      ]);
+    } catch (err) {
+      console.error('Error exporting VAF Computada', err);
+      alert('Error al generar VAF Computada.');
     } finally {
       setIsExporting(false);
       setExportProgress('');
@@ -519,23 +1002,61 @@ export default function ExportModule() {
             <h1 className="text-2xl font-bold text-gray-900">Exportar</h1>
             <p className="text-gray-600">Exporta evaluaciones a Excel por campus, oficina y tipo de evaluación.</p>
           </div>
-          <button
-            onClick={handleExport}
-            disabled={loading || isExporting}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:bg-blue-700 transition-colors"
-          >
-            {isExporting ? (
-              <span className="flex items-center gap-2">
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                Procesando...
-              </span>
-            ) : (
-              <>
-                <Download className="w-4 h-4" />
-                Exportar Excel
-              </>
-            )}
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={handleExportVafComputed}
+              disabled={loading || isExporting}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:bg-indigo-700 transition-colors"
+              title="Exportar VAF Computada: detalle individual + resumen ponderado (60/40)"
+            >
+              {isExporting ? (
+                <span className="flex items-center gap-2">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Procesando...
+                </span>
+              ) : (
+                <>
+                  <Download className="w-4 h-4" />
+                  VAF Computada
+                </>
+              )}
+            </button>
+            <button
+              onClick={handleExportVaf}
+              disabled={loading || isExporting}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:bg-emerald-700 transition-colors"
+              title="Exportar resultados consolidados de evaluaciones Líder VAF y Equipo VAF"
+            >
+              {isExporting ? (
+                <span className="flex items-center gap-2">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Procesando...
+                </span>
+              ) : (
+                <>
+                  <Download className="w-4 h-4" />
+                  Exportar Resultados VAF
+                </>
+              )}
+            </button>
+            <button
+              onClick={handleExport}
+              disabled={loading || isExporting}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:bg-blue-700 transition-colors"
+            >
+              {isExporting ? (
+                <span className="flex items-center gap-2">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Procesando...
+                </span>
+              ) : (
+                <>
+                  <Download className="w-4 h-4" />
+                  Exportar Excel
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -629,6 +1150,7 @@ export default function ExportModule() {
           Se han encontrado {evaluations.length} evaluaciones disponibles para filtrar y exportar.
         </div>
       )}
+
     </div>
   );
 }

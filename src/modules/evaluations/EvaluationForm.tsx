@@ -19,6 +19,7 @@ export function EvaluationForm({ evaluation, onClose }: EvaluationFormProps) {
   const [responses, setResponses] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [periodInfo, setPeriodInfo] = useState<{ year: number; start_date: string; end_date: string } | null>(null);
 
   useEffect(() => {
     loadQuestionsAndResponses();
@@ -78,6 +79,16 @@ export function EvaluationForm({ evaluation, onClose }: EvaluationFormProps) {
         }
       } catch (e) {
         console.warn('Error loading auto-save', e);
+      }
+
+      // Fetch period info if available
+      if (evaluation.period_id) {
+        const { data: pData } = await supabase
+          .from('evaluation_periods')
+          .select('year, start_date, end_date')
+          .eq('id', evaluation.period_id)
+          .single();
+        if (pData) setPeriodInfo(pData);
       }
 
       if (evaluation.status === 'pending') {
@@ -468,6 +479,23 @@ export function EvaluationForm({ evaluation, onClose }: EvaluationFormProps) {
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-4">Evaluación</h1>
+
+          {periodInfo && (
+            <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-lg p-4 mb-4 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 bg-green-400 rounded-full animate-pulse"></span>
+                    <span className="text-white font-semibold">Período Activo {periodInfo.year}</span>
+                  </div>
+                </div>
+                <span className="text-blue-100 text-sm">
+                  {new Date(periodInfo.start_date).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })} — {new Date(periodInfo.end_date).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })}
+                </span>
+              </div>
+            </div>
+          )}
+
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
             <p className="text-sm text-gray-600">
               Completa todas las preguntas de esta evaluación. Puedes guardar tu progreso y continuar más tarde.

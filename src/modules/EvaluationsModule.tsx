@@ -53,6 +53,20 @@ export function EvaluationsModule({ onNavigate }: EvaluationsModuleProps) {
     try {
       let query = supabase.from('evaluations').select('*');
 
+      // Filtrar por período activo si existe
+      const today = new Date().toISOString().slice(0, 10);
+      const { data: periodData } = await supabase
+        .from('evaluation_periods')
+        .select('id')
+        .lte('start_date', today)
+        .gte('end_date', today)
+        .limit(1);
+      const currentPeriod = (periodData && periodData.length > 0) ? periodData[0] : null;
+
+      if (currentPeriod && user?.role !== 'admin') {
+        query = query.eq('period_id', currentPeriod.id);
+      }
+
       if (user?.role === 'admin') {
         query = query.order('created_at', { ascending: false });
       } else if (user?.role === 'office_manager') {
@@ -372,6 +386,20 @@ export function EvaluationsModule({ onNavigate }: EvaluationsModuleProps) {
               }
             }
 
+            // ─── Filter candidates by period_collaborators (solo si hay datos asignados) ───
+            if (period && allPotentialUsers.length > 0) {
+              const { data: pcData } = await supabase
+                .from('period_collaborators')
+                .select('user_id')
+                .eq('period_id', period.id)
+                .eq('is_active', true);
+              const periodUserIds = new Set((pcData || []).map((r: any) => r.user_id));
+              if (periodUserIds.size > 0) {
+                allPotentialUsers = allPotentialUsers.filter(u => periodUserIds.has(u.id));
+              }
+              // Si period_collaborators está vacío, se muestran todos los candidatos normales
+            }
+
             // Helper to filter users by role list
             const filterUsersByRoles = (users: any[], targetRoles: string[]) => {
               const targetRolesNormalized = new Set<string>();
@@ -687,9 +715,26 @@ export function EvaluationsModule({ onNavigate }: EvaluationsModuleProps) {
         <p className="text-gray-600">Gestiona y completa tus evaluaciones</p>
       </div>
       {activePeriod && (
-        <div className="mb-6 p-4 rounded bg-yellow-50 border border-yellow-200">
-          <div className="font-medium">Periodo activo: {activePeriod.year}</div>
-          <div className="text-sm text-gray-700">Abierto desde {new Date(activePeriod.start_date).toLocaleDateString()} hasta {new Date(activePeriod.end_date).toLocaleDateString()}</div>
+        <div className="mb-6 p-4 rounded-lg bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 shadow-sm">
+          <div className="flex items-center gap-2 mb-1">
+            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+            <span className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Período Activo</span>
+          </div>
+          <div className="text-lg font-bold text-gray-900">Período {activePeriod.year}</div>
+          <div className="text-sm text-gray-600 mt-0.5">
+            <span className="font-medium">Inicio:</span> {new Date(activePeriod.start_date).toLocaleDateString('es-CO', { year: 'numeric', month: 'long', day: 'numeric' })} &nbsp;|&nbsp;
+            <span className="font-medium">Cierre:</span> {new Date(activePeriod.end_date).toLocaleDateString('es-CO', { year: 'numeric', month: 'long', day: 'numeric' })}
+          </div>
+          <div className="text-xs text-gray-500 mt-1">
+            {(() => {
+              const now = new Date();
+              const end = new Date(activePeriod.end_date);
+              const daysLeft = Math.ceil((end.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+              if (daysLeft > 0) return `Quedan ${daysLeft} día${daysLeft !== 1 ? 's' : ''} para completar las evaluaciones.`;
+              if (daysLeft === 0) return 'Último día del período de evaluación.';
+              return 'El período de evaluación ha finalizado.';
+            })()}
+          </div>
         </div>
       )}
       {/* Available global soft-skills tests (single-use per user) */}
