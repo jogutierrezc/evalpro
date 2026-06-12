@@ -1,16 +1,13 @@
 /**
- * Vercel Cron Job — Runs periodically to check for users who completed all evaluations
- * and auto-sends notifications to those who haven't received one yet.
+ * Scheduled Task — Runs periodically via cron-job.org (external cron service)
+ * to check for users who completed all evaluations and auto-sends notifications
+ * to those who haven't received one yet.
  *
  * This serves as a safety net in case the frontend trigger fails.
  *
- * Configure in vercel.json:
- * {
- *   "crons": [{
- *     "path": "/api/auto-notify-cron",
- *     "schedule": "0 */6 * * *"
- *   }]
- * }
+ * Trigger URL (cron-job.org):
+ *   https://evalpro-pi.vercel.app/api/auto-notify-cron?secret=TU_CRON_SECRET
+ * Schedule: every 6 hours (*/6 * * * *)
  */
 import { Resend } from 'resend';
 import { createClient } from '@supabase/supabase-js';

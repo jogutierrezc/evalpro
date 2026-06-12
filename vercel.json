@@ -4,12 +4,6 @@
     "devCommand": "npm run dev",
     "installCommand": "npm install",
     "framework": "vite",
-    "crons": [
-        {
-            "path": "/api/auto-notify-cron",
-            "schedule": "0 */6 * * *"
-        }
-    ],
     "rewrites": [
         {
             "source": "/(.*)",
