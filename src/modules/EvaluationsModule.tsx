@@ -4,6 +4,7 @@ import { supabase, Evaluation, EvaluationTemplate, User } from '../lib/supabase'
 import { FileText, Clock, CheckCircle, Play } from 'lucide-react';
 import { EvaluationForm } from './evaluations/EvaluationForm';
 
+
 interface EvaluationsModuleProps {
   onNavigate: (module: string) => void;
 }
@@ -53,15 +54,20 @@ export function EvaluationsModule({ onNavigate }: EvaluationsModuleProps) {
     try {
       let query = supabase.from('evaluations').select('*');
 
-      // Filtrar por período activo si existe
-      const today = new Date().toISOString().slice(0, 10);
+      // Filtrar por período activo si existe (usando fecha local con timezone)
+      const todayStr = new Date().toISOString().slice(0, 10);
       const { data: periodData } = await supabase
         .from('evaluation_periods')
-        .select('id')
-        .lte('start_date', today)
-        .gte('end_date', today)
+        .select('id, start_date, end_date, is_active')
+        .lte('start_date', todayStr)
+        .gte('end_date', todayStr)
         .limit(1);
-      const currentPeriod = (periodData && periodData.length > 0) ? periodData[0] : null;
+      let currentPeriod = (periodData && periodData.length > 0) ? periodData[0] : null;
+      
+      // Verificar is_active: si el período existe pero is_active es false, no se considera activo
+      if (currentPeriod && currentPeriod.is_active === false) {
+        currentPeriod = null;
+      }
 
       if (currentPeriod && user?.role !== 'admin') {
         query = query.eq('period_id', currentPeriod.id);
@@ -127,16 +133,22 @@ export function EvaluationsModule({ onNavigate }: EvaluationsModuleProps) {
     try {
 
 
-      // Find active period covering today
-      const today = new Date().toISOString().slice(0, 10);
+      // Find active period covering today (fecha local con timezone)
+      const todayStr = new Date().toISOString().slice(0, 10);
       const { data: periodData } = await supabase
         .from('evaluation_periods')
         .select('*')
-        .lte('start_date', today)
-        .gte('end_date', today)
+        .lte('start_date', todayStr)
+        .gte('end_date', todayStr)
         .limit(1);
 
-      const period = (periodData && periodData.length > 0) ? periodData[0] : null;
+      let period = (periodData && periodData.length > 0) ? periodData[0] : null;
+      
+      // Verificar is_active: si el período existe pero is_active es false, no se considera activo
+      if (period && period.is_active === false) {
+        period = null;
+      }
+      
       setActivePeriod(period || null);
 
       // Normalize user's role to canonical role.key using `roles` table (fallback: try matching by label/key,
@@ -706,7 +718,7 @@ export function EvaluationsModule({ onNavigate }: EvaluationsModuleProps) {
 
   const currentPersonId = personId || (user ? (user as any).id : null);
   const myEvaluations = evaluations.filter((e) => e.evaluator_id === currentPersonId);
-  const otherEvaluations = evaluations.filter((e) => e.evaluator_id !== currentPersonId);
+  const otherEvaluations = evaluations.filter((e) => e.evaluator_id !== currentPersonId && e.evaluated_id !== currentPersonId);
 
   return (
     <div>

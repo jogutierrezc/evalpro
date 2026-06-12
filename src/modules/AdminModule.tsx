@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Building2, Users, FileEdit, Layers, Slash, Clock, FileText, AlertTriangle, BarChart3 } from 'lucide-react';
+import { Building2, Users, FileEdit, Layers, Slash, Clock, FileText, AlertTriangle, BarChart3, Mail } from 'lucide-react';
 import { OfficesManagement } from './admin/OfficesManagement';
 import { UsersManagement } from './admin/UsersManagement';
 import { TemplatesManagement } from './admin/TemplatesManagement';
@@ -8,11 +8,12 @@ import RolesManagement from './admin/RolesManagement';
 import EvaluationPeriodsManagement from './admin/EvaluationPeriodsManagement';
 import EvaluationsManagement from './admin/EvaluationsManagement';
 import PendingEvaluationsModule from './admin/PendingEvaluationsModule';
+import NotificationsModule from './admin/NotificationsModule';
 
 import { ReportsManagement } from './admin/ReportsManagement';
 import VafAnalyticsModule from './admin/VafAnalyticsModule';
 
-type AdminTab = 'offices' | 'users' | 'evaluations' | 'templates' | 'form_types' | 'roles' | 'periods' | 'reports' | 'pending' | 'vaf-analytics';
+type AdminTab = 'offices' | 'users' | 'evaluations' | 'templates' | 'form_types' | 'roles' | 'periods' | 'reports' | 'pending' | 'vaf-analytics' | 'notifications';
 
 export function AdminModule() {
   const [activeTab, setActiveTab] = useState<AdminTab>('offices');
@@ -27,6 +28,7 @@ export function AdminModule() {
     { id: 'form_types' as AdminTab, label: 'Tipos de Formulario', icon: Layers },
     { id: 'roles' as AdminTab, label: 'Roles', icon: Slash },
     { id: 'periods' as AdminTab, label: 'Periodos', icon: Clock },
+    { id: 'notifications' as AdminTab, label: 'Notificaciones', icon: Mail },
     { id: 'vaf-analytics' as AdminTab, label: 'VAF Analytics', icon: BarChart3 },
   ];
 
@@ -70,6 +72,7 @@ export function AdminModule() {
           {activeTab === 'form_types' && <FormTypesManagement />}
           {activeTab === 'roles' && <RolesManagement />}
           {activeTab === 'periods' && <EvaluationPeriodsManagement />}
+          {activeTab === 'notifications' && <NotificationsModule />}
           {activeTab === 'vaf-analytics' && <VafAnalyticsModule />}
         </div>
       </div>

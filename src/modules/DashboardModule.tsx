@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { EvaluationForm } from './evaluations/EvaluationForm';
 import { HistoricalScoresChart } from '../components/HistoricalScoresChart';
+import { isPeriodActive } from '../hooks/usePeriods';
 
 export function DashboardModule() {
   const { user } = useAuth();
@@ -227,7 +228,7 @@ export function DashboardModule() {
       const map: Record<string, User[]> = {};
       const selfMap: Record<string, boolean> = {};
 
-      // Helper: filter candidates by manager relationship (strict) + campus
+      // Helper: filter candidates by manager relationship (strict) + office/campus fallback
       const filterByManagerRelation = async (cands: any[]): Promise<any[]> => {
         if (!user?.id) return [];
         const evaluatorId = user.id;
@@ -248,32 +249,66 @@ export function DashboardModule() {
         const managedIds = new Set([...(managedIdsFromTable || []), ...(directManagedIds || [])]);
         console.log(`[Dashboard] filterByManagerRelation - Combined managed IDs:`, Array.from(managedIds));
 
-        // 2) Filter by manager relationship
-        const directReports = (cands || []).filter((cand) => {
+        // 2) Filter by manager relationship (prioritario)
+        let finalCandidates = (cands || []).filter((cand) => {
           const hasMatch = managedIds.has(cand.id);
           if (managedIds.size <= 5 && cands.length <= 10) {
             console.log(`[Dashboard] Checking candidate ${cand.full_name} (ID: ${cand.id}): ${hasMatch ? 'MATCH' : 'NO MATCH'}`);
           }
           return hasMatch;
         });
-        console.log(`[Dashboard] filterByManagerRelation - Direct reports after filtering:`, directReports.length, directReports.map(c => ({ name: c.full_name, id: c.id })));
+        console.log(`[Dashboard] filterByManagerRelation - Direct reports after filtering:`, finalCandidates.length, finalCandidates.map(c => ({ name: c.full_name, id: c.id })));
 
-        // 3) Filter by campus - UNLESS evaluator has campus = 'Todos' or 'Todas'
+        // 3) Fallback: si no hay reportes directos, buscar por oficina compartida
+        if (finalCandidates.length === 0) {
+          console.log(`[Dashboard] No direct reports found, trying office-based fallback...`);
+          
+          const { data: evalLinks } = await supabase.from('collaborator_offices').select('office_id').eq('collaborator_id', evaluatorId);
+          const officeIds = (evalLinks || []).map((l: any) => l.office_id).filter(Boolean);
+          
+          if (officeIds.length > 0) {
+            const { data: colLinks } = await supabase.from('collaborator_offices').select('collaborator_id').in('office_id', officeIds);
+            const officeCandidateIds = Array.from(new Set((colLinks || []).map((l: any) => l.collaborator_id).filter(Boolean)));
+            
+            // Excluir al evaluador mismo
+            const filtered = (cands || []).filter(c => 
+              officeCandidateIds.includes(c.id) && c.id !== evaluatorId
+            );
+            
+            if (filtered.length > 0) {
+              finalCandidates = filtered;
+              console.log(`[Dashboard] Office fallback found ${filtered.length} candidates`);
+            }
+          }
+          
+          // Fallback adicional: misma office_id en users
+          if (finalCandidates.length === 0 && user.office_id) {
+            const officeCandidates = (cands || []).filter(c => 
+              c.office_id === user.office_id && c.id !== evaluatorId
+            );
+            if (officeCandidates.length > 0) {
+              finalCandidates = officeCandidates;
+              console.log(`[Dashboard] Office_id fallback found ${officeCandidates.length} candidates`);
+            }
+          }
+        }
+
+        // 4) Filter by campus - UNLESS evaluator has campus = 'Todos' or 'Todas'
         const canEvaluateAllCampuses = evaluatorCampus.toLowerCase() === 'todos' ||
           evaluatorCampus.toLowerCase() === 'todas' ||
           !evaluatorCampus; // If no campus assigned, allow all
 
         if (canEvaluateAllCampuses) {
           console.log(`[Dashboard] Manager ${user.full_name} has campus="${evaluatorCampus}" - can evaluate all campuses`);
-          return directReports;
+          return finalCandidates;
         } else {
           // Filter by same campus
-          const sameCampusReports = directReports.filter(cand => {
+          const sameCampusReports = finalCandidates.filter(cand => {
             const candCampus = (cand.campus || '').toString();
             return candCampus === evaluatorCampus;
           });
 
-          console.log(`[Dashboard] Manager ${user.full_name} (campus: ${evaluatorCampus}) - filtered ${directReports.length} direct reports to ${sameCampusReports.length} same-campus reports`);
+          console.log(`[Dashboard] Manager ${user.full_name} (campus: ${evaluatorCampus}) - filtered ${finalCandidates.length} to ${sameCampusReports.length} same-campus reports`);
           return sameCampusReports;
         }
       };
@@ -460,10 +495,8 @@ export function DashboardModule() {
       const periodsList = data || [];
       setPeriods(periodsList);
 
-      // Find active period for default selection
-      const now = new Date();
-      const today = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().slice(0, 10);
-      const active = periodsList.find(p => p.start_date <= today && p.end_date >= today);
+      // Find active period for default selection (usando función centralizada)
+      const active = periodsList.find((p: any) => isPeriodActive(p));
       
       if (active) {
         setSelectedPeriodId(active.id);
@@ -546,185 +579,134 @@ export function DashboardModule() {
             .eq('status', 'completed'),
         ]);
 
-        // compute available templates for this role (consider active period if present)
+        // Calcular templates disponibles para el rol del usuario (considerando período activo)
         let availableCount = 0;
+        let templatesForUser: any[] = [];
+        let activePeriodForUser: any = null;
+
         console.log('[Dashboard] About to start template loading...');
         try {
-          // Get comprehensive role information
+          // Obtener información canónica del rol
           let userRoleKey = user?.role || '';
           let userRoleLabel = user?.role || '';
 
-          // Try to get canonical role from roles table
           if (user?.role_id) {
             const { data: roleData } = await supabase
               .from('roles')
               .select('key, label')
               .eq('id', user.role_id)
               .single();
-
             if (roleData) {
               userRoleKey = roleData.key;
               userRoleLabel = roleData.label;
             }
           }
 
-          console.log('[Dashboard] Starting template loading for user:', user?.full_name, 'role:', user?.role, 'roleKey:', roleKey, 'userRoleKey:', userRoleKey, 'userRoleLabel:', userRoleLabel);
+          console.log('[Dashboard] Role detection:', { roleKey, userRoleKey, userRoleLabel, originalRole: user?.role });
 
-          // Use local date for period check to avoid timezone issues (UTC vs Local)
-          const now = new Date();
-          const today = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().slice(0, 10);
-          console.log('[Dashboard] Today date:', today);
-
-          const { data: periodData, error: periodError } = await supabase
+          // Detectar período activo
+          const todayStr = new Date().toISOString().slice(0, 10);
+          const { data: periodData } = await supabase
             .from('evaluation_periods')
-            .select('id')
-            .lte('start_date', today)
-            .gte('end_date', today)
+            .select('id, is_active')
+            .lte('start_date', todayStr)
+            .gte('end_date', todayStr)
             .limit(1);
 
-          console.log('[Dashboard] Period query result:', { periodData, periodError });
+          activePeriodForUser = (periodData && periodData.length > 0 && periodData[0].is_active !== false) ? periodData[0] : null;
 
-          const period = (periodData && periodData.length > 0) ? periodData[0] : null;
-          console.log('[Dashboard] Active period:', period);
-
+          // Obtener form_type_keys permitidos (del período o todos)
           let allowedFormTypeKeys: string[] = [];
-          if (period) {
-            const { data: pfts, error: pftsError } = await supabase.from('evaluation_period_form_types').select('form_type_key').eq('period_id', period.id);
-            console.log('[Dashboard] Period form types:', { pfts, pftsError });
+          if (activePeriodForUser) {
+            const { data: pfts } = await supabase.from('evaluation_period_form_types').select('form_type_key').eq('period_id', activePeriodForUser.id);
             allowedFormTypeKeys = (pfts || []).map((r: any) => r.form_type_key);
           } else {
-            const { data: allFts, error: allFtsError } = await supabase.from('form_types').select('key');
-            console.log('[Dashboard] All form types (no period):', { allFts, allFtsError });
+            const { data: allFts } = await supabase.from('form_types').select('key');
             allowedFormTypeKeys = (allFts || []).map((r: any) => r.key);
           }
 
-          console.log('[Dashboard] Allowed form type keys:', allowedFormTypeKeys);
+          // Determinar tipos de formulario permitidos para este rol
+          let finalAllowed: string[] = [];
 
           if (allowedFormTypeKeys.length > 0) {
-            const { data: fts, error: ftsError } = await supabase.from('form_types').select('key,roles,role_ids').in('key', allowedFormTypeKeys);
-            console.log('[Dashboard] Form types with roles:', { fts, ftsError, roleKey, userRoleKey, userRoleLabel, originalRole: user?.role });
-
-            const allowedForRole = (fts || []).filter((ft: any) => {
-              if (!Array.isArray(ft.roles)) return false;
-
-              // Check ALL role variants
-              const hasNormalizedRole = ft.roles.includes(roleKey);
-              const hasUserRoleKey = ft.roles.includes(userRoleKey);
-              const hasUserRoleLabel = ft.roles.includes(userRoleLabel);
-              const hasOriginalRole = ft.roles.includes(user?.role);
-
-              const allowed = hasNormalizedRole || hasUserRoleKey || hasUserRoleLabel || hasOriginalRole;
-
-              console.log(`[Dashboard] Form type ${ft.key}: roles=${JSON.stringify(ft.roles)}, ` +
-                `includes roleKey(${roleKey})=${hasNormalizedRole}, ` +
-                `includes userRoleKey(${userRoleKey})=${hasUserRoleKey}, ` +
-                `includes userRoleLabel(${userRoleLabel})=${hasUserRoleLabel}, ` +
-                `includes originalRole(${user?.role})=${hasOriginalRole}, ` +
-                `allowed=${allowed}`);
-
-              return allowed;
-            }).map((ft: any) => ft.key);
-
-            console.log('[Dashboard] Allowed for role:', allowedForRole);
-
-            // Try explicit relations too — flexible matching with normalizeStr
-            let relAllowed: string[] = [];
             const normalizeStr = (s: any) => (s || '').toString().toLowerCase().normalize('NFD').replace(/[^\w\s-]/g, '').replace(/[\u0300-\u036f]/g, '').trim();
+            const userNorm = normalizeStr(roleKey);
+
+            // 1) Roles directos en form_types
+            const { data: fts } = await supabase.from('form_types').select('key,roles,role_ids').in('key', allowedFormTypeKeys);
+            const allowedFromRoles = (fts || [])
+              .filter((ft: any) => Array.isArray(ft.roles) && (
+                ft.roles.includes(userRoleKey) ||
+                ft.roles.includes(userRoleLabel) ||
+                ft.roles.includes(user?.role) ||
+                ft.roles.includes(roleKey) ||
+                ft.roles.some((r: string) => normalizeStr(r) === userNorm)
+              ))
+              .map((ft: any) => ft.key);
+
+            // 2) Relaciones explicitas en form_type_relations
+            let relAllowed: string[] = [];
             try {
               const { data: allRelations } = await supabase
                 .from('form_type_relations')
                 .select('form_type_key,evaluator_role_key')
                 .in('form_type_key', allowedFormTypeKeys);
 
-              const matches = (allRelations || []).filter((r: any) => {
-                const relNorm = normalizeStr(r.evaluator_role_key || '');
-                const userNorm = normalizeStr(roleKey);
-                const origNorm = normalizeStr(user?.role || '');
-                const userKeyNorm = normalizeStr(userRoleKey);
-                const userLabelNorm = normalizeStr(userRoleLabel);
-                return relNorm === userNorm || relNorm === origNorm || relNorm === userKeyNorm || relNorm === userLabelNorm;
-              });
-
-              relAllowed = Array.from(new Set(matches.map((r: any) => r.form_type_key)));
-
-              console.log('[Dashboard] Relations (flexible):', { matches, relAllowed });
+              relAllowed = Array.from(new Set(
+                (allRelations || [])
+                  .filter((r: any) => {
+                    const relNorm = normalizeStr(r.evaluator_role_key || '');
+                    return relNorm === userNorm ||
+                           relNorm === normalizeStr(user?.role || '') ||
+                           relNorm === normalizeStr(userRoleKey) ||
+                           relNorm === normalizeStr(userRoleLabel) ||
+                           relNorm === normalizeStr(roleKey);
+                  })
+                  .map((r: any) => r.form_type_key)
+              ));
             } catch (e) {
-              console.debug('[Dashboard] no relations table or query failed', e);
+              // ignorar errores de relaciones
             }
 
-            const finalAllowed = Array.from(new Set([...allowedForRole, ...relAllowed]));
-            console.log('[Dashboard] Final allowed form types:', finalAllowed);
+            finalAllowed = Array.from(new Set([...allowedFromRoles, ...relAllowed]));
 
+            // Cargar templates
             if (finalAllowed.length > 0) {
-              const { data: templates, error: tplErr } = await supabase
+              const { data: templates } = await supabase
                 .from('evaluation_templates')
                 .select('*')
                 .eq('is_active', true)
                 .in('type', finalAllowed)
                 .order('created_at', { ascending: false });
 
-              console.log('[Dashboard] Templates query result:', { templates, tplErr, count: templates?.length });
-
-              if (tplErr) throw tplErr;
-              setAvailableTemplates((templates as EvaluationTemplate[]) || []);
-              availableCount = (templates || []).length || 0;
+              templatesForUser = (templates as EvaluationTemplate[]) || [];
+              setAvailableTemplates(templatesForUser);
+              availableCount = templatesForUser.length;
             } else {
-              console.warn('[Dashboard] No allowed form types for user role');
               setAvailableTemplates([]);
             }
-          } else {
-            console.warn('[Dashboard] No form type keys available');
-          }
-        } catch (err) {
-          console.warn('Error computing available templates for dashboard', err);
-          availableCount = 0;
-        }
-
-        // Calculate "Pendientes por realizar" (Templates available * Collaborators not yet evaluated)
-        let totalPendingToPerform = 0;
-        if (availableCount > 0) {
-          // Get collaborators
-          const { data: collaborators } = await supabase
-            .from('users')
-            .select('id')
-            .eq('manager_id', user.id);
-          
-          const collabIds = (collaborators || []).map(c => c.id);
-          const allTargetIds = [user.id, ...collabIds];
-
-          // Check how many evaluations exist for these targets in the active period
-          let existingQuery = supabase
-            .from('evaluations')
-            .select('template_id, evaluated_id')
-            .in('evaluated_id', allTargetIds);
-          
-          if (period) {
-            existingQuery = existingQuery.eq('period_id', period.id);
           }
 
-          const { data: existing } = await existingQuery;
-          const existingSet = new Set((existing || []).map(e => `${e.template_id}-${e.evaluated_id}`));
-
-          // For each template, check which targets are missing it
-          const availableTemplatesList = (availableTemplates.length > 0 ? availableTemplates : (await supabase.from('evaluation_templates').select('*').eq('is_active', true).in('type', finalAllowed)).data || []);
-          
-          availableTemplatesList.forEach((tpl: any) => {
-            allTargetIds.forEach(targetId => {
-              if (!existingSet.has(`${tpl.id}-${targetId}`)) {
-                totalPendingToPerform++;
-              }
-            });
+          setStats({
+            totalEmployees: 0,
+            totalOffices: 0,
+            pendingEvaluations: (pendingRes.count || 0),
+            completedEvaluations: completedRes.count || 0,
+            totalRoles: 0,
           });
-        }
+          setAvailableTemplatesCount(availableCount);
 
-        setStats({
-          totalEmployees: 0,
-          totalOffices: 0,
-          pendingEvaluations: (pendingRes.count || 0) + totalPendingToPerform,
-          completedEvaluations: completedRes.count || 0,
-          totalRoles: 0,
-        });
-        setAvailableTemplatesCount(availableCount);
+        } catch (err) {
+          console.warn('Error computing stats for dashboard', err);
+          setStats({
+            totalEmployees: 0,
+            totalOffices: 0,
+            pendingEvaluations: (pendingRes?.count || 0),
+            completedEvaluations: completedRes?.count || 0,
+            totalRoles: 0,
+          });
+          setAvailableTemplatesCount(availableCount || 0);
+        }
       }
     } catch (error) {
       console.error('Error loading stats:', error);
@@ -831,7 +813,7 @@ export function DashboardModule() {
                  <option value="all">Todos los tiempos</option>
                  {periods.map(p => {
                     const now = new Date();
-                    const today = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().slice(0, 10);
+                    const today = new Date().toISOString().slice(0, 10);
                     const isActive = p.start_date <= today && p.end_date >= today;
                     return (
                       <option key={p.id} value={p.id}>

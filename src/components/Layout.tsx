@@ -37,23 +37,26 @@ export function Layout({ children, activeModule, onModuleChange }: LayoutProps) 
     { id: 'guide', label: 'Ayuda', icon: BookOpen, roles: ['*'] },
   ];
 
+  const isAdmin = ['admin', 'administrador', 'superadmin'].includes((user?.role || '').toString().toLowerCase());
+
+  // Items ocultos para admin
+  const hiddenForAdmin = new Set(['my-collaborators', 'evaluations', 'guide', 'self-report']);
+
   const filteredMenuItems = menuItems.filter(item => {
+    // Ocultar items específicos para usuarios admin
+    if (isAdmin && hiddenForAdmin.has(item.id)) return false;
+
     const ur = (user?.role || '').toString().toLowerCase();
     const matchesRole = (roleKey: string) => {
       const rk = (roleKey || '').toString().toLowerCase();
       if (!rk) return false;
       if (rk === '*') return true;
       if (rk === ur) return true;
-      // allow broad matching: 'employee' matches any role containing 'colaborador' or 'employee'
       if (rk === 'employee' && (ur.includes('colaborador') || ur.includes('employee') || ur.includes('coordinador') || ur.includes('director') || ur.includes('lider') || ur.includes('jefe'))) return true;
       if (rk === 'office_manager' && (ur.includes('jefe') || ur.includes('manager') || ur.includes('oficina') || ur.includes('coordinador') || ur.includes('director') || ur.includes('lider'))) return true;
       if (rk === 'admin') {
-        // Strict check for admin to avoid matching 'administrativo' etc.
         return ur === 'admin' || ur === 'administrador' || ur === 'superadmin';
       }
-
-
-      // fallback: substring match (useful when roles stored as labels)
       if (ur.includes(rk) || rk.includes(ur)) return true;
       return false;
     };

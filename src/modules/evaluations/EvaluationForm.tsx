@@ -348,6 +348,37 @@ export function EvaluationForm({ evaluation, onClose }: EvaluationFormProps) {
           console.error('Error saving evaluation results:', err);
         }
 
+        // --- AUTO-NOTIFICACIÓN: Verificar si TODAS las evaluaciones están completas ---
+        try {
+          const session = await supabase.auth.getSession();
+          const accessToken = session?.data?.session?.access_token;
+          if (accessToken && evaluation.period_id) {
+            // Llamar al endpoint de Vercel para verificar y enviar notificación
+            const baseUrl = window.location.origin;
+            const notifyResponse = await fetch(`${baseUrl}/api/auto-notify`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${accessToken}`,
+              },
+              body: JSON.stringify({
+                evaluatorId: evaluation.evaluator_id,
+                periodId: evaluation.period_id,
+              }),
+            });
+            const notifyResult = await notifyResponse.json();
+            if (notifyResult.success) {
+              console.log('[AutoNotify] Correo enviado a', notifyResult.message);
+            } else if (!notifyResult.skipped) {
+              console.warn('[AutoNotify] Error:', notifyResult.message || notifyResult.error);
+            }
+            // skipped significa que no aplicaba (no todas completas, o no configurado)
+          }
+        } catch (notifyErr) {
+          console.warn('[AutoNotify] No se pudo enviar notificación automática:', notifyErr);
+          // No bloquear la experiencia del usuario si falla la notificación
+        }
+
         alert('Evaluación completada exitosamente');
         onClose();
       } else {

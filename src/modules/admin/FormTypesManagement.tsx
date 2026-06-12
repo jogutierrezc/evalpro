@@ -87,9 +87,9 @@ export default function FormTypesManagement() {
             form_type_key: form.key,
             evaluator_role_key: r.evaluator,
             evaluated_role_key: r.evaluated,
-            evaluator_role_id: availableRoles.find(ar => ar.key === r.evaluator)?.id,
-            evaluated_role_id: availableRoles.find(ar => ar.key === r.evaluated)?.id
-          }));
+            evaluator_role_id: availableRoles.find(ar => ar.key === r.evaluator)?.id || null,
+            evaluated_role_id: availableRoles.find(ar => ar.key === r.evaluated)?.id || null
+          })).filter(r => r.evaluator_role_key && r.evaluated_role_key); // Only insert valid relations
           if (inserts.length > 0) {
             const { error: insErr } = await supabase.from('form_type_relations').insert(inserts);
             if (insErr) throw insErr;
@@ -113,9 +113,9 @@ export default function FormTypesManagement() {
             form_type_key: form.key,
             evaluator_role_key: r.evaluator,
             evaluated_role_key: r.evaluated,
-            evaluator_role_id: availableRoles.find(ar => ar.key === r.evaluator)?.id,
-            evaluated_role_id: availableRoles.find(ar => ar.key === r.evaluated)?.id
-          }));
+            evaluator_role_id: availableRoles.find(ar => ar.key === r.evaluator)?.id || null,
+            evaluated_role_id: availableRoles.find(ar => ar.key === r.evaluated)?.id || null
+          })).filter(r => r.evaluator_role_key && r.evaluated_role_key); // Only insert valid relations
           if (inserts.length > 0) {
             const { error: insErr } = await supabase.from('form_type_relations').insert(inserts);
             if (insErr) throw insErr;
