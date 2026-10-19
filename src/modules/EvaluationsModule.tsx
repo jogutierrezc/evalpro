@@ -1,9 +1,8 @@
-import { PageHeader } from '../components/ui/PageHeader';
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, Evaluation, EvaluationTemplate, User } from '../lib/supabase';
-import { FileText, Clock, CheckCircle, Play } from 'lucide-react';
 import { EvaluationForm } from './evaluations/EvaluationForm';
+import { EvaluatorView } from './evaluations/EvaluatorView';
 
 
 interface EvaluationsModuleProps {
@@ -661,17 +660,6 @@ export function EvaluationsModule({ onNavigate }: EvaluationsModuleProps) {
     loadEvaluations();
   };
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'completed':
-        return <CheckCircle className="w-5 h-5 text-green-500" />;
-      case 'in_progress':
-        return <Clock className="w-5 h-5 text-orange-500" />;
-      default:
-        return <FileText className="w-5 h-5 text-gray-400" />;
-    }
-  };
-
   const getStatusLabel = (status: string) => {
     const labels: Record<string, string> = {
       pending: 'Pendiente',
@@ -698,262 +686,28 @@ export function EvaluationsModule({ onNavigate }: EvaluationsModuleProps) {
   const otherEvaluations = evaluations.filter((e) => e.evaluator_id !== currentPersonId && e.evaluated_id !== currentPersonId);
 
   return (
-    <div className="space-y-6">
-      <PageHeader title="Evaluaciones" description="Gestiona y completa tus evaluaciones" />
-      {activePeriod && (
-        <div className="p-4 rounded-lg bg-blue-50 border border-blue-200">
-          <div className="flex items-center gap-2 mb-1">
-            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-            <span className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Período Activo</span>
-          </div>
-          <div className="text-lg font-bold text-gray-900">Período {activePeriod.year}</div>
-          <div className="text-sm text-gray-600 mt-0.5">
-            <span className="font-medium">Inicio:</span> {new Date(activePeriod.start_date).toLocaleDateString('es-CO', { year: 'numeric', month: 'long', day: 'numeric' })} &nbsp;|&nbsp;
-            <span className="font-medium">Cierre:</span> {new Date(activePeriod.end_date).toLocaleDateString('es-CO', { year: 'numeric', month: 'long', day: 'numeric' })}
-          </div>
-          <div className="text-xs text-gray-500 mt-1">
-            {(() => {
-              const now = new Date();
-              const end = new Date(activePeriod.end_date);
-              const daysLeft = Math.ceil((end.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-              if (daysLeft > 0) return `Quedan ${daysLeft} día${daysLeft !== 1 ? 's' : ''} para completar las evaluaciones.`;
-              if (daysLeft === 0) return 'Último día del período de evaluación.';
-              return 'El período de evaluación ha finalizado.';
-            })()}
-          </div>
-        </div>
-      )}
-      {/* Available global soft-skills tests (single-use per user) */}
-      {availableSoftTemplates.length > 0 && (
-        <div className="mb-8">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">Pruebas Disponibles</h2>
-          <div className="space-y-3">
-            {availableSoftTemplates.map((template) => (
-              <div
-                key={template.id}
-                className="bg-white rounded-lg border border-gray-200 p-5 hover:shadow-md transition-shadow flex items-center justify-between"
-              >
-                <div>
-                  <h3 className="font-semibold text-gray-900">{template.name}</h3>
-                  <p className="text-sm text-gray-600">{template.description}</p>
-                </div>
-                <div>
-                  {user?.role === 'admin' ? (
-                    <button onClick={() => handleAdminTakeTemplate(template)} className="px-4 py-2 rounded-lg text-white bg-green-600 hover:bg-green-700">Crear prueba (Admin)</button>
-                  ) : (() => {
-                    const canSelf = canSelfEval[template.id];
-                    const canOther = canEvaluateOthers[template.id];
-                    const isEvaluatingOther = evaluateOther[template.id] || (!canSelf && canOther);
-
-                    if (!canSelf && !canOther) {
-                      return <span className="text-sm text-gray-500 italic">No disponible para tu rol</span>;
-                    }
-
-                    return (
-                      <div className="flex items-center gap-2">
-                        {canSelf && canOther && (
-                          <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-                            <input
-                              type="checkbox"
-                              checked={!!evaluateOther[template.id]}
-                              onChange={(e) => setEvaluateOther({ ...evaluateOther, [template.id]: e.target.checked })}
-                              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                            />
-                            Evaluar a otro colaborador
-                          </label>
-                        )}
-
-                        {/* If only canOther, show label as static text or just show the dropdown directly */}
-                        {!canSelf && canOther && (
-                          <span className="text-sm font-medium text-gray-700 mr-2">Evaluación de Colaborador:</span>
-                        )}
-
-                        {isEvaluatingOther ? (
-                          <>
-                            <select
-                              className="border rounded p-2 text-sm max-w-[200px]"
-                              value={selectedCandidate[template.id] || ''}
-                              onChange={(e) => setSelectedCandidate({ ...selectedCandidate, [template.id]: e.target.value })}
-                            >
-                              <option value="">Selecciona colaborador</option>
-                              {(() => {
-                                const relationCandidates = evaluationCandidatesByTemplate[template.id] || [];
-                                // Filter out self just in case
-                                const candidateList = relationCandidates.filter(c => c.id !== user?.id);
-                                return candidateList.map((c) => (
-                                  <option key={c.id} value={c.id}>{c.full_name} ({c.role || c.identification})</option>
-                                ));
-                              })()}
-                            </select>
-                            <button
-                              onClick={() => handleTakeForEvaluated(template, selectedCandidate[template.id])}
-                              className="px-4 py-2 rounded-lg text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                              disabled={!selectedCandidate[template.id]}
-                            >
-                              Crear evaluación
-                            </button>
-                          </>
-                        ) : (
-                          takenTemplatesMap[template.id] ? (
-                            <button
-                              onClick={() => onNavigate('self-report')}
-                              className="px-4 py-2 rounded-lg text-white bg-green-600 hover:bg-green-700 transition-colors flex items-center gap-2"
-                            >
-                              <FileText className="w-4 h-4" />
-                              Leer mi informe
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => handleTakeSoftSkill(template)}
-                              className="px-4 py-2 rounded-lg text-white bg-blue-600 hover:bg-blue-700 transition-colors"
-                            >
-                              Tomar prueba
-                            </button>
-                          )
-                        )}
-                      </div>
-                    );
-                  })()}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {myEvaluations.length > 0 && (
-        <>
-          {/* Pending Evaluations */}
-          {myEvaluations.some(e => e.status !== 'completed') && (
-            <div className="mb-8">
-              <h2 className="text-xl font-semibold text-gray-900 mb-4">Mis Evaluaciones Pendientes</h2>
-              <div className="space-y-3">
-                {myEvaluations
-                  .filter((e) => e.status !== 'completed')
-                  .map((evaluation) => (
-                    <div
-                      key={evaluation.id}
-                      className="bg-white rounded-lg border border-gray-200 p-5 hover:shadow-md transition-shadow"
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
-                            {getStatusIcon(evaluation.status)}
-                            <h3 className="font-semibold text-gray-900">{evaluation.template?.name}</h3>
-                          </div>
-                          <p className="text-sm text-gray-600 mb-1">
-                            Evaluando a: <span className="font-medium">{evaluation.evaluated?.full_name}</span>
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            Creada: {new Date(evaluation.created_at).toLocaleDateString()}
-                          </p>
-                        </div>
-                        <button
-                          onClick={() => handleStartEvaluation(evaluation)}
-                          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
-                        >
-                          <Play className="w-4 h-4" />
-                          {evaluation.status === 'pending' ? 'Comenzar' : 'Continuar'}
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            </div>
-          )}
-
-          {/* Completed Evaluations */}
-          {myEvaluations.some(e => e.status === 'completed') && (
-            <div className="mb-8">
-              <h2 className="text-xl font-semibold text-gray-900 mb-4">Evaluaciones Realizadas</h2>
-              <div className="space-y-3">
-                {myEvaluations
-                  .filter((e) => e.status === 'completed')
-                  .map((evaluation) => (
-                    <div
-                      key={evaluation.id}
-                      className="bg-white rounded-lg border border-gray-200 p-5 hover:shadow-md transition-shadow"
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
-                            {getStatusIcon(evaluation.status)}
-                            <h3 className="font-semibold text-gray-900">{evaluation.template?.name}</h3>
-                          </div>
-                          <p className="text-sm text-gray-600 mb-1">
-                            Evaluado: <span className="font-medium">{evaluation.evaluated?.full_name}</span>
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            Completada: {new Date(evaluation.created_at).toLocaleDateString()}
-                          </p>
-                        </div>
-                        <button
-                          onClick={() => window.open(`?module=technical-report&id=${evaluation.id}`, '_blank')}
-                          className="flex items-center gap-2 bg-white border border-blue-200 text-blue-600 hover:bg-blue-50 px-4 py-2 rounded-lg transition-colors"
-                        >
-                          <FileText className="w-4 h-4" />
-                          Ver Informe Técnico
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-
-              </div>
-            </div>
-          )}
-        </>
-      )}
-
-      {user?.role !== 'employee' && otherEvaluations.length > 0 && (
-        <div>
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">Todas las Evaluaciones</h2>
-          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Formulario</th>
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Evaluador</th>
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Evaluado</th>
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Estado</th>
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Fecha</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {otherEvaluations.map((evaluation) => (
-                    <tr key={evaluation.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 text-sm text-gray-900">{evaluation.template?.name}</td>
-                      <td className="px-4 py-3 text-sm text-gray-600">{evaluation.evaluator?.full_name}</td>
-                      <td className="px-4 py-3 text-sm text-gray-600">{evaluation.evaluated?.full_name}</td>
-                      <td className="px-4 py-3 text-sm">
-                        <span
-                          className={`px-2 py-1 rounded text-xs font-medium ${evaluation.status === 'completed'
-                            ? 'bg-green-100 text-green-700'
-                            : evaluation.status === 'in_progress'
-                              ? 'bg-orange-100 text-orange-700'
-                              : 'bg-gray-100 text-gray-700'
-                            }`}
-                        >
-                          {getStatusLabel(evaluation.status)}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-600">
-                        {new Date(evaluation.created_at).toLocaleDateString()}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {evaluations.length === 0 && (
-        <div className="text-center py-12 text-gray-500">
-          No hay evaluaciones disponibles en este momento
-        </div>
-      )}
-    </div>
+    <EvaluatorView
+      userRole={user?.role}
+      currentUserId={currentPersonId}
+      activePeriod={activePeriod}
+      availableSoftTemplates={availableSoftTemplates}
+      takenTemplatesMap={takenTemplatesMap}
+      canSelfEval={canSelfEval}
+      canEvaluateOthers={canEvaluateOthers}
+      evaluateOther={evaluateOther}
+      selectedCandidate={selectedCandidate}
+      evaluationCandidatesByTemplate={evaluationCandidatesByTemplate}
+      myEvaluations={myEvaluations}
+      otherEvaluations={otherEvaluations}
+      totalEvaluations={evaluations.length}
+      setEvaluateOther={setEvaluateOther}
+      setSelectedCandidate={setSelectedCandidate}
+      getStatusLabel={getStatusLabel}
+      onAdminTakeTemplate={handleAdminTakeTemplate}
+      onStartEvaluation={handleStartEvaluation}
+      onTakeForEvaluated={handleTakeForEvaluated}
+      onTakeSoftSkill={handleTakeSoftSkill}
+      onNavigate={onNavigate}
+    />
   );
 }

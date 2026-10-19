@@ -16,6 +16,7 @@ const TechnicalReportViewer = lazy(() => import('./modules/TechnicalReportViewer
 const PrismaReport = lazy(() => import('./modules/PrismaReport'));
 const MyCollaboratorsModule = lazy(() => import('./modules/MyCollaboratorsModule').then((m) => ({ default: m.MyCollaboratorsModule })));
 const ExportModule = lazy(() => import('./modules/ExportModule'));
+const PrintReportModule = lazy(() => import('./modules/evaluator/PrintReportModule'));
 
 function ModuleFallback() {
   return (
@@ -67,6 +68,15 @@ function AppContent() {
 
   if (!user) {
     return <LoginPage />;
+  }
+
+  // Informes PDF del evaluador (individual y grupal), sin menú lateral
+  if (activeModule === 'print-report') {
+    return (
+      <Suspense fallback={<ModuleFallback />}>
+        <PrintReportModule />
+      </Suspense>
+    );
   }
 
   // Standalone view for Technical Report (no sidebar)
