@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { supabase, User } from '../../lib/supabase';import { AlertCircle, Filter, Building2, MapPin, RefreshCw,
+import { supabase } from '../../lib/supabase';import { AlertCircle, Filter, Building2, MapPin, RefreshCw,
   ChevronDown, ChevronRight, Clock, CheckCircle, Loader2,
   UserCheck, FileText, Search, XCircle, PlusCircle
 } from 'lucide-react';
@@ -94,10 +94,10 @@ La evaluación se marcará como finalizada.`)) return;
         .update({ status: 'completed', completed_at: new Date().toISOString() })
         .eq('id', evalId);
       if (error) throw error;
-      setActionMsg({ type: 'success', text: `✅ Evaluación de "${evalName}" cancelada.` });
+      setActionMsg({ type: 'success', text: `Evaluación de "${evalName}" cancelada.` });
       setTimeout(() => { setActionMsg(null); loadPendingEvaluations(); }, 2000);
     } catch (err: any) {
-      setActionMsg({ type: 'error', text: `❌ Error al cancelar "${evalName}": ${err.message}` });
+      setActionMsg({ type: 'error', text: `Error al cancelar "${evalName}": ${err.message}` });
     } finally {
       setSolvingId(null);
     }
@@ -118,10 +118,10 @@ Se creará una nueva evaluación pendiente.`)) return;
         status: 'pending',
       });
       if (error) throw error;
-      setActionMsg({ type: 'success', text: `✅ Autoevaluación "${templateName}" creada.` });
+      setActionMsg({ type: 'success', text: `Autoevaluación "${templateName}" creada.` });
       setTimeout(() => { setActionMsg(null); loadPendingEvaluations(); }, 2000);
     } catch (err: any) {
-      setActionMsg({ type: 'error', text: `❌ Error: ${err.message}` });
+      setActionMsg({ type: 'error', text: `Error: ${err.message}` });
     } finally {
       setSolvingId(null);
     }
@@ -608,7 +608,7 @@ Se creará una nueva evaluación pendiente.`)) return;
                                           <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded text-xs whitespace-nowrap">
                                             {pe.status === 'in_progress' ? 'En progreso' : 'Pendiente'}
                                           </span>
-                                          {/* 🔧 Resolver button */}
+                                          {/* Resolver button */}
                                           {pe.evaluationId && (
                                             <button
                                               onClick={() => cancelEvaluation(pe.evaluationId!, pe.evaluatedName)}

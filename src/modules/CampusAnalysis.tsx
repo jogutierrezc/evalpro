@@ -3,6 +3,7 @@ import { SectionSummaryRow } from './SectionAnalysis';
 import { ResultWithDetails } from './ResultsModule';
 import { supabase } from '../lib/supabase';
 import { PrismaBrain } from '../lib/prisma-engine';
+import { AI_ENABLED } from '../lib/features';
 import {
     TrendingUp,
     Award,
@@ -99,7 +100,7 @@ const ComparisonRadarChart = ({ data, campusName, globalScore }: { data: RadarDa
                     const labelRadius = radius + 20;
                     const x = center + labelRadius * Math.cos(angle);
                     const y = center + labelRadius * Math.sin(angle);
-                    let anchor = "middle";
+                    let anchor: "start" | "middle" | "end" = "middle";
                     if (x > center + 10) anchor = "start";
                     if (x < center - 10) anchor = "end";
 
@@ -293,7 +294,7 @@ export default function CampusAnalysis({ campusName, results, organizationAverag
     // Effect to load/generate AI report
     useEffect(() => {
         const fetchAiReport = async () => {
-            if (!analysis || !campusName) return;
+            if (!AI_ENABLED || !analysis || !campusName) return;
             
             // Avoid re-fetching if we already have it for this campus
             if (aiReport && aiReport._campus === campusName) return;
@@ -389,7 +390,6 @@ export default function CampusAnalysis({ campusName, results, organizationAverag
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {/* Global Score Card */}
                 <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 flex items-center gap-6 relative overflow-hidden">
-                    <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500"></div>
                     <div className="relative w-24 h-24 flex items-center justify-center">
                         <svg className="w-full h-full transform -rotate-90">
                             <circle cx="48" cy="48" r="40" stroke="#f1f5f9" strokeWidth="8" fill="none" />
@@ -543,7 +543,7 @@ export default function CampusAnalysis({ campusName, results, organizationAverag
                 </div>
             </div>
 
-            {/* AI GENERATED REPORT SECTION */}
+            {AI_ENABLED && (
             <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 relative overflow-hidden mt-8">
                 {/* Header with Logo */}
                 <div className="bg-slate-900 p-8 text-white relative overflow-hidden">
@@ -682,6 +682,7 @@ export default function CampusAnalysis({ campusName, results, organizationAverag
                     )}
                 </div>
             </div>
+            )}
         </div>
     );
 }

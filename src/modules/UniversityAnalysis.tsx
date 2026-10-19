@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect } from 'react';
 import { ResultWithDetails } from './ResultsModule';
 import { PrismaBrain } from '../lib/prisma-engine';
+import { AI_ENABLED } from '../lib/features';
 import { supabase } from '../lib/supabase';
 import { PrismaLoader } from '../components/PrismaLoader';
 import {
@@ -92,7 +93,7 @@ const MultiRadarChart = ({ data, campuses, colors }: { data: RadarDataPoint[], c
                     const labelRadius = radius + 25;
                     const x = center + labelRadius * Math.cos(angle);
                     const y = center + labelRadius * Math.sin(angle);
-                    let anchor = "middle";
+                    let anchor: "start" | "middle" | "end" = "middle";
                     if (x > center + 20) anchor = "start";
                     if (x < center - 20) anchor = "end";
 
@@ -190,7 +191,7 @@ export default function UniversityAnalysis({ results }: Props) {
     useEffect(() => {
         const loadSavedReport = async () => {
             try {
-                const { data, error } = await supabase
+                const { data } = await supabase
                     .from('university_ai_reports')
                     .select('report')
                     .eq('report_type', 'general_advanced')
@@ -403,7 +404,7 @@ export default function UniversityAnalysis({ results }: Props) {
     }, [results, selectedTemplate]);
 
     const handleGenerateAdvancedReport = async () => {
-        if (!analysis || loadingAi) return;
+        if (!AI_ENABLED || !analysis || loadingAi) return;
         setLoadingAi(true);
         try {
             // 1. Check DB again just in case
@@ -640,7 +641,7 @@ export default function UniversityAnalysis({ results }: Props) {
             </div>
 
             {/* Bottom 10 Workers (Below Average) */}
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 border-l-4 border-l-red-500">
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 border-red-200">
                 <div className="flex items-center gap-2 mb-6">
                     <AlertTriangle className="w-6 h-6 text-red-500" />
                     <h3 className="font-bold text-slate-800 text-lg">Colaboradores por debajo de la Media Nacional (Top 10 Crítico)</h3>
@@ -681,7 +682,7 @@ export default function UniversityAnalysis({ results }: Props) {
                 </div>
             </div>
 
-            {/* PRISMA AI ADVANCED REPORT SECTION */}
+            {AI_ENABLED && (
             <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 relative overflow-hidden mt-8">
                 {/* Header with Logo */}
                 <div className="bg-slate-900 p-8 text-white relative overflow-hidden">
@@ -881,6 +882,7 @@ export default function UniversityAnalysis({ results }: Props) {
                     )}
                 </div>
             </div>
+            )}
         </div>
     );
 }

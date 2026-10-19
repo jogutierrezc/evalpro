@@ -116,14 +116,15 @@ export function Layout({ children, activeModule, onModuleChange }: LayoutProps) 
                   setSidebarOpen(false);
                 }}
                 className={`
-                  w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200
+                  relative w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm transition-colors
                   ${isActive
-                    ? 'bg-blue-600 text-white shadow-md shadow-blue-200'
-                    : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                    ? 'bg-blue-50 font-medium text-blue-800'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                   }
                 `}
               >
-                <Icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-gray-500 group-hover:text-gray-700'}`} />
+                {isActive && <span aria-hidden className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-blue-700" />}
+                <Icon className={`w-5 h-5 ${isActive ? 'text-blue-700' : 'text-slate-400'}`} />
                 {item.label}
               </button>
             );

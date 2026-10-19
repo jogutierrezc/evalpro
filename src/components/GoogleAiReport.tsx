@@ -8,7 +8,7 @@ interface GoogleAiReportProps {
     userName?: string;
 }
 
-export const GoogleAiReport: React.FC<GoogleAiReportProps> = ({ results, globalScore, userName }) => {
+export const GoogleAiReport: React.FC<GoogleAiReportProps> = ({ results }) => {
     const sortedResults = [...results].sort((a, b) => b.score - a.score);
     const topStrengths = sortedResults.slice(0, 3);
     const areasToImprove = sortedResults.slice(-3).reverse();

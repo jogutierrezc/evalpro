@@ -1,73 +1,73 @@
 {
-  "hash": "da443628",
-  "configHash": "df630308",
-  "lockfileHash": "997d1813",
-  "browserHash": "cc972571",
+  "hash": "86314989",
+  "configHash": "3ca7aeb6",
+  "lockfileHash": "6d1b9fb9",
+  "browserHash": "c5626f2d",
   "optimized": {
     "react": {
       "src": "../../node_modules/react/index.js",
       "file": "react.js",
-      "fileHash": "3979d132",
+      "fileHash": "a20c3eaf",
       "needsInterop": true
     },
     "react-dom": {
       "src": "../../node_modules/react-dom/index.js",
       "file": "react-dom.js",
-      "fileHash": "744d3305",
+      "fileHash": "f3885b04",
       "needsInterop": true
     },
     "react/jsx-dev-runtime": {
       "src": "../../node_modules/react/jsx-dev-runtime.js",
       "file": "react_jsx-dev-runtime.js",
-      "fileHash": "8e2bb757",
+      "fileHash": "86af7344",
       "needsInterop": true
     },
     "react/jsx-runtime": {
       "src": "../../node_modules/react/jsx-runtime.js",
       "file": "react_jsx-runtime.js",
-      "fileHash": "a994abac",
+      "fileHash": "df632e94",
       "needsInterop": true
     },
     "@google/generative-ai": {
       "src": "../../node_modules/@google/generative-ai/dist/index.mjs",
       "file": "@google_generative-ai.js",
-      "fileHash": "9590196e",
+      "fileHash": "386932ab",
       "needsInterop": false
     },
     "@lottiefiles/dotlottie-react": {
       "src": "../../node_modules/@lottiefiles/dotlottie-react/dist/browser/index.js",
       "file": "@lottiefiles_dotlottie-react.js",
-      "fileHash": "f66d8f7f",
+      "fileHash": "f1b27123",
       "needsInterop": false
     },
     "@supabase/supabase-js": {
       "src": "../../node_modules/@supabase/supabase-js/dist/index.mjs",
       "file": "@supabase_supabase-js.js",
-      "fileHash": "fd505687",
+      "fileHash": "4fd52682",
       "needsInterop": false
     },
     "exceljs": {
       "src": "../../node_modules/exceljs/dist/exceljs.min.js",
       "file": "exceljs.js",
-      "fileHash": "a00abddb",
+      "fileHash": "906f7a5e",
       "needsInterop": true
     },
     "react-dom/client": {
       "src": "../../node_modules/react-dom/client.js",
       "file": "react-dom_client.js",
-      "fileHash": "8d82ca5c",
+      "fileHash": "89fe5a85",
       "needsInterop": true
     },
     "recharts": {
       "src": "../../node_modules/recharts/es6/index.js",
       "file": "recharts.js",
-      "fileHash": "1984cc74",
+      "fileHash": "9494d6bb",
       "needsInterop": false
     },
     "xlsx": {
       "src": "../../node_modules/xlsx/xlsx.mjs",
       "file": "xlsx.js",
-      "fileHash": "362a9d75",
+      "fileHash": "f298ea08",
       "needsInterop": false
     }
   },

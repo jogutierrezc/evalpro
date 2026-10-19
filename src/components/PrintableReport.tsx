@@ -1,5 +1,5 @@
 import React from 'react';
-import { Building2, Zap, TrendingUp, Brain, Eye, Briefcase, Award, AlertCircle } from 'lucide-react';
+import { Zap, TrendingUp, Brain, Eye, Briefcase } from 'lucide-react';
 
 interface PrintableReportProps {
   userName: string;

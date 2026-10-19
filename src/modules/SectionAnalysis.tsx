@@ -110,7 +110,7 @@ export const RadarChart = ({ data, size = 300, comparisonScore }: { data: Sectio
           const x = center + labelRadius * Math.cos(angle);
           const y = center + labelRadius * Math.sin(angle);
 
-          let anchor = "middle";
+          let anchor: "start" | "middle" | "end" = "middle";
           if (x > center + 20) anchor = "start";
           if (x < center - 20) anchor = "end";
 

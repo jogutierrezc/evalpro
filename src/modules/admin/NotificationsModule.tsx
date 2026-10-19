@@ -3,8 +3,8 @@ import { supabase } from '../../lib/supabase';
 
 import {
   Mail, CheckCircle, Loader2, Send, AlertCircle, RefreshCw,
-  ChevronDown, ChevronRight, UserCheck, Clock, FileText, Users,
-  Filter, Building2, MapPin, Search, Eye, Settings, Edit3,
+  ChevronDown, ChevronRight, UserCheck, Clock, Users,
+  Filter, Search, Eye, Settings, Edit3,
 } from 'lucide-react';
 
 interface CompletedEvaluation {
@@ -42,6 +42,7 @@ interface SentNotification {
   source: string;
   status: string;
   evaluations_count: number;
+  resend_message_id?: string | null;
 }
 
 export default function NotificationsModule() {
@@ -52,7 +53,7 @@ export default function NotificationsModule() {
 
   // Data
   const [notifiableUsers, setNotifiableUsers] = useState<NotifiableUser[]>([]);
-  const [allUsers, setAllUsers] = useState<any[]>([]);
+  const [, setAllUsers] = useState<any[]>([]);
   const [campusList, setCampusList] = useState<string[]>([]);
   const [officesList, setOfficesList] = useState<{ id: string; name: string }[]>([]);
   const [sentHistory, setSentHistory] = useState<SentNotification[]>([]);
@@ -120,7 +121,7 @@ export default function NotificationsModule() {
     if (data?.value) {
       setEmailConfig({
         from_email: data.value.from_email || 'notificaciones@evalpro.udes.edu.co',
-        subject: data.value.subject || '✅ Evaluaciones Completadas — EvalPro UDES',
+        subject: data.value.subject || 'Evaluaciones Completadas — EvalPro UDES',
         html: data.value.html || '',
       });
     }
@@ -179,9 +180,9 @@ export default function NotificationsModule() {
       { data: templates },
       { data: users },
       { data: offices },
-      { data: periodFormTypes },
+      ,
       { data: formTypeRelations },
-      { data: formTypes },
+      ,
       { data: roles },
       { data: userManagers },
       { data: periodCollaborators },
@@ -222,9 +223,6 @@ export default function NotificationsModule() {
       if (!templatesByType[t.type]) templatesByType[t.type] = [];
       templatesByType[t.type].push({ id: t.id, name: t.name });
     });
-
-    // Form types allowed for this period
-    const allowedFormTypeKeys = (periodFormTypes || []).map((r: any) => r.form_type_key);
 
     // Relations grouped by form_type_key
     const relationsByFormType: Record<string, { evaluatorRole: string; evaluatedRole: string }[]> = {};

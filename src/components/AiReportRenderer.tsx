@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
     FileText, Award, Brain, BarChart3, TrendingUp, Target,
-    CheckCircle, AlertTriangle, Printer, Lightbulb
+    Printer, Lightbulb
 } from 'lucide-react';
 import {
     ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Legend

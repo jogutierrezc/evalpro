@@ -747,7 +747,7 @@ export default function OfficeAnalysis({ results }: Props) {
                                                     const lr = radius + 22;
                                                     const x = center + lr * Math.cos(a);
                                                     const y = center + lr * Math.sin(a);
-                                                    let anchor = 'middle';
+                                                    let anchor: 'start' | 'middle' | 'end' = 'middle';
                                                     if (x > center + 10) anchor = 'start';
                                                     if (x < center - 10) anchor = 'end';
                                                     return (

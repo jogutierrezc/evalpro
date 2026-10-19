@@ -3,10 +3,10 @@ import { supabase, EvaluationTemplate, User } from '../../lib/supabase';
 import { ChevronDown } from 'lucide-react';
 
 interface EvaluationsManagementProps {
-  onNavigate: (module: string) => void;
+  onNavigate?: (module: string) => void;
 }
 
-export function EvaluationsManagement({ onNavigate }: EvaluationsManagementProps) {
+export function EvaluationsManagement(_props: EvaluationsManagementProps) {
   const [loading, setLoading] = useState(true);
   const [campusMap, setCampusMap] = useState<Record<string, {
     offices: Record<string, { users: User[]; templatesByUser: Record<string, EvaluationTemplate[]>; evaluationsByUser?: Record<string, any[]> }>

@@ -8,7 +8,7 @@ import {
 import {
   LayoutDashboard, TrendingUp, Users, Filter, Search,
   MapPin, Briefcase, FileText, AlertCircle, CheckCircle2, X,
-  BarChart2, Layers, Building2, RefreshCw, ChevronLeft, ChevronRight,
+  Layers, Building2, RefreshCw, ChevronLeft, ChevronRight,
   Trophy, Award, History, ArrowUp, ArrowDown,
   Sparkles, Activity, BrainCircuit, Gauge
 } from 'lucide-react';
@@ -219,15 +219,6 @@ export default function VafAnalyticsModule({ publicMode }: Props) {
   }, [filteredData]);
 
   // ─── EXISTING CHARTS ───
-  const campusData = useMemo(() => {
-    const grouped: Record<string, { sum: number; count: number }> = {};
-    filteredData.forEach(e => {
-      if (!grouped[e.campus]) grouped[e.campus] = { sum: 0, count: 0 };
-      grouped[e.campus].sum += e.score; grouped[e.campus].count += 1;
-    });
-    return Object.entries(grouped).map(([name, data]) => ({ name, score: data.count > 0 ? Number((data.sum / data.count).toFixed(2)) : 0, total: data.count })).sort((a, b) => b.score - a.score);
-  }, [filteredData]);
-
   const surveyTypeData = useMemo(() => {
     const grouped: Record<string, { sum: number; count: number }> = {};
     filteredData.forEach(e => {
@@ -358,7 +349,6 @@ export default function VafAnalyticsModule({ publicMode }: Props) {
     });
 
     // ─── NEW: Matriz Campus vs Instrumento (Grouped Bar) ───
-    const campusVsInstrument: { campus: string }[] = [];
     const campusTmplScores: Record<string, Record<string, { sum: number; count: number }>> = {};
     filteredData.forEach(e => {
       if (!campusesToCompare.includes(e.campus)) return;
@@ -919,7 +909,7 @@ export default function VafAnalyticsModule({ publicMode }: Props) {
                       <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
                       <XAxis type="number" domain={[0, 5]} />
                       <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={100} />
-                      <RechartsTooltip formatter={(value: number, name: string) => [value.toFixed(2), name === 'avg' ? 'Promedio' : name]}
+                      <RechartsTooltip formatter={(value, name) => [(value as number).toFixed(2), name === 'avg' ? 'Promedio' : name]}
                         contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }} />
                       <Bar dataKey="avg" name="Promedio" radius={[0, 4, 4, 0]}>
                         {topOfficesData.map((entry, idx) => (
@@ -1019,9 +1009,9 @@ export default function VafAnalyticsModule({ publicMode }: Props) {
                             <XAxis type="number" dataKey="x" name={comparativeAnalysis.campuses[0]} domain={[0, 5]} label={{ value: comparativeAnalysis.campuses[0], position: 'bottom', fontSize: 11 }} />
                             <YAxis type="number" dataKey="y" name={comparativeAnalysis.campuses[1]} domain={[0, 5]} label={{ value: comparativeAnalysis.campuses[1], angle: -90, position: 'insideLeft', fontSize: 11 }} />
                             <ZAxis range={[60, 60]} />
-                            <RechartsTooltip cursor={{ strokeDasharray: '3 3' }} formatter={(value: number, name: string) => [value.toFixed(2), name]} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }} />
-                            <ReferenceLine ifOverflow x={3} stroke="#FF8C00" strokeDasharray="5 5" />
-                            <ReferenceLine ifOverflow y={3} stroke="#FF8C00" strokeDasharray="5 5" />
+                            <RechartsTooltip cursor={{ strokeDasharray: '3 3' }} formatter={(value, name) => [(value as number).toFixed(2), name]} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }} />
+                            <ReferenceLine ifOverflow="visible" x={3} stroke="#FF8C00" strokeDasharray="5 5" />
+                            <ReferenceLine ifOverflow="visible" y={3} stroke="#FF8C00" strokeDasharray="5 5" />
                             <Scatter data={comparativeAnalysis.scatterData} fill="#12239E">
                               {comparativeAnalysis.scatterData.map((d: any, idx: number) => (<Cell key={`cell-${idx}`} fill={d.x >= 4 && d.y >= 4 ? '#00B050' : d.x < 3 || d.y < 3 ? '#E81123' : '#118DFF'} />))}
                             </Scatter>
@@ -1433,7 +1423,6 @@ export default function VafAnalyticsModule({ publicMode }: Props) {
                   const top10 = allLeaders.slice(0, 10);
                   const worst10 = allLeaders.length > 10 ? [...allLeaders].slice(-10).reverse() : [];
                   const top100 = allLeaders.slice(0, 100);
-                  const maxScore = top10.length > 0 ? top10[0].avgScore : 0;
 
                   return (
                     <div key={sectionData.section} className="flex flex-col gap-6">
@@ -1649,7 +1638,7 @@ export default function VafAnalyticsModule({ publicMode }: Props) {
                                 <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
                                 <XAxis type="number" domain={[0, 5]} />
                                 <YAxis dataKey="leaderName" type="category" tick={{ fontSize: 11 }} width={100} />
-                                <RechartsTooltip formatter={(value: number) => [value.toFixed(2), 'Promedio']}
+                                <RechartsTooltip formatter={(value) => [(value as number).toFixed(2), 'Promedio']}
                                   contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }} />
                                 <Bar dataKey="avgScore" name="Promedio" radius={[0, 4, 4, 0]}>
                                   {top10.map((entry, idx) => (
@@ -1787,7 +1776,7 @@ export default function VafAnalyticsModule({ publicMode }: Props) {
                         <CartesianGrid strokeDasharray="3 3" vertical={false} />
                         <XAxis dataKey="name" tick={{ fontSize: 9 }} angle={-20} textAnchor="end" height={50} />
                         <YAxis domain={[0, 5]} />
-                        <RechartsTooltip formatter={(value: number, name: string) => [value.toFixed(2), name === 'score' ? 'Puntaje' : name]}
+                        <RechartsTooltip formatter={(value, name) => [(value as number).toFixed(2), name === 'score' ? 'Puntaje' : name]}
                           contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }} />
                         <Line type="monotone" dataKey="score" name="Puntaje" stroke="#12239E" strokeWidth={2} dot={{ r: 5, fill: '#12239E' }} />
                         <ReferenceLine y={3} stroke="#FF8C00" strokeDasharray="5 5" />

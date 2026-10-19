@@ -535,7 +535,7 @@ export function EvaluationForm({ evaluation, onClose }: EvaluationFormProps) {
 
           {/* Rating Scale Instructions */}
           <div className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded-lg">
-            <h3 className="font-semibold text-amber-900 mb-2">📊 Escala de Calificación</h3>
+            <h3 className="font-semibold text-amber-900 mb-2">Escala de Calificación</h3>
             <p className="text-sm text-amber-800 mb-3">
               Para las preguntas con escala numérica, seleccione de <strong>1 a 5</strong> de acuerdo con la frecuencia:
             </p>

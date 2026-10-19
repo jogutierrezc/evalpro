@@ -1,3 +1,4 @@
+import { PageHeader } from '../components/ui/PageHeader';
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, Evaluation, EvaluationTemplate, User } from '../lib/supabase';
@@ -26,8 +27,8 @@ export function EvaluationsModule({ onNavigate }: EvaluationsModuleProps) {
   const [evaluateOther, setEvaluateOther] = useState<Record<string, boolean>>({});
   const [personId, setPersonId] = useState<string | null>(null);
   const [evaluationCandidatesByTemplate, setEvaluationCandidatesByTemplate] = useState<Record<string, User[]>>({});
-  const [diagnostic, setDiagnostic] = useState<any>(null);
-  const [showDiag, setShowDiag] = useState(false);
+  const [, setDiagnostic] = useState<any>(null);
+  useState(false);
 
   // After migrating colaboradores into users, prefer the users.id as the person identifier
   const getPersonIdForUser = async (u: any) => {
@@ -90,36 +91,30 @@ export function EvaluationsModule({ onNavigate }: EvaluationsModuleProps) {
       const { data: evaluationsData, error } = await query;
       if (error) throw error;
 
-      const evaluationsWithDetails = await Promise.all(
-        (evaluationsData || []).map(async (evaluation) => {
-          const templateRes = await supabase.from('evaluation_templates').select('*').eq('id', evaluation.template_id).single();
+      // Consultas en lote (3 en total) en lugar de 3 por evaluación (antes N+1).
+      const rows = evaluationsData || [];
+      const uniq = (vals: (string | null | undefined)[]) => [...new Set(vals.filter((v): v is string => !!v))];
+      const templateIds = uniq(rows.map((e) => e.template_id));
+      const userIds = uniq(rows.flatMap((e) => [e.evaluator_id, e.evaluated_id]));
 
-          // Try to load evaluator from users (colaboradores migrated into users)
-          let evaluatorData: any = null;
-          try {
-            const { data: u } = await supabase.from('users').select('*').eq('id', evaluation.evaluator_id).maybeSingle();
-            evaluatorData = u || null;
-          } catch (e) {
-            evaluatorData = null;
-          }
+      const [templatesRes, usersRes] = await Promise.all([
+        templateIds.length
+          ? supabase.from('evaluation_templates').select('*').in('id', templateIds)
+          : Promise.resolve({ data: [] as any[] }),
+        userIds.length
+          ? supabase.from('users').select('*').in('id', userIds)
+          : Promise.resolve({ data: [] as any[] }),
+      ]);
 
-          // Try to load evaluated from users
-          let evaluatedData: any = null;
-          try {
-            const { data: u2 } = await supabase.from('users').select('*').eq('id', evaluation.evaluated_id).maybeSingle();
-            evaluatedData = u2 || null;
-          } catch (e) {
-            evaluatedData = null;
-          }
+      const templateById = new Map((templatesRes.data || []).map((t: any) => [t.id, t]));
+      const userById = new Map((usersRes.data || []).map((u: any) => [u.id, u]));
 
-          return {
-            ...evaluation,
-            template: templateRes.data,
-            evaluator: evaluatorData,
-            evaluated: evaluatedData,
-          };
-        })
-      );
+      const evaluationsWithDetails = rows.map((evaluation) => ({
+        ...evaluation,
+        template: templateById.get(evaluation.template_id) ?? null,
+        evaluator: userById.get(evaluation.evaluator_id) ?? null,
+        evaluated: userById.get(evaluation.evaluated_id) ?? null,
+      }));
 
       setEvaluations(evaluationsWithDetails);
     } catch (error) {
@@ -202,17 +197,16 @@ export function EvaluationsModule({ onNavigate }: EvaluationsModuleProps) {
         const userRoleId = user?.role_id;
 
         if (canonicalRole) {
+          // Una sola lectura de form_types (antes: una consulta por clave permitida).
+          const { data: formTypeRows } = allowedKeys.length
+            ? await supabase.from('form_types').select('key,label')
+            : { data: [] as any[] };
+          const formTypeKeys = new Set((formTypeRows || []).map((f: any) => f.key));
           for (const k of allowedKeys) {
             let kKey = k;
-            try {
-              const { data: ft1 } = await supabase.from('form_types').select('key').eq('key', k).limit(1);
-              if (!ft1 || ft1.length === 0) {
-                const { data: ft2 } = await supabase.from('form_types').select('key,label');
-                const matched = (ft2 || []).find((f: any) => (f.label || '').toString().toLowerCase() === (k || '').toString().toLowerCase());
-                if (matched) kKey = matched.key;
-              }
-            } catch (e) {
-              // ignore
+            if (!formTypeKeys.has(k)) {
+              const matched = (formTypeRows || []).find((f: any) => (f.label || '').toString().toLowerCase() === (k || '').toString().toLowerCase());
+              if (matched) kKey = matched.key;
             }
             normalizedAllowed.push(kKey);
           }
@@ -699,35 +693,15 @@ export function EvaluationsModule({ onNavigate }: EvaluationsModuleProps) {
     return <EvaluationForm evaluation={selectedEvaluation} onClose={handleCloseForm} />;
   }
 
-  const renderDiagnostic = () => {
-    if (!diagnostic) return null;
-    return (
-      <div className="my-4 p-3 bg-gray-50 border rounded text-xs text-gray-700">
-        <div className="flex justify-between items-center mb-2">
-          <strong>Diagnóstico (dev)</strong>
-          <button className="text-blue-600 text-xs" onClick={() => setShowDiag(!showDiag)}>{showDiag ? 'Ocultar' : 'Mostrar'}</button>
-        </div>
-        {showDiag && (
-          <pre className="whitespace-pre-wrap break-words text-xs">
-            {JSON.stringify(diagnostic, null, 2)}
-          </pre>
-        )}
-      </div>
-    );
-  };
-
   const currentPersonId = personId || (user ? (user as any).id : null);
   const myEvaluations = evaluations.filter((e) => e.evaluator_id === currentPersonId);
   const otherEvaluations = evaluations.filter((e) => e.evaluator_id !== currentPersonId && e.evaluated_id !== currentPersonId);
 
   return (
-    <div>
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Evaluaciones</h1>
-        <p className="text-gray-600">Gestiona y completa tus evaluaciones</p>
-      </div>
+    <div className="space-y-6">
+      <PageHeader title="Evaluaciones" description="Gestiona y completa tus evaluaciones" />
       {activePeriod && (
-        <div className="mb-6 p-4 rounded-lg bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 shadow-sm">
+        <div className="p-4 rounded-lg bg-blue-50 border border-blue-200">
           <div className="flex items-center gap-2 mb-1">
             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
             <span className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Período Activo</span>

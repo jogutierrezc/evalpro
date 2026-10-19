@@ -11,7 +11,7 @@ export function OfficesManagement() {
   const [searchTerm, setSearchTerm] = useState('');
   const [parentFilter, setParentFilter] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(9); // Grid layout, multiple of 3 looks good
+  const [itemsPerPage] = useState(9); // Grid layout, multiple of 3 looks good
   const [memberCounts, setMemberCounts] = useState<Record<string, number>>({});
   const [formData, setFormData] = useState({ name: '', description: '', parent_id: '' });
   const [showImport, setShowImport] = useState(false);

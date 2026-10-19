@@ -1,10 +1,11 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { AI_ENABLED } from '../../../lib/features';
 import {
   BarChart3, TrendingDown, AlertTriangle, CheckCircle,
   Users, Filter, FileText, Activity, Search, X,
-  ChevronDown, Building2, BrainCircuit, Sparkles, Loader2, Bot
+  Building2, BrainCircuit, Sparkles, Loader2, Bot
 } from 'lucide-react';
-import { AnalyticsEngine, DIMENSIONS, DimensionCode, AggregatedEval } from './engine';
+import { AnalyticsEngine, DIMENSIONS, DimensionCode } from './engine';
 
 interface VafEval {
   id: string;
@@ -81,7 +82,7 @@ const DimensionBar = ({ name, weight, score }: { name: string; weight: number; s
   );
 };
 
-export default function AnaliticaTab({ evaluations, filteredData, uniqueCampuses, uniqueOffices, uniqueTemplates, globalMetrics }: Props) {
+export default function AnaliticaTab({ evaluations, uniqueCampuses, uniqueOffices, uniqueTemplates, globalMetrics }: Props) {
   const [filterCampus, setFilterCampus] = useState<string>('');
   const [filterOffice, setFilterOffice] = useState<string>('');
   const [filterTemplate, setFilterTemplate] = useState<string>('');
@@ -208,7 +209,7 @@ Responde ÚNICAMENTE con el objeto JSON, sin texto adicional:
   return (
     <div className="space-y-6">
       {/* Hero Section */}
-      <div className="bg-gradient-to-br from-[#12239E] to-indigo-800 rounded-2xl p-6 text-white shadow-lg">
+      <div className="bg-[#12239E] rounded-2xl p-6 text-white shadow-sm">
         <div className="flex items-center gap-4 mb-3">
           <div className="bg-white/20 p-3 rounded-xl">
             <BrainCircuit className="w-8 h-8" />
@@ -217,7 +218,7 @@ Responde ÚNICAMENTE con el objeto JSON, sin texto adicional:
             <h2 className="text-xl font-bold">Motor de Analítica SGC-VAF</h2>
             <p className="text-indigo-200 text-sm">Arquitectura multidimensional · Índice de Desempeño Compuesto (IDC)</p>
           </div>
-          <button
+          {AI_ENABLED && <button
             onClick={handlePrismaAnalysis}
             disabled={prismaLoading}
             className="flex items-center gap-2 px-5 py-2.5 bg-white text-[#12239E] font-bold rounded-xl hover:bg-indigo-50 transition-all shadow-md disabled:opacity-60 text-sm"
@@ -228,7 +229,7 @@ Responde ÚNICAMENTE con el objeto JSON, sin texto adicional:
               <Sparkles className="w-4 h-4" />
             )}
             {prismaLoading ? 'Analizando...' : 'Análisis Prisma'}
-          </button>
+          </button>}
         </div>
         <p className="text-indigo-100 text-sm max-w-3xl">
           Basado en 6 dimensiones de evaluación y un catálogo de 180+ recomendaciones.
@@ -425,7 +426,7 @@ Responde ÚNICAMENTE con el objeto JSON, sin texto adicional:
       </div>
 
       {/* Prisma AI Analysis Modal */}
-      {showPrismaModal && prismaResult && (
+      {AI_ENABLED && showPrismaModal && prismaResult && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowPrismaModal(false)}>
           <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             {/* Modal header */}
@@ -459,7 +460,7 @@ Responde ÚNICAMENTE con el objeto JSON, sin texto adicional:
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Fortalezas */}
                 <div>
-                  <h4 className="text-sm font-bold text-emerald-700 uppercase mb-3">✅ Fortalezas</h4>
+                  <h4 className="text-sm font-bold text-emerald-700 uppercase mb-3">Fortalezas</h4>
                   <ul className="space-y-2">
                     {prismaResult.fortalezas?.map((f: string, i: number) => (
                       <li key={i} className="bg-emerald-50 rounded-lg px-4 py-2.5 text-sm text-emerald-800 border border-emerald-100">
@@ -474,7 +475,7 @@ Responde ÚNICAMENTE con el objeto JSON, sin texto adicional:
 
                 {/* Áreas de Mejora */}
                 <div>
-                  <h4 className="text-sm font-bold text-amber-700 uppercase mb-3">⚠️ Áreas de Mejora</h4>
+                  <h4 className="text-sm font-bold text-amber-700 uppercase mb-3">Áreas de Mejora</h4>
                   <ul className="space-y-2">
                     {prismaResult.areas_mejora?.map((a: string, i: number) => (
                       <li key={i} className="bg-amber-50 rounded-lg px-4 py-2.5 text-sm text-amber-800 border border-amber-100">
@@ -490,7 +491,7 @@ Responde ÚNICAMENTE con el objeto JSON, sin texto adicional:
 
               {/* Recomendaciones Estratégicas */}
               <div>
-                <h4 className="text-sm font-bold text-blue-700 uppercase mb-3">🎯 Recomendaciones Estratégicas</h4>
+                <h4 className="text-sm font-bold text-blue-700 uppercase mb-3">Recomendaciones Estratégicas</h4>
                 <div className="space-y-2">
                   {prismaResult.recomendaciones_estrategicas?.map((r: string, i: number) => (
                     <div key={i} className="bg-blue-50 rounded-xl px-5 py-3 border border-blue-100 flex items-start gap-3">
@@ -506,7 +507,7 @@ Responde ÚNICAMENTE con el objeto JSON, sin texto adicional:
 
               {/* Pronóstico */}
               <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl p-5 border border-indigo-100">
-                <h4 className="text-sm font-bold text-indigo-700 uppercase mb-2">🔮 Pronóstico de Evolución</h4>
+                <h4 className="text-sm font-bold text-indigo-700 uppercase mb-2">Pronóstico de Evolución</h4>
                 <p className="text-sm text-indigo-800 leading-relaxed">{prismaResult.pronostico}</p>
               </div>
             </div>
@@ -591,11 +592,11 @@ function RecommendationsList({
               </div>
               <div className="mt-2 space-y-2">
                 <p className="text-sm text-slate-700">
-                  <span className="font-bold text-cyan-700">💡 Sugerencia:</span>{' '}
+                  <span className="font-bold text-cyan-700">Sugerencia:</span>{' '}
                   {rec.recommendation}
                 </p>
                 <p className="text-sm text-slate-700 bg-white p-2.5 rounded-lg border border-slate-200">
-                  <span className="font-bold text-emerald-700">⚡ Acción:</span>{' '}
+                  <span className="font-bold text-emerald-700">Acción:</span>{' '}
                   {rec.action}
                 </p>
               </div>

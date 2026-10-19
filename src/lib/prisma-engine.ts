@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { AI_ENABLED } from "./features";
 
 /**
  * 🧠 PRISMA ENGINE - Core Logic & Narrative System
@@ -223,7 +224,7 @@ export const NARRATIVE_DB: Record<string, CategoryNarrative> = {
 
 // --- 4. CLASE GENERADORA DE NARRATIVA ---
 
-class NarrativeGenerator {
+export class NarrativeGenerator {
     static generate(categoryId: string, score: number, anchorFailed: boolean, anchorText: string = '') {
         const db = NARRATIVE_DB[categoryId] || NARRATIVE_DB['default'];
         let template: NarrativeTemplate;
@@ -310,6 +311,7 @@ export class PrismaBrain {
     }
 
     static async callAI(prompt: string): Promise<string> {
+        if (!AI_ENABLED) throw new Error('IA deshabilitada');
         const openRouterKey = import.meta.env.VITE_OPENROUTER_API_KEY;
         const googleKey = import.meta.env.VITE_GOOGLE_AI_KEY;
 
@@ -385,6 +387,7 @@ export class PrismaBrain {
     }
 
     static async enrichWithAi(result: AnalysisResult): Promise<AnalysisResult> {
+        if (!AI_ENABLED) return result;
         try {
             const prompt = `
             Realiza un análisis profundo y estratégico para el colaborador en la competencia: "${result.category}".
@@ -411,7 +414,7 @@ export class PrismaBrain {
                 ...result,
                 analisis: aiData.analisis || result.analisis,
                 accionSugerida: aiData.accionSugerida || result.accionSugerida,
-                arquetipo: `${result.arquetipo} ✨`
+                arquetipo: `${result.arquetipo}`
             };
         } catch (error) {
             console.error("Error in enrichWithAi:", error);
@@ -434,6 +437,7 @@ export class PrismaBrain {
     }
 
     static async enrichWithAiForManager(result: AnalysisResult, evaluatedName: string): Promise<AnalysisResult> {
+        if (!AI_ENABLED) return result;
         try {
             const prompt = `
             Genera una guía estratégica gerencial para el Líder sobre el desempeño de: ${evaluatedName}.
@@ -457,7 +461,7 @@ export class PrismaBrain {
                 ...result,
                 analisis: aiData.analisis || result.analisis,
                 accionSugerida: aiData.accionSugerida || result.accionSugerida,
-                arquetipo: `${result.arquetipo} 👥`
+                arquetipo: `${result.arquetipo}`
             };
         } catch (error) {
             console.error("Error in enrichWithAiForManager:", error);
@@ -466,6 +470,7 @@ export class PrismaBrain {
     }
 
     static async generateExecutiveReport(stats: any): Promise<string> {
+        if (!AI_ENABLED) return '';
         try {
             const prompt = `Reporte Ejecutivo Universidad. Promedio Global: ${stats.globalAverage.toFixed(2)}. Redacta 3 párrafos en Markdown.`;
             return await this.callAI(prompt);
@@ -475,6 +480,7 @@ export class PrismaBrain {
     }
 
     static async generateCampusReport(campusName: string, stats: any): Promise<any> {
+        if (!AI_ENABLED) return null;
         try {
             const prompt = `Reporte Campus ${campusName}. Puntaje: ${stats.globalScore.toFixed(2)}. Responde solo JSON con executiveSummary, strategicDiagnosis, strengths[], weaknesses[], recommendations[], actionPlan{shortTerm[], mediumTerm[], longTerm[]}.`;
             const text = await this.callAI(prompt);
@@ -486,6 +492,7 @@ export class PrismaBrain {
     }
 
     static async generateUniversityReport(stats: any): Promise<any> {
+        if (!AI_ENABLED) return null;
         try {
             const prompt = `Reporte Nacional UDES. Promedio: ${stats.globalAverage.toFixed(2)}. Responde solo JSON similar al de campus pero con lowPerformanceActionPlan.`;
             const text = await this.callAI(prompt);

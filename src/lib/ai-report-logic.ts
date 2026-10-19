@@ -1,6 +1,6 @@
 import {
-    Shield, Users, Building, MessageSquare, Target, Award,
-    Briefcase, Lightbulb, FileCheck, TrendingUp, Archive, AlertTriangle,
+    Shield, Users, Target,
+    Briefcase, FileCheck, TrendingUp, Archive, AlertTriangle,
     Brain, HeartHandshake, Scale
 } from 'lucide-react';
 

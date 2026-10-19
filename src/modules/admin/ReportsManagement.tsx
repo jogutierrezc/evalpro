@@ -31,6 +31,7 @@ import {
     Shield // Added Shield
 } from 'lucide-react';
 import { generarInformeIA, EvaluacionInput, InformeGenerado, TipoExamenVaf } from '../../lib/ai-report-logic';
+import { AI_ENABLED } from '../../lib/features';
 import { AiReportRenderer } from '../../components/AiReportRenderer';
 
 // --- Types ---
@@ -528,6 +529,7 @@ export function ReportsManagement() {
                             >
                                 Técnico
                             </button>
+                            {AI_ENABLED && (
                             <button
                                 onClick={() => { setReportType('ai-self'); setGenerated(false); }}
                                 className={`flex-1 py-1.5 px-3 rounded-md text-sm font-medium transition-all flex items-center justify-center gap-1 ${reportType === 'ai-self' ? 'bg-white text-amber-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
@@ -535,6 +537,7 @@ export function ReportsManagement() {
                                 <Sparkles className="w-3 h-3" />
                                 IA Auto
                             </button>
+                            )}
                             {user?.role === 'admin' && (
                                 <button
                                     onClick={() => { setReportType('vaf'); setGenerated(false); }}
@@ -654,7 +657,7 @@ export function ReportsManagement() {
 
                                 {/* Executive Summary Cards */}
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10 print:gap-4">
-                                    <div className="bg-white rounded-lg shadow-md p-6 border-t-4 border-amber-500 print:shadow-none print:border">
+                                    <div className="bg-white rounded-lg shadow-md p-6 border border-slate-200 print:shadow-none print:border">
                                         <h3 className="text-slate-500 text-sm font-semibold uppercase mb-2">Puntaje Ponderado</h3>
                                         <div className="flex items-end gap-2">
                                             <span className="text-5xl font-bold text-slate-900">{reportData.executive.weightedScore}</span>
@@ -663,7 +666,7 @@ export function ReportsManagement() {
                                         <p className="text-xs text-slate-400 mt-2">Escala PRISMA Global</p>
                                     </div>
 
-                                    <div className="bg-white rounded-lg shadow-md p-6 border-t-4 border-slate-700 print:shadow-none print:border">
+                                    <div className="bg-white rounded-lg shadow-md p-6 border border-slate-200 print:shadow-none print:border">
                                         <h3 className="text-slate-500 text-sm font-semibold uppercase mb-2">Perfil Obtenido</h3>
                                         <div className="flex items-center gap-2 mt-2">
                                             <Award className="text-amber-500 w-8 h-8" />
@@ -674,7 +677,7 @@ export function ReportsManagement() {
                                         <p className="text-xs text-slate-400 mt-3">Nivel de desempeño destacado</p>
                                     </div>
 
-                                    <div className="bg-white rounded-lg shadow-md p-6 border-t-4 border-slate-300 md:col-span-1 print:shadow-none print:border">
+                                    <div className="bg-white rounded-lg shadow-md p-6 border border-slate-200 md:col-span-1 print:shadow-none print:border">
                                         <h3 className="text-slate-500 text-sm font-semibold uppercase mb-2">Cumplimiento Bruto</h3>
                                         <div className="flex items-end gap-2">
                                             <span className="text-4xl font-bold text-slate-700">{reportData.executive.rawScore}</span>
@@ -685,7 +688,7 @@ export function ReportsManagement() {
                                 </div>
 
                                 {/* Introduction Summary */}
-                                <section className="bg-white rounded-lg shadow-sm p-8 mb-10 border-l-4 border-slate-900 print:shadow-none print:border print:p-4">
+                                <section className="bg-white rounded-lg shadow-sm p-8 mb-10 border border-slate-200 print:shadow-none print:border print:p-4">
                                     <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
                                         <User className="text-amber-600" size={24} />
                                         Resumen Ejecutivo
@@ -727,7 +730,7 @@ export function ReportsManagement() {
 
                                     {/* Key Insight Box */}
                                     <div className="bg-slate-800 text-slate-100 p-6 rounded-lg shadow-md flex flex-col justify-center print:bg-slate-100 print:text-slate-900 print:border print:shadow-none">
-                                        <h4 className="text-amber-500 font-bold uppercase tracking-wider text-sm mb-4 print:text-amber-700">Diagnóstico IA</h4>
+                                        <h4 className="text-amber-500 font-bold uppercase tracking-wider text-sm mb-4 print:text-amber-700">Diagnóstico</h4>
                                         <p className="italic text-slate-300 mb-4 print:text-slate-700">
                                             "{reportData.executive.weightedScore >= 4 ? 'Alto alineamiento cultural y operativo.' : 'Brechas significativas entre potencial y ejecución.'}"
                                         </p>
@@ -792,12 +795,12 @@ export function ReportsManagement() {
                                 <section className="print:break-before-page">
                                     <div className="flex items-center gap-3 mb-6">
                                         <Target className="text-amber-600" size={28} />
-                                        <h2 className="text-2xl font-bold text-slate-900">Recomendaciones Estratégicas (IA)</h2>
+                                        <h2 className="text-2xl font-bold text-slate-900">Recomendaciones Estratégicas</h2>
                                     </div>
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         {reportData.recommendations.map((rec) => (
-                                            <div key={rec.id} className="bg-white p-6 rounded-lg border-l-4 border-amber-500 shadow-sm flex flex-col h-full print:shadow-none print:border">
+                                            <div key={rec.id} className="bg-white p-6 rounded-lg border border-slate-200 shadow-sm flex flex-col h-full print:shadow-none print:border">
                                                 <div className="flex justify-between items-start mb-3">
                                                     <span className="text-slate-300 font-bold text-xl">{rec.id}</span>
                                                     <span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs font-semibold">{rec.goal}</span>

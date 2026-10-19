@@ -1,9 +1,10 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { User, TrendingUp, Shield, Zap, Target, BookOpen, AlertCircle, CheckCircle, ChevronDown, ChevronUp, BarChart2, Briefcase, Brain, Layout, Users, Sparkles, Printer, Calendar } from 'lucide-react';
+import { useState, useMemo, useEffect } from 'react';
+import { Zap, Target, AlertCircle, Brain, Sparkles, Printer, Calendar } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useEvaluationReport } from '../hooks/useEvaluationReport';
 import { usePeriods } from '../hooks/usePeriods';
-import { PrismaBrain, AnalysisResult } from '../lib/prisma-engine';
+import { PrismaBrain, AnalysisResult, PRISMA_KNOWLEDGE_BASE, NarrativeGenerator } from '../lib/prisma-engine';
+import { AI_ENABLED } from '../lib/features';
 import { supabase } from '../lib/supabase';
 import { GoogleAiReport } from '../components/GoogleAiReport';
 import { PrismaLoader } from '../components/PrismaLoader';
@@ -72,7 +73,7 @@ const RadarChart = ({ data, size = 300, comparisonScore }: { data: AnalysisResul
                 })}
 
                 {/* Axes */}
-                {data.map((d, i) => {
+                {data.map((_d, i) => {
                     const coords = getCoordinates(5, i);
                     return (
                         <line
@@ -94,7 +95,7 @@ const RadarChart = ({ data, size = 300, comparisonScore }: { data: AnalysisResul
                     const x = center + labelRadius * Math.cos(angle);
                     const y = center + labelRadius * Math.sin(angle);
 
-                    let anchor = "middle";
+                    let anchor: "start" | "middle" | "end" = "middle";
                     if (x > center + 20) anchor = "start";
                     if (x < center - 20) anchor = "end";
 
@@ -358,7 +359,7 @@ const PrismaReport: React.FC<PrismaReportProps> = ({ targetUserId, evaluationId,
     }, [displayResults, rawEvaluation]);
 
     const handleEnhanceWithAi = async () => {
-        if (isEnhancing) return;
+        if (!AI_ENABLED || isEnhancing) return;
         setIsEnhancing(true);
         try {
             // Process sequentially to avoid Rate Limits (429) on free tier
@@ -598,7 +599,7 @@ const PrismaReport: React.FC<PrismaReportProps> = ({ targetUserId, evaluationId,
 
                     {/* Bottom Section: AI Results or CTA */}
                     <div>
-                        {isEnhancing ? (
+                        {!AI_ENABLED ? null : isEnhancing ? (
                             <div className="bg-white rounded-2xl p-12 shadow-xl border border-slate-100">
                                 <PrismaLoader />
                             </div>

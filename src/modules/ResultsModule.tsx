@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
+import { PageHeader } from '../components/ui/PageHeader';
+import { useState, useEffect, useMemo, Fragment } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, Evaluation } from '../lib/supabase';
 import { BarChart3, Eye, Trash2, X, Search, Filter, AlertCircle, ChevronLeft, ChevronRight, Building2, RefreshCw } from 'lucide-react';
@@ -41,19 +42,6 @@ export interface ResultWithDetails {
   sectionsSummary?: SectionSummaryRow[];
 }
 
-const normalizeValue = (val: any): number => {
-  if (val === null || val === undefined || val === '') return 0;
-  if (typeof val === 'number') return val;
-  if (typeof val === 'string') {
-    const parsed = parseFloat(val.replace(',', '.'));
-    return isNaN(parsed) ? 0 : parsed;
-  }
-  if (typeof val === 'object') {
-    return Number(val.value || val.rating || val.score || val.response || 0);
-  }
-  return 0;
-};
-
 // Helper for pagination
 const getVisiblePages = (current: number, total: number) => {
   if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
@@ -71,7 +59,7 @@ export function ResultsModule() {
   const [loading, setLoading] = useState(true);
   const [loadingDetailed, setLoadingDetailed] = useState(false);
   const [detailedLoaded, setDetailedLoaded] = useState(false);
-  const [allDataLoaded, setAllDataLoaded] = useState(false);
+  const [, setAllDataLoaded] = useState(false);
   const [totalInDB, setTotalInDB] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<'individual' | 'office' | 'campus' | 'university'>('individual');
   
@@ -501,11 +489,8 @@ export function ResultsModule() {
   }
 
   return (
-    <div>
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Resultados</h1>
-        <p className="text-gray-600">Análisis de evaluaciones y desempeño</p>
-      </div>
+    <div className="space-y-6">
+      <PageHeader title="Resultados" description="Análisis de evaluaciones y desempeño" />
 
       {user?.role !== 'employee' && (
         <div className="mb-6 flex items-center justify-between">
@@ -856,7 +841,7 @@ export function ResultsModule() {
                 if (!acc[key]) acc[key] = { office, campus, results: [] };
                 acc[key].results.push(r);
                 return acc;
-              }, {} as Record<string, { office: string; campus: string; results: ResultWithDetails }>);
+              }, {} as Record<string, { office: string; campus: string; results: ResultWithDetails[] }>);
 
               const officeSummary = Object.values(officeGroups).map(group => {
                 const avgScore = group.results.reduce((sum, r) => sum + (r.avgScore || 0), 0) / group.results.length;
@@ -908,8 +893,8 @@ export function ResultsModule() {
                           </tr>
                         ) : (
                           paginatedOfficeSummary.map((summary) => (
-                            <>
-                              <tr key={`${summary.office}-${summary.campus}`} className="hover:bg-gray-50 transition-colors">
+                            <Fragment key={`${summary.office}-${summary.campus}`}>
+                              <tr className="hover:bg-gray-50 transition-colors">
                                 <td className="px-4 py-3 font-medium text-gray-900">{summary.office}</td>
                                 <td className="px-4 py-3 text-gray-700">{summary.campus}</td>
                                 <td className="px-4 py-3 text-center text-gray-900 font-semibold">{summary.count}</td>
@@ -972,7 +957,7 @@ export function ResultsModule() {
                                   </td>
                                 </tr>
                               )}
-                            </>
+                            </Fragment>
                           ))
                         )}
                       </tbody>
@@ -1127,7 +1112,7 @@ export function ResultsModule() {
                                 </div>
                             </div>
                             
-                            <h3 className="text-lg font-bold text-slate-800 mb-1 group-hover:text-indigo-700 transition-colors">{campus}</h3>
+                            <h3 className="text-lg font-bold text-slate-800 mb-1 group-hover:text-blue-700 transition-colors">{campus}</h3>
                             <p className="text-sm text-slate-500 mb-4">Sede Universitaria</p>
                             
                             <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-100">

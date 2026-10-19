@@ -1,8 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { 
-    LineChart, 
-    Line, 
     XAxis, 
     YAxis, 
     CartesianGrid, 
@@ -46,7 +44,7 @@ export const HistoricalScoresChart: React.FC<HistoricalScoresChartProps> = ({ us
                     .map(ev => ({
                         date: new Date(ev.completed_at).toLocaleDateString('es-ES', { month: 'short', year: '2-digit' }),
                         score: parseFloat(ev.results[0].overall_score || 0),
-                        period: ev.period ? `Periodo ${ev.period.year}` : 'General',
+                        period: ev.period ? `Periodo ${(ev.period as unknown as { year: number }).year}` : 'General',
                         fullDate: ev.completed_at
                     }));
 
@@ -124,7 +122,7 @@ export const HistoricalScoresChart: React.FC<HistoricalScoresChartProps> = ({ us
                                 boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)',
                                 padding: '12px'
                             }}
-                            formatter={(value: number) => [value, 'Puntaje']}
+                            formatter={(value) => [value as number, 'Puntaje']}
                             labelFormatter={(label) => `Fecha: ${label}`}
                         />
                         <Area 

@@ -151,8 +151,8 @@ async function generateStyledExcel(
 export default function ExportModule() {
   const [loading, setLoading] = useState(true);
   const [evaluations, setEvaluations] = useState<EvaluationRow[]>([]);
-  const [detailedResults, setDetailedResults] = useState<EvaluationDetail[]>([]);
-  const [templateDataMap, setTemplateDataMap] = useState<Map<string, TemplateData>>(new Map());
+  useState<EvaluationDetail[]>([]);
+  useState<Map<string, TemplateData>>(new Map());
 
   const [filterCampus, setFilterCampus] = useState('all');
   const [filterOffice, setFilterOffice] = useState('all');
@@ -459,11 +459,6 @@ export default function ExportModule() {
     const set = new Set(evaluations.map(e => e.template_name).filter(Boolean));
     return Array.from(set).sort();
   }, [evaluations]);
-
-  const filteredDetails = useMemo(() => {
-    // This state is now only populated during the export process.
-    return detailedResults;
-  }, [detailedResults]);
 
   const exportIndividual = async (data: EvaluationDetail[]) => {
     if (data.length === 0) return;

@@ -812,7 +812,6 @@ export function DashboardModule() {
                >
                  <option value="all">Todos los tiempos</option>
                  {periods.map(p => {
-                    const now = new Date();
                     const today = new Date().toISOString().slice(0, 10);
                     const isActive = p.start_date <= today && p.end_date >= today;
                     return (
