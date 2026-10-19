@@ -97,7 +97,8 @@ function AppContent() {
           (user && (() => {
             const lower = (user.role || '').toString().toLowerCase();
             const managerKeywords = ['director', 'programa', 'lider', 'vaf', 'proceso', 'rectoria', 'vicerectoria', 'jefe'];
-            const isManager = managerKeywords.some(k => lower.includes(k));
+            // "colaborador_vaf" contiene "vaf" pero es un evaluado/evaluador de base: no es jefe.
+            const isManager = managerKeywords.some(k => lower.includes(k)) && !lower.includes('colaborador');
             return (user.role === 'admin' || isManager) ? <EvaluationsManagement onNavigate={setActiveModule} /> : <EvaluationsModule onNavigate={setActiveModule} />;
           })())
         )}

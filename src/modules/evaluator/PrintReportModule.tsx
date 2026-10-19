@@ -32,6 +32,32 @@ const PRINT_CSS = `
   @media screen { .sheet { padding: 18mm 16mm; box-shadow: 0 1px 3px rgba(0,0,0,.12); margin: 24px auto; min-height: 297mm; display:flex; flex-direction:column; border-radius: 4px; } }
 `;
 
+// Mismo cálculo que el informe individual: promedio por sección y luego promedio de secciones.
+function normalizeValue(val: any): number {
+  if (val === null || val === undefined || val === '') return 0;
+  if (typeof val === 'number') return val;
+  if (typeof val === 'string') {
+    const parsed = parseFloat(val.replace(',', '.'));
+    return isNaN(parsed) ? 0 : parsed;
+  }
+  if (typeof val === 'object') return Number(val.value || val.rating || val.score || val.response || 0);
+  return 0;
+}
+
+function scoreFromResponses(responses: any[]): number | null {
+  const sections: Record<string, { total: number; count: number }> = {};
+  responses.forEach((r) => {
+    const title = r.question?.section?.title || 'General';
+    const v = normalizeValue(r.response_value);
+    if (v === 0) return;
+    if (!sections[title]) sections[title] = { total: 0, count: 0 };
+    sections[title].total += v;
+    sections[title].count += 1;
+  });
+  const averages = Object.values(sections).map((s) => round1(s.total / s.count));
+  return averages.length ? round1(mean(averages)) : null;
+}
+
 interface GroupRow {
   id: string;
   name: string;
@@ -76,7 +102,7 @@ function IndividualSheet({ evaluationId }: { evaluationId: string }) {
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-[.08em] text-slate-500">Evaluación de personal · Individual</p>
           <h1 className="mt-1">{inputData.evaluado.nombre}</h1>
-          <p className="mt-1 text-xs text-slate-600">{inputData.evaluado.rol} · {inputData.evaluado.fecha}</p>
+          <p className="mt-1 text-xs text-slate-600">{inputData.evaluado.rol.replace(/_/g, ' ')} · {inputData.evaluado.fecha}</p>
         </div>
         <div className="text-right text-xs text-slate-600">
           <p>Evaluador</p>
@@ -116,7 +142,7 @@ function IndividualSheet({ evaluationId }: { evaluationId: string }) {
           </ul>
         </div>
         <div>
-          <h2>Dimensiones a fortalecer</h2>
+          <h2>Dimensiones con menor puntaje</h2>
           <ul className="m-0 list-none space-y-1 p-0">
             {toImprove.map((d) => <li key={d.name} className="flex justify-between"><span>{d.name}</span><span className="n">{d.score.toFixed(1)}</span></li>)}
           </ul>
@@ -146,7 +172,7 @@ function GroupSheet({ ids }: { ids: string[] }) {
     (async () => {
       const { data, error } = await supabase
         .from('evaluations')
-        .select('id, created_at, template:evaluation_templates(name), evaluated:users!evaluated_id(full_name), results:evaluation_results(overall_score)')
+        .select('id, created_at, template:evaluation_templates(name), evaluated:users!evaluated_id(full_name), responses:evaluation_responses(response_value, question:evaluation_questions(section:evaluation_sections(title)))')
         .in('id', ids);
       if (cancelled) return;
       if (error || !data) {
@@ -154,8 +180,7 @@ function GroupSheet({ ids }: { ids: string[] }) {
         return;
       }
       const mapped: GroupRow[] = (data as any[]).map((e) => {
-        const raw = e.results?.[0]?.overall_score;
-        const score = raw == null ? null : Number(raw);
+        const score = scoreFromResponses(e.responses || []);
         return {
           id: e.id,
           name: e.evaluated?.full_name || 'Sin nombre',
@@ -182,7 +207,7 @@ function GroupSheet({ ids }: { ids: string[] }) {
     <article className="sheet">
       <header className="border-b-2 border-slate-900 pb-3">
         <p className="text-[10px] font-semibold uppercase tracking-[.08em] text-slate-500">Evaluación de personal · Grupal</p>
-        <h1 className="mt-1">Informe de {rows.length} evaluación{rows.length !== 1 ? 'es' : ''}</h1>
+        <h1 className="mt-1">Informe de {rows.length} {rows.length === 1 ? 'evaluación' : 'evaluaciones'}</h1>
         <p className="mt-1 text-xs text-slate-600">Promedio del grupo: <span className="font-mono font-medium text-slate-900">{average.toFixed(1)} / 5</span></p>
       </header>
 
@@ -201,7 +226,7 @@ function GroupSheet({ ids }: { ids: string[] }) {
       <h2>Personas evaluadas</h2>
       <table>
         <thead>
-          <tr><th>Colaborador</th><th>Formulario</th><th>Fecha</th><th className="n">Puntaje</th><th>Nivel</th></tr>
+          <tr><th>Colaborador</th><th>Formulario</th><th>Fecha</th><th className="n">Puntaje</th><th style={{ paddingLeft: 16 }}>Nivel</th></tr>
         </thead>
         <tbody>
           {rows.map((r) => (
@@ -210,7 +235,7 @@ function GroupSheet({ ids }: { ids: string[] }) {
               <td>{r.template}</td>
               <td>{r.date}</td>
               <td className="n">{r.score === null ? '—' : r.score.toFixed(1)}</td>
-              <td style={{ color: r.score === null ? undefined : levelOf(r.score).color }}>{r.score === null ? 'Sin resultado' : levelOf(r.score).label}</td>
+              <td style={{ paddingLeft: 16, color: r.score === null ? undefined : levelOf(r.score).color }}>{r.score === null ? 'Sin resultado' : levelOf(r.score).label}</td>
             </tr>
           ))}
         </tbody>

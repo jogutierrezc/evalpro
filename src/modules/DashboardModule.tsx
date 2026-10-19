@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { EvaluationForm } from './evaluations/EvaluationForm';
 import { HistoricalScoresChart } from '../components/HistoricalScoresChart';
+import { CollaboratorDashboard } from './dashboard/CollaboratorDashboard';
 import { isPeriodActive } from '../hooks/usePeriods';
 
 export function DashboardModule() {
@@ -790,6 +791,34 @@ export function DashboardModule() {
     return <EvaluationForm evaluation={selectedEvaluation} onClose={handleCloseForm} />;
   }
 
+  if (!isAdmin) {
+    return (
+      <CollaboratorDashboard
+        user={user}
+        stats={stats}
+        availableTemplatesCount={availableTemplatesCount}
+        availableTemplates={availableTemplates}
+        managerCandidatesMap={managerCandidatesMap}
+        selfEvalAllowedMap={selfEvalAllowedMap}
+        userEvaluationsMap={userEvaluationsMap}
+        inProgressEvaluations={inProgressEvaluations}
+        selectedCandidate={selectedCandidate}
+        setSelectedCandidate={setSelectedCandidate}
+        dropdownOpenMap={dropdownOpenMap}
+        setDropdownOpenMap={setDropdownOpenMap}
+        searchTermMap={searchTermMap}
+        setSearchTermMap={setSearchTermMap}
+        dropdownRefs={dropdownRefs}
+        allUsers={allUsers}
+        historyTargetUser={historyTargetUser}
+        setHistoryTargetUser={setHistoryTargetUser}
+        activePeriod={activePeriod}
+        onOpenEvaluation={setSelectedEvaluation}
+        onReload={loadUserEvaluations}
+      />
+    );
+  }
+
   return (
     <div className="font-sans text-slate-800">
       <div className="max-w-7xl mx-auto">
@@ -827,7 +856,7 @@ export function DashboardModule() {
 
         {/* Active Period Banner - For all users */}
         {activePeriod && (
-          <div className="mb-6 p-4 rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 shadow-sm">
+          <div className="mb-6 p-4 rounded-xl bg-blue-50 border border-blue-200">
             <div className="flex items-center gap-2 mb-1">
               <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
               <span className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Período Activo</span>
@@ -851,6 +880,7 @@ export function DashboardModule() {
         )}
 
         {/* Stats Grid */}
+        {isAdmin ? (
         <div className={`grid grid-cols-1 ${isAdmin ? 'md:grid-cols-2 lg:grid-cols-5' : 'md:grid-cols-3'} gap-6 mb-10`}>
           {statCards.map((stat, index) => (
             <div
@@ -867,6 +897,17 @@ export function DashboardModule() {
             </div>
           ))}
         </div>
+
+        ) : (
+        <div className="mb-10 grid grid-cols-3 divide-x divide-slate-200 overflow-hidden rounded-lg border border-slate-200 bg-white">
+          {statCards.map((stat) => (
+            <div key={stat.label} className="px-5 py-4">
+              <p className="text-xs text-slate-500">{stat.label}</p>
+              <p className="tabular mt-1 text-3xl font-semibold text-slate-900">{stat.value}</p>
+            </div>
+          ))}
+        </div>
+        )}
 
         {/* Campus Distribution Section - Admin Only */}
         {isAdmin && Object.keys(usersByCampus).length > 0 && (

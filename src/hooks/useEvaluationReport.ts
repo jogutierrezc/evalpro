@@ -192,7 +192,7 @@ export function useEvaluationReport({ evaluationId, userId, periodId }: UseEvalu
             const evaluadoUser = (currentEval as any).evaluated;
             const evaluatorUser = (currentEval as any).evaluator;
 
-            let evaluadorNombre = 'Sistema Neural de Análisis Prisma UDES';
+            let evaluadorNombre = evaluatorUser?.full_name || 'Evaluador no identificado';
             if (tipoInforme === 'LIDERAZGO_TACTICO') {
                 evaluadorNombre = evaluatorUser?.full_name || 'Líder Evaluador';
             }

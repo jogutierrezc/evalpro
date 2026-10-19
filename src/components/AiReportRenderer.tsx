@@ -102,7 +102,7 @@ export function AiReportRenderer({ inputData, informe, onPrint }: AiReportRender
                                     {inputData.tipoInforme === 'LIDERAZGO_TACTICO' ? 'Evaluadora' : 'Evaluado por'}
                                 </div>
                                 <div className="font-semibold text-slate-300 uppercase">
-                                    {inputData.evaluadorNombre || 'Sistema Neural de Análisis Prisma UDES'}
+                                    {inputData.evaluadorNombre || 'Evaluador no identificado'}
                                 </div>
                                 {inputData.tipoInforme === 'LIDERAZGO_TACTICO' && (
                                     <div className="text-amber-500 text-xs mt-1">Dra. I.A. Psicológica Gemini</div>

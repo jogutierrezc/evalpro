@@ -74,7 +74,12 @@ export function EvaluatorView(props: EvaluatorViewProps) {
     const ctx = gsap.context(() => {
       gsap.from('[data-reveal]', { y: 8, opacity: 0, duration: 0.28, ease: 'power2.out', stagger: 0.04, clearProps: 'transform,opacity' });
     }, scope);
-    return () => ctx.revert();
+    // Salida de seguridad: si la animación no avanza, el contenido nunca queda invisible.
+    const safety = window.setTimeout(() => ctx.revert(), 1500);
+    return () => {
+      window.clearTimeout(safety);
+      ctx.revert();
+    };
   }, [tab]);
 
   const nextEvaluation = pending[0];
@@ -218,7 +223,7 @@ export function EvaluatorView(props: EvaluatorViewProps) {
       )}
 
       {/* Pestañas */}
-      <div role="tablist" aria-label="Secciones" className="flex gap-1 overflow-x-auto border-b border-slate-200">
+      <div role="tablist" aria-label="Secciones" className="flex gap-1 overflow-x-auto border-b border-slate-200 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {tabs.filter((t) => t.show).map((t) => (
           <button
             key={t.id}

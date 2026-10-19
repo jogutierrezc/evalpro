@@ -27,7 +27,7 @@ export function Layout({ children, activeModule, onModuleChange }: LayoutProps) 
 
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['*'] },
-    { id: 'evaluations', label: 'Evaluaciones', icon: FileText, roles: ['admin'] },
+    { id: 'evaluations', label: 'Evaluaciones', icon: FileText, roles: ['*'] },
     { id: 'results', label: 'Resultados', icon: BarChart3, roles: ['admin'] },
     { id: 'reports', label: 'Informes', icon: FileText, roles: ['admin'] },
     { id: 'export', label: 'Exportar', icon: FileSpreadsheet, roles: ['admin'] },
