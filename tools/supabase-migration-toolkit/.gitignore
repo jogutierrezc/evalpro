@@ -1,0 +1,23 @@
+# Dependencies
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+.env
+.venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Volcados de datos (datos personales, hashes de contrasena)
+exports/
+*.sql.gz

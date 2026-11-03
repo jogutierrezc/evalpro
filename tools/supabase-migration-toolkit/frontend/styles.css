@@ -1,0 +1,30 @@
+body {
+    font-family: Arial, sans-serif;
+    background: #1a1a2e;
+    color: #eee;
+    margin: 0;
+    padding: 20px;
+}
+.container { max-width: 800px; margin: 0 auto; }
+.container h1 { color: #4CC9F0; }
+.actions { margin: 20px 0; }
+.btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    background: #16213e;
+    color: white;
+}
+.btn.primary {
+    background: #4CC9F0;
+    color: black;
+}
+.list {
+    background: #16213e;
+    padding: 20px;
+    border-radius: 8px;
+    margin-top: 20px;
+}
+.list p { color: #aaa; }
+code { background: #000; padding: 2px 6px; border-radius: 3px; }
