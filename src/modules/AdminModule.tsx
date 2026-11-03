@@ -1,6 +1,6 @@
 import { Suspense, lazy, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import { Building2, Users, FileEdit, Layers, Shield, Clock, FileText, AlertTriangle, BarChart3, Mail } from 'lucide-react';
+import { Building2, Users, FileEdit, Layers, Shield, Clock, FileText, AlertTriangle, BarChart3, Mail, Database } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 
 // Cada pestaña se carga al abrirla: el panel admin ya no arrastra todo su código en el primer render.
@@ -15,8 +15,9 @@ const RolesManagement = lazy(() => import('./admin/RolesManagement'));
 const EvaluationPeriodsManagement = lazy(() => import('./admin/EvaluationPeriodsManagement'));
 const NotificationsModule = lazy(() => import('./admin/NotificationsModule'));
 const VafAnalyticsModule = lazy(() => import('./admin/VafAnalyticsModule'));
+const DatabaseExportModule = lazy(() => import('./admin/DatabaseExportModule'));
 
-type AdminTab = 'offices' | 'users' | 'roles' | 'evaluations' | 'pending' | 'templates' | 'form_types' | 'periods' | 'reports' | 'notifications' | 'vaf-analytics';
+type AdminTab = 'offices' | 'users' | 'roles' | 'evaluations' | 'pending' | 'templates' | 'form_types' | 'periods' | 'reports' | 'notifications' | 'vaf-analytics' | 'db-export';
 
 interface TabDef {
   id: AdminTab;
@@ -56,6 +57,10 @@ const GROUPS: TabGroup[] = [
       { id: 'vaf-analytics', label: 'Analítica VAF', icon: BarChart3 },
       { id: 'notifications', label: 'Notificaciones', icon: Mail },
     ],
+  },
+  {
+    label: 'Sistema',
+    tabs: [{ id: 'db-export', label: 'Exportar base de datos', icon: Database }],
   },
 ];
 
@@ -146,6 +151,7 @@ export function AdminModule() {
               {activeTab === 'reports' && <ReportsManagement />}
               {activeTab === 'notifications' && <NotificationsModule />}
               {activeTab === 'vaf-analytics' && <VafAnalyticsModule />}
+              {activeTab === 'db-export' && <DatabaseExportModule />}
             </div>
           </Suspense>
         </section>
