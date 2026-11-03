@@ -1,10 +1,13 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
 // https://vitejs.dev/config/
-// Ruta base de despliegue. En Vercel (raíz) no se define; en servidores con subruta, p. ej. VITE_BASE_PATH=/evalpro/
-export default defineConfig({
-  base: process.env.VITE_BASE_PATH || '/',
+// Ruta base de despliegue. Se toma de VITE_BASE_PATH (variable de entorno o .env.production).
+// Por defecto '/'; en el servidor de la universidad se sirve en /evalpro/.
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '');
+  return {
+  base: env.VITE_BASE_PATH || '/',
   plugins: [react()],
   optimizeDeps: {
     exclude: ['lucide-react'],
@@ -29,4 +32,5 @@ export default defineConfig({
     'process.env': {},
   },
   cacheDir: '.vite-cache', // Custom cache directory
+};
 });
