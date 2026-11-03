@@ -691,7 +691,7 @@ export default function UniversityAnalysis({ results }: Props) {
                     </div>
                     <div className="relative z-10 flex items-center gap-6">
                         <div className="bg-white p-2 rounded-xl h-20 w-20 flex items-center justify-center">
-                            <img src="/prisma.png" alt="Prisma Logo" className="w-full h-full object-contain" />
+                            <img src={`${import.meta.env.BASE_URL}prisma.png`} alt="Prisma Logo" className="w-full h-full object-contain" />
                         </div>
                         <div>
                             <h2 className="text-3xl font-bold">Prisma AI: Reporte General Avanzado</h2>

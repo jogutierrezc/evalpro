@@ -17,7 +17,7 @@ export function UserGuideModule() {
         {
             title: "1. Acceso al Sistema",
             description: "El primer paso es acceder al sistema con su correo de oficina y de contraseña el número de documento de identidad.",
-            image: "/guide_step1.png",
+            image: `${import.meta.env.BASE_URL}guide_step1.png`,
             icon: LogIn,
             tips: [
                 "Usuario: Correo de oficina completo",
@@ -28,7 +28,7 @@ export function UserGuideModule() {
         {
             title: "2. Panel de Control",
             description: "Dentro del sistema aparecerán los exámenes disponibles para hacer. Si es jefe de oficina, aparecerán los exámenes para evaluar a su equipo de trabajo, más los exámenes de autoevaluación correspondientes.",
-            image: "/guide_step2.png",
+            image: `${import.meta.env.BASE_URL}guide_step2.png`,
             icon: LayoutDashboard,
             tips: [
                 "Identifique las evaluaciones pendientes.",
@@ -39,7 +39,7 @@ export function UserGuideModule() {
         {
             title: "3. Iniciar Examen",
             description: "El siguiente paso es dar clic en la opción 'Iniciar Examen' en la tarjeta correspondiente.",
-            image: "/guide_step3.png",
+            image: `${import.meta.env.BASE_URL}guide_step3.png`,
             icon: FileCheck,
             tips: [
                 "Verifique que sea el examen correcto.",
@@ -50,7 +50,7 @@ export function UserGuideModule() {
         {
             title: "4. Realizar Evaluación",
             description: "Cuando inicie, se cargarán las preguntas correspondientes. Deberá hacerlo a conciencia. Podrá guardar su progreso y continuar luego o finalizar el examen en el momento que termine.",
-            image: "/guide_step4.png",
+            image: `${import.meta.env.BASE_URL}guide_step4.png`,
             icon: BookOpen,
             tips: [
                 "Responda con honestidad y objetividad.",
@@ -61,7 +61,7 @@ export function UserGuideModule() {
         {
             title: "5. Finalizar y Consultar Resultados",
             description: "Finalizado el examen, el sistema le enviará una notificación. Si realizó su autoevaluación, podrá consultar sus resultados en 'Mi Resultado Prisma' para ver el informe del Sistema Neural PRISMA.",
-            image: "/guide_step5.png",
+            image: `${import.meta.env.BASE_URL}guide_step5.png`,
             icon: BarChart3,
             tips: [
                 "Confirme el envío al finalizar.",

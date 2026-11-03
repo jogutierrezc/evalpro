@@ -628,7 +628,7 @@ export function ReportsManagement() {
                                     <img src="https://udes.edu.co/images/logo/logo-con-acreditada-color.png" alt="UDES Logo" className="h-16 object-contain bg-white/90 p-2 rounded" />
                                 </div>
                                 <div className="absolute top-6 right-6 z-30 hidden print:block">
-                                    <img src="/prisma.png" alt="PRISMA Logo" className="h-12 object-contain bg-white/90 p-1 rounded" />
+                                    <img src={`${import.meta.env.BASE_URL}prisma.png`} alt="PRISMA Logo" className="h-12 object-contain bg-white/90 p-1 rounded" />
                                 </div>
 
                                 <div className="absolute top-0 right-0 p-10 opacity-10 print:hidden">

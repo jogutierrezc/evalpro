@@ -1352,7 +1352,7 @@ export function UsersManagement() {
                   <p className="text-xs text-blue-700 mt-1 mb-2">
                     El archivo debe tener las columnas: Nombre Completo, No. de Cedula, Correo, Rol, Oficina, Jefe Inmediato, Campus
                   </p>
-                  <a href="/plantilla_usuarios.xlsx" download className="text-xs font-bold text-blue-600 hover:text-blue-800 underline">
+                  <a href={`${import.meta.env.BASE_URL}plantilla_usuarios.xlsx`} download className="text-xs font-bold text-blue-600 hover:text-blue-800 underline">
                     Descargar plantilla de ejemplo
                   </a>
                 </div>

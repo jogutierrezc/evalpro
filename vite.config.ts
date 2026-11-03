@@ -2,7 +2,9 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 // https://vitejs.dev/config/
+// Ruta base de despliegue. En Vercel (raíz) no se define; en servidores con subruta, p. ej. VITE_BASE_PATH=/evalpro/
 export default defineConfig({
+  base: process.env.VITE_BASE_PATH || '/',
   plugins: [react()],
   optimizeDeps: {
     exclude: ['lucide-react'],
