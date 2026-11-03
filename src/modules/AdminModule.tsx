@@ -1,6 +1,6 @@
 import { Suspense, lazy, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import { Building2, Users, FileEdit, Layers, Shield, Clock, FileText, AlertTriangle, BarChart3, Mail, Database } from 'lucide-react';
+import { Building2, Users, FileEdit, Layers, Shield, Clock, FileText, AlertTriangle, BarChart3, Mail, Database, Upload } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 
 // Cada pestaña se carga al abrirla: el panel admin ya no arrastra todo su código en el primer render.
@@ -16,8 +16,9 @@ const EvaluationPeriodsManagement = lazy(() => import('./admin/EvaluationPeriods
 const NotificationsModule = lazy(() => import('./admin/NotificationsModule'));
 const VafAnalyticsModule = lazy(() => import('./admin/VafAnalyticsModule'));
 const DatabaseExportModule = lazy(() => import('./admin/DatabaseExportModule'));
+const DatabaseImportModule = lazy(() => import('./admin/DatabaseImportModule'));
 
-type AdminTab = 'offices' | 'users' | 'roles' | 'evaluations' | 'pending' | 'templates' | 'form_types' | 'periods' | 'reports' | 'notifications' | 'vaf-analytics' | 'db-export';
+type AdminTab = 'offices' | 'users' | 'roles' | 'evaluations' | 'pending' | 'templates' | 'form_types' | 'periods' | 'reports' | 'notifications' | 'vaf-analytics' | 'db-export' | 'db-import';
 
 interface TabDef {
   id: AdminTab;
@@ -60,7 +61,10 @@ const GROUPS: TabGroup[] = [
   },
   {
     label: 'Sistema',
-    tabs: [{ id: 'db-export', label: 'Exportar base de datos', icon: Database }],
+    tabs: [
+      { id: 'db-export', label: 'Exportar base de datos', icon: Database },
+      { id: 'db-import', label: 'Importar base de datos', icon: Upload },
+    ],
   },
 ];
 
@@ -152,6 +156,7 @@ export function AdminModule() {
               {activeTab === 'notifications' && <NotificationsModule />}
               {activeTab === 'vaf-analytics' && <VafAnalyticsModule />}
               {activeTab === 'db-export' && <DatabaseExportModule />}
+              {activeTab === 'db-import' && <DatabaseImportModule />}
             </div>
           </Suspense>
         </section>

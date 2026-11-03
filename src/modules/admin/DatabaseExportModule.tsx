@@ -1,40 +1,7 @@
 import { useState } from 'react';
 import { AlertTriangle, CheckCircle, Database, Download, Loader2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-
-// Tablas de public en orden de dependencias (FK): cada una va después de las que referencia.
-// pk = columna para paginar de forma estable.
-interface TableDef {
-  name: string;
-  pk: string;
-  sensitive?: boolean;
-  note?: string;
-}
-
-const TABLES: TableDef[] = [
-  { name: 'offices', pk: 'id' },
-  { name: 'roles', pk: 'id' },
-  { name: 'form_types', pk: 'id' },
-  { name: 'users', pk: 'id' },
-  { name: 'colaboradores', pk: 'id' },
-  { name: 'form_type_relations', pk: 'id' },
-  { name: 'evaluation_templates', pk: 'id' },
-  { name: 'evaluation_sections', pk: 'id' },
-  { name: 'evaluation_questions', pk: 'id' },
-  { name: 'evaluation_periods', pk: 'id' },
-  { name: 'evaluation_period_form_types', pk: 'id' },
-  { name: 'collaborator_offices', pk: 'id' },
-  { name: 'user_managers', pk: 'id' },
-  { name: 'period_collaborators', pk: 'id' },
-  { name: 'office_template_access', pk: 'id' },
-  { name: 'evaluations', pk: 'id' },
-  { name: 'evaluation_responses', pk: 'id' },
-  { name: 'evaluation_results', pk: 'id' },
-  { name: 'campus_ai_reports', pk: 'campus_name' },
-  { name: 'university_ai_reports', pk: 'report_type' },
-  { name: 'notification_log', pk: 'id' },
-  { name: 'admin_settings', pk: 'id', sensitive: true, note: 'Contiene la API key de Resend' },
-];
+import { TABLES, type Row, type TableDef } from '../../lib/dbTransfer';
 
 const FETCH_PAGE = 1000; // límite por petición de PostgREST
 const SQL_CHUNK = 250; // filas por INSERT generado
@@ -71,8 +38,6 @@ BEGIN
 END
 $fn$;
 `;
-
-type Row = Record<string, unknown>;
 
 interface TableResult {
   name: string;
