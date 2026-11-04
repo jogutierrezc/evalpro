@@ -6,13 +6,17 @@ export interface TableDef {
   pk: string;
   sensitive?: boolean;
   note?: string;
+  /** Clave natural para resolver duplicados cuando el esquema nuevo ya trae filas sembradas con otro id. */
+  conflict?: string;
 }
+
+export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Tablas de public en orden de dependencias (FK): cada una va después de las que referencia.
 export const TABLES: TableDef[] = [
   { name: 'offices', pk: 'id' },
-  { name: 'roles', pk: 'id' },
-  { name: 'form_types', pk: 'id' },
+  { name: 'roles', pk: 'id', conflict: 'key', note: 'Se une por "key"; los ids se remapean' },
+  { name: 'form_types', pk: 'id', conflict: 'key', note: 'Se une por "key"' },
   { name: 'users', pk: 'id' },
   { name: 'colaboradores', pk: 'id' },
   { name: 'form_type_relations', pk: 'id' },

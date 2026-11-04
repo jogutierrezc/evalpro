@@ -7,6 +7,7 @@ import {
   TABLES,
   parseSqlExport,
   sortParentsFirst,
+  UUID_RE,
   type Row,
   type TableDef,
 } from '../../lib/dbTransfer';
@@ -36,7 +37,11 @@ async function insertChunk(
       : rows;
     const { error } = await supabase
       .from(table.name)
-      .upsert(payload, { onConflict: table.pk, ignoreDuplicates: !overwrite });
+      .upsert(payload, {
+        onConflict: table.conflict ?? table.pk,
+        // Con clave natural nunca se sobrescribe: cambiaría ids ya referenciados.
+        ignoreDuplicates: table.conflict ? true : !overwrite,
+      });
     if (!error) return null;
     const missing = /Could not find the '([^']+)' column/.exec(error.message)?.[1];
     if (missing && !dropped.has(missing)) {
@@ -48,7 +53,42 @@ async function insertChunk(
   return 'Demasiados reintentos por columnas inexistentes';
 }
 
-async function importTable(table: TableDef, rowsIn: Row[], overwrite: boolean): Promise<ImportResult> {
+/** Columnas de otras tablas que apuntan a roles.id. */
+const ROLE_ID_COLUMNS: Record<string, string[]> = {
+  form_type_relations: ['evaluator_role_id', 'evaluated_role_id'],
+};
+
+/** Mapa id del archivo -> id real en este proyecto, uniendo por `key`. */
+async function buildRoleIdMap(sourceRoles: Row[]): Promise<Map<unknown, unknown>> {
+  const { data } = await supabase.from('roles').select('id, key');
+  const byKey = new Map((data ?? []).map((r) => [r.key as string, r.id as string]));
+  const map = new Map<unknown, unknown>();
+  for (const r of sourceRoles) {
+    const target = byKey.get(r.key as string);
+    if (target) map.set(r.id, target);
+  }
+  return map;
+}
+
+async function importTable(
+  table: TableDef,
+  rowsIn: Row[],
+  overwrite: boolean,
+  roleIdMap?: Map<unknown, unknown>,
+): Promise<ImportResult> {
+  // Si el origen usaba ids enteros y aquí son uuid, se omite el id y se deduplica por la relación.
+  if (table.name === 'collaborator_offices' && rowsIn.some((r) => !UUID_RE.test(String(r.id)))) {
+    table = { ...table, conflict: 'collaborator_id,office_id' };
+    rowsIn = rowsIn.map(({ id: _id, ...rest }) => rest);
+  }
+  const roleCols = ROLE_ID_COLUMNS[table.name];
+  if (roleCols && roleIdMap?.size) {
+    rowsIn = rowsIn.map((r) => {
+      const copy = { ...r };
+      for (const c of roleCols) if (copy[c] != null) copy[c] = roleIdMap.get(copy[c]) ?? null;
+      return copy;
+    });
+  }
   const selfCol = SELF_REF[table.name];
   const rows = selfCol ? sortParentsFirst(rowsIn, table.pk, selfCol) : rowsIn;
   const result: ImportResult = { name: table.name, total: rows.length, inserted: 0, failed: 0, droppedColumns: [], errors: [] };
@@ -116,9 +156,11 @@ export default function DatabaseImportModule() {
     const report: ImportResult[] = [];
     setResults([]);
     try {
+      let roleIdMap: Map<unknown, unknown> | undefined;
       for (const table of present.filter((t) => selected[t.name])) {
         setProgress(`Importando ${table.name}…`);
-        report.push(await importTable(table, data[table.name], overwrite));
+        report.push(await importTable(table, data[table.name], overwrite, roleIdMap));
+        if (table.name === 'roles') roleIdMap = await buildRoleIdMap(data.roles);
         setResults([...report]);
       }
       setProgress('Importación terminada.');
