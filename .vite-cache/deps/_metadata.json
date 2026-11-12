@@ -1,88 +1,118 @@
 {
-  "hash": "0a08d746",
+  "hash": "9bcf2551",
   "configHash": "3ca7aeb6",
-  "lockfileHash": "3f9230f4",
-  "browserHash": "f041963b",
+  "lockfileHash": "d23bfa2b",
+  "browserHash": "4cdc825b",
   "optimized": {
     "react": {
       "src": "../../node_modules/react/index.js",
       "file": "react.js",
-      "fileHash": "ffd5e832",
+      "fileHash": "8c6d6999",
       "needsInterop": true
     },
     "react-dom": {
       "src": "../../node_modules/react-dom/index.js",
       "file": "react-dom.js",
-      "fileHash": "d0f6b790",
+      "fileHash": "1f10ea04",
       "needsInterop": true
     },
     "react/jsx-dev-runtime": {
       "src": "../../node_modules/react/jsx-dev-runtime.js",
       "file": "react_jsx-dev-runtime.js",
-      "fileHash": "83970283",
+      "fileHash": "4756e253",
       "needsInterop": true
     },
     "react/jsx-runtime": {
       "src": "../../node_modules/react/jsx-runtime.js",
       "file": "react_jsx-runtime.js",
-      "fileHash": "d7550fdc",
+      "fileHash": "2a81b625",
       "needsInterop": true
     },
     "@google/generative-ai": {
       "src": "../../node_modules/@google/generative-ai/dist/index.mjs",
       "file": "@google_generative-ai.js",
-      "fileHash": "d2ea468b",
+      "fileHash": "2001665e",
       "needsInterop": false
     },
     "@lottiefiles/dotlottie-react": {
       "src": "../../node_modules/@lottiefiles/dotlottie-react/dist/browser/index.js",
       "file": "@lottiefiles_dotlottie-react.js",
-      "fileHash": "0f218530",
+      "fileHash": "acffb576",
       "needsInterop": false
     },
     "@supabase/supabase-js": {
       "src": "../../node_modules/@supabase/supabase-js/dist/index.mjs",
       "file": "@supabase_supabase-js.js",
-      "fileHash": "18b89dea",
+      "fileHash": "bcd13854",
       "needsInterop": false
     },
     "exceljs": {
       "src": "../../node_modules/exceljs/dist/exceljs.min.js",
       "file": "exceljs.js",
-      "fileHash": "120603df",
+      "fileHash": "c88d74e2",
       "needsInterop": true
     },
     "gsap": {
       "src": "../../node_modules/gsap/index.js",
       "file": "gsap.js",
-      "fileHash": "62d98a0e",
+      "fileHash": "443d5a76",
+      "needsInterop": false
+    },
+    "jspdf": {
+      "src": "../../node_modules/jspdf/dist/jspdf.es.min.js",
+      "file": "jspdf.js",
+      "fileHash": "6f531712",
+      "needsInterop": false
+    },
+    "jspdf-autotable": {
+      "src": "../../node_modules/jspdf-autotable/dist/jspdf.plugin.autotable.mjs",
+      "file": "jspdf-autotable.js",
+      "fileHash": "7b3c9889",
+      "needsInterop": false
+    },
+    "qrcode-generator": {
+      "src": "../../node_modules/qrcode-generator/dist/qrcode.mjs",
+      "file": "qrcode-generator.js",
+      "fileHash": "6aaeabe0",
       "needsInterop": false
     },
     "react-dom/client": {
       "src": "../../node_modules/react-dom/client.js",
       "file": "react-dom_client.js",
-      "fileHash": "65bdfda6",
+      "fileHash": "315d8a24",
       "needsInterop": true
     },
     "recharts": {
       "src": "../../node_modules/recharts/es6/index.js",
       "file": "recharts.js",
-      "fileHash": "1aeac776",
+      "fileHash": "4ec9660d",
       "needsInterop": false
     },
     "xlsx": {
       "src": "../../node_modules/xlsx/xlsx.mjs",
       "file": "xlsx.js",
-      "fileHash": "267a5bc7",
+      "fileHash": "aa31926a",
       "needsInterop": false
     }
   },
   "chunks": {
-    "chunk-Y64DX5DL": {
-      "file": "chunk-Y64DX5DL.js"
+    "purify.es-W6M6AUTV": {
+      "file": "purify__es-W6M6AUTV.js"
+    },
+    "index.es-MW5X4HYY": {
+      "file": "index__es-MW5X4HYY.js"
+    },
+    "chunk-SITVF2AJ": {
+      "file": "chunk-SITVF2AJ.js"
+    },
+    "html2canvas.esm-CQDUF2CI": {
+      "file": "html2canvas__esm-CQDUF2CI.js"
     },
     "chunk-Q7AOECBT": {
       "file": "chunk-Q7AOECBT.js"
+    },
+    "chunk-Y64DX5DL": {
+      "file": "chunk-Y64DX5DL.js"
     },
     "chunk-7JZAKNLV": {
       "file": "chunk-7JZAKNLV.js"

@@ -2,7 +2,9 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { useState, useEffect, useMemo, Fragment } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, Evaluation } from '../lib/supabase';
-import { BarChart3, Eye, Trash2, X, Search, Filter, AlertCircle, ChevronLeft, ChevronRight, Building2, RefreshCw } from 'lucide-react';
+import { BarChart3, Eye, Trash2, X, Search, Filter, AlertCircle, ChevronLeft, ChevronRight, Building2, RefreshCw, Calendar } from 'lucide-react';
+import { usePeriods } from '../hooks/usePeriods';
+import { applySnapshot, periodLabel } from '../lib/evaluationSnapshot';
 import SectionAnalysis, { SectionSummaryRow } from './SectionAnalysis';
 import OfficeAnalysis from './OfficeAnalysis';
 import CampusAnalysis from './CampusAnalysis';
@@ -54,6 +56,9 @@ const getVisiblePages = (current: number, total: number) => {
 
 export function ResultsModule() {
   const { user } = useAuth();
+  // Un solo periodo a la vez: el activo (o el más reciente). Los resultados de periodos distintos no se mezclan.
+  const { periods, activePeriod, loading: periodsLoading } = usePeriods();
+  const [periodId, setPeriodId] = useState<string>('');
   const [allEvaluations, setAllEvaluations] = useState<EvaluationListItem[]>([]);
   const [detailedResults, setDetailedResults] = useState<ResultWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
@@ -95,8 +100,20 @@ export function ResultsModule() {
   };
 
   useEffect(() => {
+    if (periodId || periodsLoading) return;
+    const initial = activePeriod || periods[0];
+    if (initial) setPeriodId(initial.id);
+    else setLoading(false);
+  }, [periods, activePeriod, periodsLoading, periodId]);
+
+  // Al cambiar de periodo se descartan los cálculos del anterior y se vuelve a cargar solo el elegido.
+  useEffect(() => {
+    if (!periodId) return;
+    setDetailedResults([]);
+    setDetailedLoaded(false);
+    setCurrentPage(1);
     loadEvaluations();
-  }, [user]);
+  }, [user, periodId]);
 
   // Reset sub-selections when changing main view
   useEffect(() => {
@@ -112,7 +129,8 @@ export function ResultsModule() {
       const { count } = await supabase
         .from('evaluations')
         .select('*', { count: 'exact', head: true })
-        .eq('status', 'completed');
+        .eq('status', 'completed')
+        .eq('period_id', periodId);
       
       setTotalInDB(count);
 
@@ -132,12 +150,14 @@ export function ResultsModule() {
             template_id, 
             created_at, 
             status,
+            period_id, evaluator_snapshot, evaluated_snapshot,
             evaluator:users!evaluator_id ( full_name, campus, role, office:offices ( name ) ),
             evaluated:users!evaluated_id ( full_name, campus, role, office:offices ( name ) ),
             template:evaluation_templates ( name ),
             results:evaluation_results ( overall_score, category_scores )
           `)
           .eq('status', 'completed')
+          .eq('period_id', periodId)
           .order('created_at', { ascending: false })
           .range(page * pageSize, (page + 1) * pageSize - 1);
 
@@ -145,7 +165,7 @@ export function ResultsModule() {
         
         if (evals && evals.length > 0) {
           allEvals = [...allEvals, ...evals];
-          if (evals.length < pageSize || !fetchAll) {
+          if (evals.length < pageSize || !(fetchAll || (count ?? 0) <= 3000)) {
             hasMore = false;
           } else {
             page++;
@@ -158,7 +178,7 @@ export function ResultsModule() {
       setAllDataLoaded(fetchAll || (count !== null && allEvals.length >= count));
 
       // Transform data
-      const evaluations: EvaluationListItem[] = allEvals.map((e: any) => {
+      const evaluations: EvaluationListItem[] = allEvals.map((raw: any) => applySnapshot(raw)).map((e: any) => {
         // Enforce the relation is an array or object safely
         const resultsData = Array.isArray(e.results) ? e.results[0] : e.results;
         return {
@@ -214,17 +234,20 @@ export function ResultsModule() {
           .from('evaluations')
           .select(`
             id, evaluated_id, evaluator_id, template_id, created_at, status,
+            period_id, evaluator_snapshot, evaluated_snapshot,
             evaluator:users!evaluator_id ( full_name, campus, office:offices ( name ) ),
             evaluated:users!evaluated_id ( full_name, campus, role, office:offices ( name ) ),
             template:evaluation_templates ( name ),
             results:evaluation_results ( overall_score, category_scores )
           `)
           .eq('status', 'completed')
+          .eq('period_id', periodId)
+          .order('created_at', { ascending: false })
           .range(page * pageSize, (page + 1) * pageSize - 1);
 
         if (error) throw error;
         if (evals && evals.length > 0) {
-          allEvalsFull = [...allEvalsFull, ...evals];
+          allEvalsFull = [...allEvalsFull, ...evals.map((raw: any) => applySnapshot(raw))];
           hasMore = evals.length === pageSize;
           page++;
         } else {
@@ -541,6 +564,15 @@ export function ResultsModule() {
         </div>
         
         <div className="flex items-center gap-2">
+          <label htmlFor="results-period" className="flex items-center gap-1.5 text-sm text-slate-500"><Calendar className="h-4 w-4" />Periodo</label>
+          <select
+            id="results-period"
+            value={periodId}
+            onChange={(e) => setPeriodId(e.target.value)}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800"
+          >
+            {periods.map((p: any) => <option key={p.id} value={p.id}>{periodLabel(p)}</option>)}
+          </select>
           {detailedLoaded && (
             <button
               onClick={loadDetailedResults}

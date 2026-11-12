@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { LoginPage } from './components/LoginPage';
 import { Layout } from './components/Layout';
 import { DashboardModule } from './modules/DashboardModule';
+import { isAdminRole } from './modules/feedback/useFeedbackAccess';
 
 // Módulos pesados cargados bajo demanda: reducen el bundle inicial (antes ~3.4 MB en un solo chunk).
 const AdminModule = lazy(() => import('./modules/AdminModule').then((m) => ({ default: m.AdminModule })));
@@ -17,6 +18,13 @@ const PrismaReport = lazy(() => import('./modules/PrismaReport'));
 const MyCollaboratorsModule = lazy(() => import('./modules/MyCollaboratorsModule').then((m) => ({ default: m.MyCollaboratorsModule })));
 const ExportModule = lazy(() => import('./modules/ExportModule'));
 const PrintReportModule = lazy(() => import('./modules/evaluator/PrintReportModule'));
+const FeedbackModule = lazy(() => import('./modules/feedback/FeedbackModule').then((m) => ({ default: m.FeedbackModule })));
+const PlanMejoraModule = lazy(() => import('./modules/plan/PlanMejoraModule').then((m) => ({ default: m.PlanMejoraModule })));
+const SupervisionPlanesModule = lazy(() => import('./modules/plan/SupervisionPlanesModule').then((m) => ({ default: m.SupervisionPlanesModule })));
+const CorreosModule = lazy(() => import('./modules/correos/CorreosModule').then((m) => ({ default: m.CorreosModule })));
+const VerificarCertificado = lazy(() => import('./modules/correos/VerificarCertificado'));
+const ActaPrint = lazy(() => import('./modules/feedback/ActaPrint'));
+const PublicSign = lazy(() => import('./modules/feedback/PublicSign'));
 
 function ModuleFallback() {
   return (
@@ -36,7 +44,8 @@ function AppContent() {
     return moduleParam || 'dashboard';
   });
 
-  // Public view for VAF Analytics (no auth required) — must be checked BEFORE auth guard
+  // VAF Analytics se abre desde un enlace directo, pero ya NO es público: muestra nombres y notas de personas, así que exige
+  // sesión. La base entrega solo lo que la persona puede ver (el administrador, todo).
   if (activeModule === 'vaf-analytics') {
     if (loading) {
       return (
@@ -48,9 +57,28 @@ function AppContent() {
         </div>
       );
     }
+    if (!user) return <LoginPage />;
     return (
       <Suspense fallback={<ModuleFallback />}>
-        <VafAnalyticsModule publicMode={true} />
+        <VafAnalyticsModule publicMode={false} />
+      </Suspense>
+    );
+  }
+
+  // Firma pública de la persona evaluada (llega por el QR del acta, sin sesión): antes del control de acceso.
+  if (activeModule === 'firmar') {
+    return (
+      <Suspense fallback={<ModuleFallback />}>
+        <PublicSign />
+      </Suspense>
+    );
+  }
+
+  // Verificación pública de un certificado de firma (QR del PDF): sin sesión.
+  if (activeModule === 'verificar') {
+    return (
+      <Suspense fallback={<ModuleFallback />}>
+        <VerificarCertificado />
       </Suspense>
     );
   }
@@ -79,6 +107,15 @@ function AppContent() {
     );
   }
 
+  // Acta de retroalimentación en A4 para guardar como PDF, sin menú lateral
+  if (activeModule === 'acta-print') {
+    return (
+      <Suspense fallback={<ModuleFallback />}>
+        <ActaPrint />
+      </Suspense>
+    );
+  }
+
   // Standalone view for Technical Report (no sidebar)
   if (activeModule === 'technical-report') {
     return (
@@ -102,6 +139,10 @@ function AppContent() {
             return (user.role === 'admin' || isManager) ? <EvaluationsManagement onNavigate={setActiveModule} /> : <EvaluationsModule onNavigate={setActiveModule} />;
           })())
         )}
+        {activeModule === 'feedback' && <FeedbackModule />}
+        {activeModule === 'plan-mejora' && <PlanMejoraModule />}
+        {activeModule === 'correos' && isAdminRole(user.role) && <CorreosModule />}
+        {activeModule === 'supervision-planes' && user.role === 'admin' && <SupervisionPlanesModule />}
         {activeModule === 'results' && <ResultsModule />}
         {activeModule === 'reports' && user.role === 'admin' && <ReportsManagement />}
         {activeModule === 'export' && user.role === 'admin' && <ExportModule />}

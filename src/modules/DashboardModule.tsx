@@ -98,11 +98,29 @@ export function DashboardModule() {
   const loadUserEvaluations = async () => {
     if (!user?.id) return;
     try {
+      // Detectar el periodo activo: no se deben mezclar evaluaciones de periodos distintos
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const { data: periodRows } = await supabase
+        .from('evaluation_periods')
+        .select('id, start_date, end_date, is_active')
+        .lte('start_date', todayStr)
+        .gte('end_date', todayStr)
+        .limit(1);
+      const curPeriod = (periodRows && periodRows.length > 0 && periodRows[0].is_active !== false) ? periodRows[0] : null;
+
       // Load all evaluations where user is the evaluator
-      const { data: evaluations } = await supabase
+      const { data: allEvaluations } = await supabase
         .from('evaluations')
         .select('*')
         .eq('evaluator_id', user.id);
+
+      // Solo las del periodo activo. Las antiguas sin period_id se asignan por fecha de creación.
+      const evaluations = (allEvaluations || []).filter((e: any) => {
+        if (!curPeriod) return false;
+        if (e.period_id) return e.period_id === curPeriod.id;
+        const created = (e.created_at || '').slice(0, 10);
+        return created >= String(curPeriod.start_date).slice(0, 10) && created <= String(curPeriod.end_date).slice(0, 10);
+      });
 
       // Create map: template_id -> evaluation (for self-evaluations)
       // AND track which users have been evaluated per template
@@ -352,7 +370,8 @@ export function DashboardModule() {
                 const k = normalizeStr(r.evaluator_role_key);
                 return ['office_manager', 'officemanager', 'lider', 'jefe', 'director', 'coordinador', 'lider_proceso', 'lider_vaf'].includes(k);
               });
-              if (genericManagerRels.length > 0) rels = genericManagerRels;
+              // Solo roles de jefatura: un rol sin relaciones de evaluador (p. ej. colaborador) no debe heredar candidatos.
+              if (genericManagerRels.length > 0 && /jefe|director|coordinador|lider|manager|vicerrect|rector/.test(userRoleNorm)) rels = genericManagerRels;
             }
           }
 
@@ -408,15 +427,20 @@ export function DashboardModule() {
           selfMap[tpl.id] = canSelfEval;
 
           // 3. Determine Candidates (Evaluated)
-          if (rels.length === 0) {
+          // Una relación evaluador = evaluado (mismo rol) es AUTOEVALUACIÓN: nunca habilita evaluar a otras personas.
+          const evalRels = rels.filter((r: any) => {
+            if (r.evaluator_role_id && r.evaluated_role_id && r.evaluator_role_id === r.evaluated_role_id) return false;
+            return normalizeStr(r.evaluator_role_key) !== normalizeStr(r.evaluated_role_key);
+          });
+          if (evalRels.length === 0) {
             // If no relations, we have no candidates to evaluate (other than self, handled above)
             map[tpl.id] = [];
             continue;
           }
 
           // Get target roles/IDs
-          const targetRoleIds = new Set(rels.map((r: any) => r.evaluated_role_id).filter(Boolean));
-          const targetRoleKeys = new Set(rels.map((r: any) => normalizeStr(r.evaluated_role_key)));
+          const targetRoleIds = new Set(evalRels.map((r: any) => r.evaluated_role_id).filter(Boolean));
+          const targetRoleKeys = new Set(evalRels.map((r: any) => normalizeStr(r.evaluated_role_key)));
 
           const { data: candidates } = await supabase.from('users').select('*');
 
@@ -1183,6 +1207,7 @@ export function DashboardModule() {
                                           template_id: tpl.id,
                                           evaluator_id: evaluatorId,
                                           evaluated_id: evaluatedId,
+                                          period_id: activePeriod?.id || null,
                                           status: 'pending',
                                         },
                                       ])
@@ -1252,6 +1277,7 @@ export function DashboardModule() {
                                         template_id: tpl.id,
                                         evaluator_id: evaluatorId,
                                         evaluated_id: evaluatorId, // Self-evaluation
+                                        period_id: activePeriod?.id || null,
                                         status: 'pending',
                                       },
                                     ])

@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Arimo:ital,wght@0,400;0,700;1,700&family=Caveat:wght@600&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -49,6 +49,11 @@ body {
   .ui-input {
     @apply w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 transition-colors placeholder:text-slate-400 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600/20;
   }
+}
+
+/* Barra de avance del Plan de Mejora: el valor cambia con transform (sin layout). */
+.plan-bar {
+  transition: transform 320ms var(--ease-out);
 }
 
 /* Feedback táctil en botones y foco visible para teclado */

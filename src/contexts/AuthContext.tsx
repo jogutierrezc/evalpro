@@ -6,7 +6,7 @@ interface AuthContextType {
   session: Session | null;
   user: User | null;
   loading: boolean;
-  signIn: (credentials: { email: string; password: string } | { identification: string }) => Promise<{ success: boolean; error?: string }>;
+  signIn: (credentials: { email: string; password: string }) => Promise<{ success: boolean; error?: string }>;
   signOut: () => Promise<void>;
 }
 
@@ -29,16 +29,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (session?.user) {
         loadUserProfile(session.user.id);
       } else {
-        // Check for local user (for evaluations)
-        const storedUser = localStorage.getItem('user');
-        if (storedUser) {
-          try {
-            setUser(JSON.parse(storedUser));
-          } catch (error) {
-            console.error('Error parsing stored user:', error);
-            localStorage.removeItem('user');
-          }
-        }
+        // Seguridad: sin sesión de Supabase Auth no hay usuario. (Antes se aceptaba un usuario guardado en
+        // localStorage, que cualquiera podía escribir a mano para ver la interfaz con otro rol.)
+        localStorage.removeItem('user');
         setLoading(false);
       }
     });
@@ -63,10 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             loadUserProfile(session.user.id);
           }
         } else {
-          // Only clear if we are sure it's not a local session
-          if (!localStorage.getItem('user')) {
-            if (userRef.current) setUser(null);
-          }
+          if (userRef.current) setUser(null);
           setLoading(false);
         }
       }
@@ -101,49 +91,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const signIn = async (credentials: { email: string; password: string } | { identification: string }): Promise<{ success: boolean; error?: string }> => {
-    if ('email' in credentials) {
-      // Admin login with Supabase Auth
-      try {
-        const { data, error } = await supabase.auth.signInWithPassword({ email: credentials.email, password: credentials.password });
+  const signIn = async (credentials: { email: string; password: string }): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({ email: credentials.email, password: credentials.password });
 
-        if (error) {
-          console.error('Auth signIn error:', error);
-          return { success: false, error: error.message || 'Error al iniciar sesión' };
-        }
-
-        const session = data?.session ?? null;
-        if (session?.user?.id) {
-          await loadUserProfile(session.user.id);
-        }
-
-        return { success: true };
-      } catch (err: any) {
-        console.error('Sign in error:', err);
-        return { success: false, error: err.message || 'Error al iniciar sesión' };
+      if (error) {
+        console.error('Auth signIn error:', error);
+        return { success: false, error: error.message || 'Error al iniciar sesión' };
       }
-    } else {
-      // Evaluation login with identification -> look up in users (colaboradores migrated)
-      try {
-        const { data, error } = await supabase
-          .from('users')
-          .select('*')
-          .eq('identification', credentials.identification)
-          .maybeSingle();
 
-        if (error) throw error;
-
-        if (!data) {
-          return { success: false, error: 'Cédula no encontrada' };
-        }
-
-        setUser(data);
-        localStorage.setItem('user', JSON.stringify(data));
-        return { success: true };
-      } catch (err: any) {
-        console.error('Sign in error:', err);
-        return { success: false, error: err.message || 'Error al iniciar sesión' };
+      const session = data?.session ?? null;
+      if (session?.user?.id) {
+        await loadUserProfile(session.user.id);
       }
+
+      return { success: true };
+    } catch (err: any) {
+      console.error('Sign in error:', err);
+      return { success: false, error: err.message || 'Error al iniciar sesión' };
     }
   };
 

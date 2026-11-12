@@ -293,9 +293,11 @@ export function EvaluationsModule({ onNavigate }: EvaluationsModuleProps) {
 
             // Load all form_type_relations and filter client-side using normalized comparisons.
             let evaluatorRels: any[] = [];
+            const formTypesWithRelations = new Set<string>();
             try {
               const { data: allRels } = await supabase.from('form_type_relations').select('form_type_key,evaluated_role_key,evaluator_role_key');
               const rels = (allRels || []) as any[];
+              rels.forEach((rel) => formTypesWithRelations.add(rel.form_type_key));
 
               // build a set of normalized evaluator identifiers to match against (key, label, raw role)
               const normalizedTargets = new Set<string>();
@@ -319,8 +321,14 @@ export function EvaluationsModule({ onNavigate }: EvaluationsModuleProps) {
             console.debug('[EvaluationsModule] Evaluator relations found (normalized filter):', evaluatorRels);
 
             // group by form_type_key -> evaluated_role_keys (deduplicated)
+            // Relaciones evaluador = evaluado (mismo rol) son AUTOEVALUACIÓN: se separan y nunca habilitan evaluar a otras personas.
             const relsByFormType: Record<string, string[]> = {};
+            const selfFormTypes = new Set<string>();
             (evaluatorRels || []).forEach((rel: any) => {
+              if (normalizeStr(rel.evaluated_role_key) === normalizeStr(rel.evaluator_role_key)) {
+                selfFormTypes.add(rel.form_type_key);
+                return;
+              }
               if (!relsByFormType[rel.form_type_key]) relsByFormType[rel.form_type_key] = [];
               if (!relsByFormType[rel.form_type_key].includes(rel.evaluated_role_key)) relsByFormType[rel.form_type_key].push(rel.evaluated_role_key);
             });
@@ -445,16 +453,16 @@ export function EvaluationsModule({ onNavigate }: EvaluationsModuleProps) {
               // Si existe una relación donde evaluator_role_key == evaluated_role_key == user's role
               // entonces es autoevaluación permitida
               if (canonicalRole) {
-                const userRoleNorm = normalizeStr(canonicalRole);
-                if (evaluatedRoles.some(r => normalizeStr(r) === userRoleNorm)) {
+                if (selfFormTypes.has(tpl.type)) {
                   canSelf = true;
                   console.debug('[EvaluationsModule] Self-eval ALLOWED via form_type_relations for', tpl.name);
                 }
               }
 
-              // 2. Fallback: Direct role assignment in form_type.roles
-              // Solo si no se encontró en relations, verificar en form_types.roles
-              if (!canSelf && ft && ft.roles && Array.isArray(ft.roles) && canonicalRole) {
+              // 2. Fallback (legacy): Direct role assignment in form_type.roles
+              // Solo aplica si el tipo NO tiene relaciones configuradas; si las tiene,
+              // la autoevaluación se controla explícitamente desde Tipos de Formularios.
+              if (!canSelf && !formTypesWithRelations.has(tpl.type) && ft && ft.roles && Array.isArray(ft.roles) && canonicalRole) {
                 if (ft.roles.includes(canonicalRole) ||
                   ft.roles.some((r: string) => normalizeStr(r) === normalizeStr(canonicalRole))) {
                   canSelf = true;
@@ -530,17 +538,24 @@ export function EvaluationsModule({ onNavigate }: EvaluationsModuleProps) {
         // fetch evaluations for this user that use these templates
         const personIdLookup = await getPersonIdForUser(user);
         const evaluatedLookupId = personIdLookup || user.id;
+        // Solo autoevaluaciones (evaluador = evaluado) del periodo activo: no mezclar periodos
         const { data: existingEvals, error: evalErr } = await supabase
           .from('evaluations')
-          .select('template_id')
+          .select('template_id, evaluator_id, period_id, created_at')
           .eq('evaluated_id', evaluatedLookupId)
           .in('template_id', templateIds);
 
         if (evalErr) throw evalErr;
 
+        const pStart = String((period as any).start_date || '').slice(0, 10);
+        const pEnd = String((period as any).end_date || '').slice(0, 10);
         const taken: Record<string, boolean> = {};
         (existingEvals || []).forEach((e: any) => {
-          if (e.template_id) taken[e.template_id] = true;
+          if (!e.template_id || e.evaluator_id !== evaluatedLookupId) return;
+          const inPeriod = e.period_id
+            ? e.period_id === (period as any).id
+            : (() => { const c = (e.created_at || '').slice(0, 10); return c >= pStart && c <= pEnd; })();
+          if (inPeriod) taken[e.template_id] = true;
         });
 
         setTakenTemplatesMap(taken);

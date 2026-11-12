@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import ExcelJS from 'exceljs';
 import { Download, Filter, ClipboardCheck, Calendar } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { usePeriods } from '../hooks/usePeriods';
+import { applySnapshot, personKey, periodLabel } from '../lib/evaluationSnapshot';
 
 interface EvaluationRow {
   id: string;
@@ -165,11 +166,13 @@ export default function ExportModule() {
   const { periods, activePeriod } = usePeriods();
   const [selectedPeriodId, setSelectedPeriodId] = useState<string>('all');
 
+  // Por defecto: el periodo activo (o el más reciente). Así nunca se exporta mezclando periodos sin querer.
+  const periodInit = useRef(false);
   useEffect(() => {
-    if (activePeriod) {
-        setSelectedPeriodId(activePeriod.id);
-    }
-  }, [activePeriod]);
+    if (periodInit.current) return;
+    const initial = activePeriod || periods[0];
+    if (initial) { periodInit.current = true; setSelectedPeriodId(initial.id); }
+  }, [activePeriod, periods]);
 
   useEffect(() => {
     loadData();
@@ -189,6 +192,7 @@ export default function ExportModule() {
           template_id,
           created_at,
           status,
+          period_id, evaluator_snapshot, evaluated_snapshot,
           evaluator:users!evaluator_id ( full_name ),
           evaluated:users!evaluated_id ( full_name, campus, office:offices ( name ) ),
           template:evaluation_templates ( name )
@@ -205,7 +209,7 @@ export default function ExportModule() {
 
       if (error) throw error;
 
-      const mapped: EvaluationRow[] = (evals || []).map((e: any) => ({
+      const mapped: EvaluationRow[] = (evals || []).map((raw: any) => applySnapshot(raw)).map((e: any) => ({
         id: e.id,
         evaluator_id: e.evaluator_id || '',
         evaluated_id: e.evaluated_id || '',
@@ -241,16 +245,24 @@ export default function ExportModule() {
       const from = page * pageSize;
       const to = from + pageSize - 1;
 
-      const { data: evals, error } = await supabase
+      let detailQuery = supabase
         .from('evaluations')
         .select(`
           id, evaluator_id, evaluated_id, template_id, created_at, status,
+          period_id, evaluator_snapshot, evaluated_snapshot,
           evaluator:users!evaluator_id ( full_name ),
           evaluated:users!evaluated_id!inner ( full_name, campus, role, office:offices ( name ) ),
           template:evaluation_templates!inner ( name ),
           results:evaluation_results ( overall_score, category_scores )
         `)
-        .eq('status', 'completed')
+        .eq('status', 'completed');
+
+      // Antes este export no filtraba por periodo y mezclaba todos.
+      if (selectedPeriodId !== 'all') {
+        detailQuery = detailQuery.eq('period_id', selectedPeriodId);
+      }
+
+      const { data: evals, error } = await detailQuery
         .order('created_at', { ascending: false })
         .range(from, to);
 
@@ -260,7 +272,7 @@ export default function ExportModule() {
         break;
       }
 
-      let filtered = evals as any[];
+      let filtered = (evals as any[]).map((e) => applySnapshot(e));
       if (targetCampus !== 'all') {
         filtered = filtered.filter((e: any) => normalizeCampus(e.evaluated?.campus) === targetCampus);
       }
@@ -615,6 +627,8 @@ export default function ExportModule() {
 
   // ─── VAF RESULTS ───
   interface VafEvalRow {
+    periodLabel: string;
+    groupKey: string;        // periodo + cédula: una persona por periodo, nunca mezclada con otro
     evaluatedName: string;
     office: string;
     campus: string;
@@ -645,6 +659,7 @@ export default function ExportModule() {
         .from('evaluations')
         .select(`
           id, evaluator_id, evaluated_id, template_id, created_at,
+          period_id, evaluator_snapshot, evaluated_snapshot,
           evaluator:users!evaluator_id ( full_name ),
           evaluated:users!evaluated_id!inner ( full_name, campus, role, office:offices ( name ) ),
           template:evaluation_templates!inner ( name )
@@ -665,7 +680,8 @@ export default function ExportModule() {
       }
 
       // Filter VAF types in memory
-      evals.forEach((e: any) => {
+      evals.forEach((raw: any) => {
+        const e = applySnapshot(raw);
         const tplName = e.template?.name || '';
         const vafType = getVafType(tplName);
         if (vafType !== 'other') {
@@ -729,6 +745,8 @@ export default function ExportModule() {
 
     // 4. Collect individual evaluations with evaluator name
     const individualEvals: {
+      groupKey: string;
+      periodLabel: string;
       evaluatedId: string;
       evaluatedName: string;
       office: string;
@@ -743,7 +761,10 @@ export default function ExportModule() {
       const score = scoreMap.get(e.id);
       if (!score) return;
 
+      const pLabel = periodLabel(periods.find((p: any) => p.id === e.period_id));
       individualEvals.push({
+        groupKey: `${e.period_id || 'sin-periodo'}|${personKey(e, 'evaluated')}`,
+        periodLabel: pLabel,
         evaluatedId: e.evaluated_id,
         evaluatedName: e.evaluated?.full_name || 'N/A',
         office: e.evaluated?.office?.name || 'N/A',
@@ -758,8 +779,8 @@ export default function ExportModule() {
     // 5. Compute user aggregates for the summary columns
     const userMap = new Map<string, { liderScores: number[]; equipoScores: number[] }>();
     individualEvals.forEach(ev => {
-      if (!userMap.has(ev.evaluatedId)) userMap.set(ev.evaluatedId, { liderScores: [], equipoScores: [] });
-      const u = userMap.get(ev.evaluatedId)!;
+      if (!userMap.has(ev.groupKey)) userMap.set(ev.groupKey, { liderScores: [], equipoScores: [] });
+      const u = userMap.get(ev.groupKey)!;
       if (ev.vafType === 'Líder VAF') u.liderScores.push(ev.score);
       else u.equipoScores.push(ev.score);
     });
@@ -796,8 +817,10 @@ export default function ExportModule() {
     // 6. Build final rows: one per individual evaluation
     const results: VafEvalRow[] = [];
     individualEvals.forEach(ev => {
-      const agg = userAggregates.get(ev.evaluatedId)!;
+      const agg = userAggregates.get(ev.groupKey)!;
       results.push({
+        periodLabel: ev.periodLabel,
+        groupKey: ev.groupKey,
         evaluatedName: ev.evaluatedName,
         office: ev.office,
         campus: ev.campus,
@@ -812,7 +835,7 @@ export default function ExportModule() {
       });
     });
 
-    results.sort((a, b) => a.evaluatedName.localeCompare(b.evaluatedName));
+    results.sort((a, b) => a.periodLabel.localeCompare(b.periodLabel) || a.evaluatedName.localeCompare(b.evaluatedName));
     return results;
   };
 
@@ -820,6 +843,7 @@ export default function ExportModule() {
     if (data.length === 0) return;
 
     const headers = [
+      'Periodo',
       'Colaborador',
       'Oficina',
       'Campus',
@@ -834,6 +858,7 @@ export default function ExportModule() {
     ];
 
     const rows = data.map((r) => [
+      r.periodLabel,
       r.evaluatedName,
       r.office,
       r.campus,
@@ -847,12 +872,12 @@ export default function ExportModule() {
       r.nota5050 ?? '',
     ]);
 
-    // Columnas con notas: 0-based indices: Nota Individual(6), Prom. Líder(7), Prom. Equipo(8), Nota Total(9), Nota 50/50(10)
+    // Columnas con notas (0-based): Nota Individual(7), Prom. Líder(8), Prom. Equipo(9), Nota Total(10), Nota 50/50(11)
     await generateStyledExcel('resultados_vaf.xlsx', [{
       name: 'Resultados VAF',
       headers,
       rows,
-      scoreColumns: [6, 7, 8, 9, 10],
+      scoreColumns: [7, 8, 9, 10, 11],
     }]);
   };
 
@@ -896,14 +921,16 @@ export default function ExportModule() {
 
       // Build unique collaborators with their aggregates
       const collabMap = new Map<string, {
-        name: string; office: string; campus: string; role: string;
+        periodLabel: string; name: string; office: string; campus: string; role: string;
         liderEvs: VafEvalRow[]; equipoEvs: VafEvalRow[];
       }>();
 
       data.forEach(row => {
-        const key = row.evaluatedName + '|' + row.office + '|' + row.campus;
+        // Una fila por persona y periodo (cédula), no por nombre: evita fusionar homónimos o periodos distintos.
+        const key = row.groupKey;
         if (!collabMap.has(key)) {
           collabMap.set(key, {
+            periodLabel: row.periodLabel,
             name: row.evaluatedName,
             office: row.office,
             campus: row.campus,
@@ -917,21 +944,21 @@ export default function ExportModule() {
         else c.equipoEvs.push(row);
       });
 
-      const collaborators = Array.from(collabMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+      const collaborators = Array.from(collabMap.values()).sort((a, b) => a.periodLabel.localeCompare(b.periodLabel) || a.name.localeCompare(b.name));
 
       // Sheet 1: Individual evaluations (detail)
       const detailHeaders = [
-        'Colaborador', 'Oficina', 'Campus', 'Cargo',
+        'Periodo', 'Colaborador', 'Oficina', 'Campus', 'Cargo',
         'Tipo VAF', 'Evaluador', 'Nota Individual'
       ];
       const detailRows = data.map(r => [
-        r.evaluatedName, r.office, r.campus, r.role,
+        r.periodLabel, r.evaluatedName, r.office, r.campus, r.role,
         r.vafType, r.evaluatorName, r.individualScore
       ]);
 
       // Sheet 2: Summary by collaborator
       const summaryHeaders = [
-        'Colaborador', 'Oficina', 'Campus', 'Cargo',
+        'Periodo', 'Colaborador', 'Oficina', 'Campus', 'Cargo',
         'Prom. Líder VAF', 'No. Eval. Líder',
         'Prom. Equipo VAF', 'No. Eval. Equipo',
         'Nota Total (60% / 40%)', 'Nota 50/50'
@@ -958,7 +985,7 @@ export default function ExportModule() {
         }
 
         return [
-          c.name, c.office, c.campus, c.role,
+          c.periodLabel, c.name, c.office, c.campus, c.role,
           liderAvg ?? '', liderScores.length,
           equipoAvg ?? '', equipoScores.length,
           notaTotal ?? '',
@@ -971,13 +998,13 @@ export default function ExportModule() {
           name: 'Detalle Individual',
           headers: detailHeaders,
           rows: detailRows,
-          scoreColumns: [6], // Nota Individual
+          scoreColumns: [7], // Nota Individual
         },
         {
           name: 'Resumen por Colaborador',
           headers: summaryHeaders,
           rows: summaryRows,
-          scoreColumns: [4, 6, 8, 9], // Prom. Líder, Prom. Equipo, Nota Total, Nota 50/50
+          scoreColumns: [5, 7, 9, 10], // Prom. Líder, Prom. Equipo, Nota Total, Nota 50/50
         },
       ]);
     } catch (err) {
@@ -1071,10 +1098,10 @@ export default function ExportModule() {
                 onChange={(e) => setSelectedPeriodId(e.target.value)}
                 className="w-full bg-transparent border-none text-sm focus:ring-0 cursor-pointer font-medium p-0"
               >
-                <option value="all">Todos los tiempos</option>
                 {periods.map(p => (
-                  <option key={p.id} value={p.id}>{p.year}</option>
+                  <option key={p.id} value={p.id}>{periodLabel(p)}</option>
                 ))}
+                <option value="all">Todos (separados por periodo)</option>
               </select>
             </div>
           </div>

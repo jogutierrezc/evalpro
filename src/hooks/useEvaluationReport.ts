@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { EvaluacionInput, TipoExamenVaf } from '../lib/ai-report-logic';
+import { periodOrFilter } from '../lib/evaluationSnapshot';
 
 interface UseEvaluationReportProps {
     evaluationId?: string;
@@ -22,6 +23,13 @@ export function useEvaluationReport({ evaluationId, userId, periodId }: UseEvalu
 
             let currentEval = null;
 
+            // Filtro de periodo (si se eligió uno): sus evaluaciones y las antiguas sin period_id de sus fechas.
+            let periodFilter: string | null = null;
+            if (periodId && periodId !== 'all') {
+                const { data: per } = await supabase.from('evaluation_periods').select('id, start_date, end_date').eq('id', periodId).maybeSingle();
+                periodFilter = periodOrFilter(per) || `period_id.eq.${periodId}`;
+            }
+
             // 1. Fetch ALL available evaluations for this user to allow switching
             if (userId) {
                 let listQuery = supabase
@@ -39,16 +47,15 @@ export function useEvaluationReport({ evaluationId, userId, periodId }: UseEvalu
                     .or(`evaluated_id.eq.${userId},evaluator_id.eq.${userId}`)
                     .eq('status', 'completed');
 
-                if (periodId && periodId !== 'all') {
-                    listQuery = listQuery.eq('period_id', periodId);
+                if (periodFilter) {
+                    listQuery = listQuery.or(periodFilter);
                 }
 
                 const { data: allEvals, error: listError } = await listQuery
                     .order('created_at', { ascending: false });
 
-                if (!listError && allEvals) {
-                    setAvailableEvaluations(allEvals);
-                }
+                if (listError) console.error('Error loading evaluation list:', listError);
+                setAvailableEvaluations(!listError && allEvals ? allEvals : []);
             }
 
             // 2. Fetch specific or latest evaluation data
@@ -62,8 +69,8 @@ export function useEvaluationReport({ evaluationId, userId, periodId }: UseEvalu
                     .order('created_at', { ascending: false })
                     .limit(1);
                 
-                if (periodId && periodId !== 'all') {
-                    latestQuery = latestQuery.eq('period_id', periodId);
+                if (periodFilter) {
+                    latestQuery = latestQuery.or(periodFilter);
                 }
                 
                 const { data: latest } = await latestQuery.maybeSingle();
@@ -100,12 +107,13 @@ export function useEvaluationReport({ evaluationId, userId, periodId }: UseEvalu
 
             if (!currentEval) {
                 setInputData(null);
+                setEvaluationData(null);
                 setLoading(false);
                 return;
             }
 
             // 3. Fetch Comparative Data (All completed evaluations)
-            const { data: allEvaluations } = await supabase
+            const compBase = supabase
                 .from('evaluations')
                 .select(`
                     responses:evaluation_responses(
@@ -117,6 +125,8 @@ export function useEvaluationReport({ evaluationId, userId, periodId }: UseEvalu
                     )
                 `)
                 .eq('status', 'completed');
+            const compQuery = periodFilter ? compBase.or(periodFilter) : compBase;
+            const { data: allEvaluations } = await compQuery;
 
             // Helper to handle jsonb values
             const normalizeValue = (val: any): number => {
@@ -215,7 +225,7 @@ export function useEvaluationReport({ evaluationId, userId, periodId }: UseEvalu
         } finally {
             setLoading(false);
         }
-    }, [evaluationId, userId]);
+    }, [evaluationId, userId, periodId]);
 
     useEffect(() => {
         if (evaluationId || userId) {
@@ -223,7 +233,7 @@ export function useEvaluationReport({ evaluationId, userId, periodId }: UseEvalu
         } else {
             setLoading(false);
         }
-    }, [loadData, evaluationId, userId]);
+    }, [loadData, evaluationId, userId, periodId]);
 
     return { inputData, rawEvaluation: evaluationData, availableEvaluations, loading, error, reload: loadData };
 }

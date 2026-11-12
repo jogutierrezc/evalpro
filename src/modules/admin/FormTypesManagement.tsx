@@ -68,6 +68,14 @@ export default function FormTypesManagement() {
     })();
   }
 
+  // Una autoevaluación es una relación donde evaluador y evaluado son el mismo rol
+  const isSelfRel = (r: { evaluator: string; evaluated: string }) => !!r.evaluator && r.evaluator === r.evaluated;
+  const isSelfEnabled = (roleKey: string) => (form.relations || []).some(r => r.evaluator === roleKey && r.evaluated === roleKey);
+  function toggleSelfEval(roleKey: string, enabled: boolean) {
+    const others = (form.relations || []).filter(r => !(r.evaluator === roleKey && r.evaluated === roleKey));
+    setForm({ ...form, relations: enabled ? [...others, { evaluator: roleKey, evaluated: roleKey }] : others });
+  }
+
   async function handleSave() {
     // roles is an array of keys
     const rolesArr = (form.roles || []).filter(Boolean);
@@ -229,7 +237,9 @@ export default function FormTypesManagement() {
               <div>
                 <label className="block text-sm mb-2">Relaciones (Quién evalúa a quién)</label>
                 <div className="space-y-2">
-                  {(form.relations || []).map((rel, idx) => (
+                  {(form.relations || []).map((rel, idx) => {
+                    if (isSelfRel(rel)) return null; // las autoevaluaciones se gestionan en su propia sección
+                    return (
                     <div key={idx} className="flex gap-2 items-center">
                       <select className="border p-2 rounded w-1/2" value={rel.evaluator} onChange={(e) => {
                         const copy = (form.relations || []).slice(); copy[idx].evaluator = e.target.value; setForm({ ...form, relations: copy });
@@ -244,12 +254,37 @@ export default function FormTypesManagement() {
                         {availableRoles.map(r => <option key={r.id} value={r.key}>{r.label} ({r.key})</option>)}
                       </select>
                     </div>
-                  ))}
+                    );
+                  })}
                   <div className="flex gap-2 mt-2">
                     <button className="px-3 py-1 rounded border" onClick={() => setForm({ ...form, relations: [...(form.relations || []), { evaluator: '', evaluated: '' }] })}>Agregar relación</button>
-                    <button className="px-3 py-1 rounded border" onClick={() => setForm({ ...form, relations: (form.relations || []).slice(0, -1) })}>Eliminar última</button>
+                    <button className="px-3 py-1 rounded border" onClick={() => {
+                      const rels = (form.relations || []).slice();
+                      for (let i = rels.length - 1; i >= 0; i--) {
+                        if (!isSelfRel(rels[i])) { rels.splice(i, 1); break; }
+                      }
+                      setForm({ ...form, relations: rels });
+                    }}>Eliminar última</button>
                   </div>
                 </div>
+              </div>
+              <div>
+                <label className="block text-sm mb-1">Autoevaluación</label>
+                <p className="text-xs text-slate-500 mb-2">Marca los roles que pueden autoevaluarse con este formulario. Los roles no marcados no verán la opción de autoevaluarse.</p>
+                {availableRoles.length > 0 ? (
+                  <div className="max-h-48 overflow-auto border rounded p-2">
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                      {availableRoles.map((r) => (
+                        <label key={r.id} className="inline-flex items-center gap-2">
+                          <input type="checkbox" checked={isSelfEnabled(r.key)} onChange={(e) => toggleSelfEval(r.key, e.target.checked)} />
+                          <span className="text-sm">{r.label} ({r.key})</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-xs text-slate-500">No se encontraron roles en la base.</div>
+                )}
               </div>
               <div className="flex justify-end gap-2 mt-4">
                 <button onClick={() => setShowForm(false)} className="px-3 py-2 rounded border">Cancelar</button>

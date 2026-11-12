@@ -1,10 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!supabaseUrl || !supabaseKey) {
-  throw new Error('Missing Supabase environment variables. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY or VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY.');
+  throw new Error('Missing Supabase environment variables. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.');
 }
 
 const supabase = createClient(supabaseUrl, supabaseKey, {
@@ -22,11 +22,44 @@ const mapCategoryScores = (categoryScores) => {
   return Object.entries(categoryScores).map(([competency, score]) => ({ competency, score: Number(score) }));
 };
 
+const allowedOrigin = process.env.API_ALLOWED_ORIGIN || '';
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  ...(allowedOrigin ? { 'Access-Control-Allow-Origin': allowedOrigin, Vary: 'Origin' } : {}),
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-api-key',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
 };
+
+const ADMIN_ROLES = ['admin', 'administrador', 'superadmin'];
+
+// Autenticación: (1) clave de sistema en el encabezado x-api-key (variable EVALUACIONES_API_KEY), o
+// (2) token de una persona con sesión (Authorization: Bearer <access_token> de Supabase Auth).
+async function authenticate(req) {
+  const apiKey = process.env.EVALUACIONES_API_KEY;
+  const sent = req.headers['x-api-key'];
+  if (apiKey && typeof sent === 'string' && sent.length === apiKey.length) {
+    let diff = 0;
+    for (let i = 0; i < apiKey.length; i++) diff |= apiKey.charCodeAt(i) ^ sent.charCodeAt(i);
+    if (diff === 0) return { kind: 'system' };
+  }
+  const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  if (!token) return null;
+  const { data, error } = await supabase.auth.getUser(token);
+  if (error || !data?.user) return null;
+  const { data: me } = await supabase.from('users').select('id, role').eq('id', data.user.id).maybeSingle();
+  if (!me) return null;
+  return { kind: 'user', id: me.id, isAdmin: ADMIN_ROLES.includes(String(me.role || '').toLowerCase()) };
+}
+
+// Una persona solo consulta lo suyo, a quien dirige o a quien evaluó. La administración, todo.
+async function canRead(caller, collaboratorId) {
+  if (caller.kind === 'system' || caller.isAdmin || caller.id === collaboratorId) return true;
+  const [{ data: mgr }, { data: direct }, { data: evaluated }] = await Promise.all([
+    supabase.from('user_managers').select('user_id').eq('manager_id', caller.id).eq('user_id', collaboratorId).limit(1),
+    supabase.from('users').select('id').eq('id', collaboratorId).eq('manager_id', caller.id).limit(1),
+    supabase.from('evaluations').select('id').eq('evaluator_id', caller.id).eq('evaluated_id', collaboratorId).limit(1),
+  ]);
+  return !!((mgr && mgr.length) || (direct && direct.length) || (evaluated && evaluated.length));
+}
 
 const setCorsHeaders = (res) => {
   Object.entries(corsHeaders).forEach(([key, value]) => res.setHeader(key, value));
@@ -49,6 +82,12 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Parámetro documento es requerido.' });
   }
 
+  const caller = await authenticate(req);
+  if (!caller) {
+    res.setHeader('WWW-Authenticate', 'Bearer');
+    return res.status(401).json({ error: 'Autenticación requerida.' });
+  }
+
   try {
     const { data: user, error: userError } = await supabase
       .from('users')
@@ -66,6 +105,10 @@ export default async function handler(req, res) {
       return res.status(404).json({ error: 'No se encontró un colaborador con ese documento.' });
     }
 
+    if (!(await canRead(caller, collaborator.id))) {
+      return res.status(403).json({ error: 'No tienes permiso para consultar a esta persona.' });
+    }
+
     const { data: evaluations, error: evaluationsError } = await supabase
       .from('evaluations')
       .select(`
@@ -77,7 +120,7 @@ export default async function handler(req, res) {
         completed_at,
         evaluator_id,
         evaluated_id,
-        evaluator:users!evaluator_id(id, full_name, identification, role),
+        evaluator:users!evaluator_id(id, full_name, role),
         template:evaluation_templates!template_id(id, name, type, categories, description),
         results:evaluation_results(overall_score, category_scores, ai_analysis, recommendations)
       `)

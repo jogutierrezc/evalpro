@@ -1,0 +1,30 @@
+/* Reporte de desempeño: lo justo para que el PDF (impresión) conserve colores, no parta bloques y muestre todo expandido. */
+.pr-root, .pr-root * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+@media print {
+  @page { size: A4; margin: 12mm; }
+  html, body { background: #fff !important; }
+  .no-print { display: none !important; }
+  .pr-root { max-width: none !important; gap: 0; font-size: 11px; }
+  .pr-root > * + * { margin-top: 18px; }
+  .pr-avoid, .pr-root li { break-inside: avoid; page-break-inside: avoid; }
+  /* Los criterios se imprimen siempre abiertos, aunque estén contraídos en pantalla */
+  .pr-acc[hidden] { display: block !important; }
+  .pr-root h1 { font-size: 20px; }
+  .pr-root h2 { font-size: 15px; break-after: avoid; }
+  .pr-root table { font-size: 11px; }
+
+  /* Resumen en una franja de 5 columnas */
+  .pr-summary { grid-template-columns: repeat(5, minmax(0, 1fr)) !important; }
+  .pr-summary > * { border-top: 0 !important; border-left: 1px solid #e2e8f0 !important; grid-column: auto !important; padding: 10px !important; }
+  .pr-summary > *:first-child { border-left: 0 !important; }
+  .pr-summary p.text-3xl { font-size: 22px; }
+  /* Mapa: radar arriba y tabla debajo, a todo el ancho */
+  .pr-root svg[role="img"] { max-width: 420px; }
+  /* Criterios con el mismo diseño de columnas que en pantalla grande */
+  .pr-crit-head { display: grid !important; grid-template-columns: minmax(0, 1fr) 150px 46px 46px 46px 46px !important; }
+  .pr-crit-row { grid-template-columns: minmax(0, 1fr) 150px 46px 46px 46px 46px !important; align-items: center; padding-top: 6px !important; padding-bottom: 6px !important; }
+  .pr-vals { display: contents !important; }
+  .pr-vals .lg\:hidden { display: none !important; }
+  .pr-vals > span { text-align: right; }
+}

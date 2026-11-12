@@ -12,8 +12,13 @@ import {
   BrainCircuit,
   User,
   Users,
-  FileSpreadsheet
+  FileSpreadsheet,
+  MessageSquareText,
+  ClipboardCheck,
+  ShieldCheck,
+  Mail
 } from 'lucide-react';
+import { useFeedbackAccess } from '../modules/feedback/useFeedbackAccess';
 
 interface LayoutProps {
   children: ReactNode;
@@ -24,10 +29,16 @@ interface LayoutProps {
 export function Layout({ children, activeModule, onModuleChange }: LayoutProps) {
   const { user, signOut } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Retroalimentación: administración y quienes evalúan a otras personas. No aparece para quien solo es evaluado.
+  const feedbackAccess = useFeedbackAccess(user);
 
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['*'] },
     { id: 'evaluations', label: 'Evaluaciones', icon: FileText, roles: ['*'] },
+    { id: 'feedback', label: 'Retroalimentación', icon: MessageSquareText, roles: ['*'] },
+    { id: 'plan-mejora', label: 'Plan de Mejora', icon: ClipboardCheck, roles: ['*'] },
+    { id: 'supervision-planes', label: 'Supervisión planes', icon: ShieldCheck, roles: ['admin'] },
+    { id: 'correos', label: 'Correos', icon: Mail, roles: ['admin'] },
     { id: 'results', label: 'Resultados', icon: BarChart3, roles: ['admin'] },
     { id: 'reports', label: 'Informes', icon: FileText, roles: ['admin'] },
     { id: 'export', label: 'Exportar', icon: FileSpreadsheet, roles: ['admin'] },
@@ -43,6 +54,9 @@ export function Layout({ children, activeModule, onModuleChange }: LayoutProps) 
   const hiddenForAdmin = new Set(['my-collaborators', 'evaluations', 'guide', 'self-report']);
 
   const filteredMenuItems = menuItems.filter(item => {
+    if (item.id === 'feedback') return feedbackAccess.allowed;
+    // Plan de Mejora: quienes evalúan a otras personas (administración usa Supervisión planes).
+    if (item.id === 'plan-mejora') return feedbackAccess.allowed && !isAdmin;
     // Ocultar items específicos para usuarios admin
     if (isAdmin && hiddenForAdmin.has(item.id)) return false;
 
