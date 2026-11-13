@@ -37,6 +37,8 @@ const env = (k: string) => (Deno.env.get(k) ?? '').trim();
 const PUBLIC_FN = (env('PUBLIC_FUNCTIONS_URL') || 'https://planeacion.udes.edu.co/3').replace(/\/+$/, '');
 const APP_URL = (env('APP_PUBLIC_URL') || 'https://planeacion.udes.edu.co/evalpro/').replace(/\/*$/, '/');
 const ANON = env('SUPABASE_ANON_KEY');
+/** Las URL firmadas salen con el host interno (supabase-kong:8000); se reescriben al origen público. */
+const publicStorageUrl = (u?: string | null) => { if (!u) return null; const i = u.indexOf('/storage/v1/'); return i < 0 ? u : PUBLIC_FN + u.slice(i); };
 const TRACK = `${PUBLIC_FN}/functions/v1/correos`;
 const ADMIN_ROLES = ['admin', 'administrador', 'superadmin'];
 const INSTITUCION = 'Universidad de Santander';
@@ -533,7 +535,7 @@ async function certGenerate(b: any, who: { id: string; full_name: string }) {
   if (error || !cert) { await admin.storage.from('certificados-firma').remove([path]); throw new HttpError(500, 'No se pudo registrar el certificado.'); }
   await admin.from('mail_events').insert({ acta_id: a.id, type: 'cert_generated', meta: { numero, version, por: who.full_name, sha256: pdfSha } });
   const { data: url } = await admin.storage.from('certificados-firma').createSignedUrl(path, 120);
-  return { certificate: cert, url: url?.signedUrl ?? null };
+  return { certificate: cert, url: publicStorageUrl(url?.signedUrl) };
 }
 
 async function certList(b: any) {
@@ -557,7 +559,7 @@ async function certDownload(b: any, who: { full_name: string }) {
   const { data: url, error } = await admin.storage.from('certificados-firma').createSignedUrl(c.pdf_path, 120);
   if (error || !url) throw new HttpError(500, 'No se pudo abrir el PDF.');
   await admin.from('mail_events').insert({ acta_id: c.acta_id, type: 'cert_downloaded', meta: { numero: c.number, por: who.full_name } });
-  return { url: url.signedUrl, number: c.number };
+  return { url: publicStorageUrl(url.signedUrl), number: c.number };
 }
 
 async function certRevoke(b: any, who: { id: string; full_name: string }) {

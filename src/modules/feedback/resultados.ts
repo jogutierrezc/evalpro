@@ -91,9 +91,9 @@ export interface PaginaRes {
   filas: FilaRes[];
 }
 
-// Alturas estimadas en em de página (A4: 71 em útiles, menos encabezado). La primera página lleva además el mapa.
-const PRIMERA = 23;
-const SIGUIENTES = 57;
+// Alturas estimadas en em de página (carta: ~65 em útiles, menos encabezado). La primera página lleva además el mapa.
+const PRIMERA = 15.5;
+const SIGUIENTES = 49;
 const H_SEC = 1.95;
 const H_TOTAL = 2.3;
 const H_NOTA = 4.4;

@@ -21,6 +21,17 @@ async function invoke<T>(body: Record<string, unknown>): Promise<T> {
   throw new ApiError(message, status);
 }
 
+/**
+ * La función corre dentro de la red de Docker y firma las URL con el host interno (http://supabase-kong:8000),
+ * que el navegador no puede resolver. Se reescribe al origen público de Supabase que usa este cliente.
+ */
+export function publicStorageUrl(url: string): string {
+  const i = url.indexOf('/storage/v1/');
+  if (i < 0) return url;
+  const base = String(import.meta.env.VITE_SUPABASE_URL ?? '').replace(/\/+$/, '');
+  return base ? base + url.slice(i) : url;
+}
+
 /** Llama a la función `correos` como administrador. La función vuelve a verificar el rol en el servidor. */
 export const callCorreos = <T = any>(user: Pick<User, 'id' | 'identification'>, action: string, payload: Record<string, unknown> = {}) =>
   invoke<T>({ action, adminId: user.id, adminIdentification: user.identification, ...payload });

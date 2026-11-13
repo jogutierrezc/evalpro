@@ -7,7 +7,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { isAdminRole } from './useFeedbackAccess';
 
 /**
- * Vista A4 del acta para guardar como PDF (diálogo de impresión del navegador, "Guardar como PDF").
+ * Vista tamaño carta (US Letter) del acta para guardar como PDF (diálogo de impresión del navegador, "Guardar como PDF").
  * Es la misma maquetación del editor, así que el PDF es fiel al formato GED-FT-032-BUC.
  */
 export default function ActaPrint() {
@@ -53,7 +53,7 @@ export default function ActaPrint() {
   return (
     <div className="min-h-screen bg-[#e6e9ef]">
       <div className="no-print sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
-        <p className="text-sm text-slate-600">Vista del PDF en formato A4. En el diálogo de impresión elige <b>Guardar como PDF</b> y desactiva encabezados y pies de página.</p>
+        <p className="text-sm text-slate-600">Vista del PDF en tamaño carta (US Letter); si un apartado es extenso, continúa en la hoja siguiente. En el diálogo de impresión elige <b>Guardar como PDF</b>, tamaño <b>Carta</b>, márgenes <b>Predeterminados</b> y desactiva encabezados y pies de página.</p>
         <button onClick={print} className="ui-btn-primary"><Printer className="h-4 w-4" /> Imprimir o guardar PDF</button>
       </div>
       <div className="acta-desk">

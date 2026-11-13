@@ -2,7 +2,7 @@
 .pr-root, .pr-root * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 
 @media print {
-  @page { size: A4; margin: 12mm; }
+  @page { size: 8.5in 11in; margin: 0.5in; }
   html, body { background: #fff !important; }
   .no-print { display: none !important; }
   .pr-root { max-width: none !important; gap: 0; font-size: 11px; }

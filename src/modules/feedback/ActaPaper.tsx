@@ -7,7 +7,7 @@ const logo = (f: string) => `${import.meta.env.BASE_URL}acta/${f}`;
 
 function Header({ oficina }: { oficina: string }) {
   return (
-    <div className="ph">
+    <div className="ph-wrap"><div className="ph">
       <div className="ph-top">
         <div className="icon"><img src={logo('icontec.png')} alt="Icontec ISO 9001" /><span>SC-CER440961</span></div>
         <span className="sep" />
@@ -23,7 +23,7 @@ function Header({ oficina }: { oficina: string }) {
         <div className="ac">ACTA<br />GED-FT-032-BUC</div>
         <div>Versión: 09</div>
       </div>
-    </div>
+    </div></div>
   );
 }
 
@@ -58,7 +58,7 @@ interface Props {
   onField?: (field: string) => void;
 }
 
-/** Réplica del formato institucional GED-FT-032-BUC v09, en 3 páginas A4. */
+/** Réplica del formato institucional GED-FT-032-BUC v09, en tamaño carta (US Letter). El contenido extenso continúa en la página siguiente al imprimir. */
 export function ActaPaper({ acta: a, evaluator, evaluated, onField }: Props) {
   const tipo = a.tipo === 'nueva' ? 'Reunión nueva' : 'Lectura y/o Firma del acta anterior';
   const click = onField ? (e: React.MouseEvent) => {
@@ -74,7 +74,7 @@ export function ActaPaper({ acta: a, evaluator, evaluated, onField }: Props) {
   return (
     <div className="acta" data-interactive={onField ? '' : undefined} onClick={click}>
       <article className="acta-page" aria-label="Acta, página 1">
-        <Header oficina={a.oficina} />
+        <Header oficina={a.oficina} /><div className="pb">
         <div className="info">
           <div className="a" data-f="numero"><b>No. de Acta:</b>{a.numero}</div>
           <div className="b" data-f="fecha"><b>Fecha:</b>{fechaLarga(a.fecha)}</div>
@@ -96,19 +96,19 @@ export function ActaPaper({ acta: a, evaluator, evaluated, onField }: Props) {
             <div className="it" data-f="convocatoria"><b>V.</b><div><div className="h">Convocatoria:</div><div className="t">{a.convocatoria}</div></div></div>
           </div>
         </div>
-        <span className="pg-no">Página 1 de {total}</span>
+        </div><span className="pg-no">Página 1 de {total}</span>
       </article>
 
       {a.resultados && resPages.map((pg, i) => (
         <article className="acta-page" aria-label={`Acta, página ${i + 2}: resultados de la evaluación`} key={`res${i}`}>
-          <Header oficina={a.oficina} />
+          <Header oficina={a.oficina} /><div className="pb">
           <ResultadosPagina res={a.resultados!} page={pg} evaluated={evaluated} evaluator={evaluator} />
-          <span className="pg-no">Página {i + 2} de {total}</span>
+          </div><span className="pg-no">Página {i + 2} de {total}</span>
         </article>
       ))}
 
       <article className="acta-page" aria-label={`Acta, página ${pgCompromisos}`}>
-        <Header oficina={a.oficina} />
+        <Header oficina={a.oficina} /><div className="pb">
         <div className="cp">
           <div className="band">COMPROMISOS</div>
           <div className="hd"><div>ACTIVIDAD</div><div>RESPONSABLE</div><div>FECHA</div></div>
@@ -131,11 +131,11 @@ export function ActaPaper({ acta: a, evaluator, evaluated, onField }: Props) {
           <div data-f="transcriptor"><b>Transcriptor:</b> {a.transcriptor}</div>
         </div>
         {sealed && a.content_hash && <div className="seal">Documento firmado electrónicamente por las dos partes. Huella SHA-256 del contenido: {a.content_hash}</div>}
-        <span className="pg-no">Página {pgCompromisos} de {total}</span>
+        </div><span className="pg-no">Página {pgCompromisos} de {total}</span>
       </article>
 
       <article className="acta-page" aria-label={`Acta, página ${total}`}>
-        <Header oficina={a.oficina} />
+        <Header oficina={a.oficina} /><div className="pb">
         <div className="cc">
           <h3>CONTROL DE CAMBIOS</h3>
           <div className="tb">
@@ -151,7 +151,7 @@ export function ActaPaper({ acta: a, evaluator, evaluated, onField }: Props) {
             </div>
           </div>
         </div>
-        <span className="pg-no">Página {total} de {total}</span>
+        </div><span className="pg-no">Página {total} de {total}</span>
       </article>
     </div>
   );

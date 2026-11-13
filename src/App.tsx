@@ -107,7 +107,7 @@ function AppContent() {
     );
   }
 
-  // Acta de retroalimentación en A4 para guardar como PDF, sin menú lateral
+  // Acta de retroalimentación en tamaño carta para guardar como PDF, sin menú lateral
   if (activeModule === 'acta-print') {
     return (
       <Suspense fallback={<ModuleFallback />}>

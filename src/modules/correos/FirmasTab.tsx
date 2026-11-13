@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { BadgeCheck, ChevronDown, FileDown, Loader2, ShieldCheck, ShieldX } from 'lucide-react';
-import { Api, MailEvent } from './api';
+import { Api, MailEvent, publicStorageUrl } from './api';
 import { Empty, ErrorNote, Pill, Timeline, fmtDT, useReveal } from './parts';
 
 interface Cert { id: string; number: string; version: number; status: 'vigente' | 'revocado'; generated_at: string }
@@ -45,12 +45,12 @@ export default function FirmasTab({ api }: { api: Api }) {
     try {
       const out = await api<{ url: string | null }>('cert_generate', { actaId: r.id });
       await load();
-      if (out.url) window.open(out.url, '_blank', 'noopener');
+      if (out.url) window.open(publicStorageUrl(out.url), '_blank', 'noopener');
     } catch (e: any) { setError(e.message); } finally { setBusy(null); }
   }
   async function download(c: Cert) {
     setBusy(c.id); setError(null);
-    try { const out = await api<{ url: string }>('cert_download', { id: c.id }); window.open(out.url, '_blank', 'noopener'); }
+    try { const out = await api<{ url: string }>('cert_download', { id: c.id }); window.open(publicStorageUrl(out.url), '_blank', 'noopener'); }
     catch (e: any) { setError(e.message); } finally { setBusy(null); }
   }
   async function revoke() {

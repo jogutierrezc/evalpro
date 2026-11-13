@@ -16,8 +16,8 @@ const mean = (values: number[]) => (values.length ? values.reduce((a, b) => a + 
 const todayLabel = () => new Date().toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' });
 
 const PRINT_CSS = `
-  @page { size: A4; margin: 14mm; }
-  .sheet { background:#fff; color:#17181c; width:100%; max-width:182mm; margin:0 auto; font-family:'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif; }
+  @page { size: 8.5in 11in; margin: 0.55in; }
+  .sheet { background:#fff; color:#17181c; width:100%; max-width:7.4in; margin:0 auto; font-family:'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif; }
   .sheet + .sheet { break-before: page; }
   .sheet h1 { font-size: 20px; font-weight:600; margin:0; }
   .sheet h2 { font-size: 11px; font-weight:600; text-transform:uppercase; letter-spacing:.07em; color:#5d6068; margin:18px 0 8px; }
@@ -29,7 +29,7 @@ const PRINT_CSS = `
   .track > i { display:block; height:100%; background:#1d4ed8; }
   .foot { margin-top:auto; display:flex; justify-content:space-between; font-size:10px; color:#5d6068; border-top:1px solid #d9d6cd; padding-top:6px; }
   @media print { .no-print { display:none !important; } body { background:#fff !important; } }
-  @media screen { .sheet { padding: 18mm 16mm; box-shadow: 0 1px 3px rgba(0,0,0,.12); margin: 24px auto; min-height: 297mm; display:flex; flex-direction:column; border-radius: 4px; } }
+  @media screen { .sheet { padding: 18mm 16mm; box-shadow: 0 1px 3px rgba(0,0,0,.12); margin: 24px auto; min-height: 11in; display:flex; flex-direction:column; border-radius: 4px; } }
 `;
 
 // Mismo cálculo que el informe individual: promedio por sección y luego promedio de secciones.
@@ -70,8 +70,8 @@ function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-[#f5f6f8] px-4 pb-16">
       <style>{PRINT_CSS}</style>
-      <div className="no-print mx-auto flex max-w-[210mm] items-center justify-between py-4">
-        <p className="text-sm text-slate-600">Vista previa del informe en formato A4</p>
+      <div className="no-print mx-auto flex max-w-[8.5in] items-center justify-between py-4">
+        <p className="text-sm text-slate-600">Vista previa del informe en tamaño carta</p>
         <button onClick={() => window.print()} className="ui-btn-primary">Imprimir o guardar como PDF</button>
       </div>
       {children}
