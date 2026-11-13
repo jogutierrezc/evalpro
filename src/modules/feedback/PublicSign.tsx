@@ -8,7 +8,7 @@ interface PublicActa {
   numero: string; fecha: string | null; lugar: string; hora_inicio: string | null; hora_fin: string | null; objetivo: string;
   compromisos: { id: string; act: string; resp: string; fecha: string }[];
   evaluatorName: string; evaluatedName: string; emailMask: string | null;
-  evaluatedSigned: boolean; evaluatedSignedAt: string | null; evaluatorSigned: boolean;
+  pendingCodeExpiresAt: string | null; evaluatedSigned: boolean; evaluatedSignedAt: string | null; evaluatorSigned: boolean;
 }
 
 const reduced = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -26,6 +26,7 @@ export default function PublicSign() {
   const [locked, setLocked] = useState(false);
   const [devCode, setDevCode] = useState<string | null>(null);
   const [sentAt, setSentAt] = useState(0);
+  const [expiresAt, setExpiresAt] = useState(0);
   const [now, setNow] = useState(Date.now());
   const [signedAt, setSignedAt] = useState<string | null>(null);
   const box = useRef<HTMLDivElement>(null);
@@ -39,6 +40,10 @@ export default function PublicSign() {
       if (r.error || !r.data) { setLoadErr(r.error || 'No se pudo abrir el acta.'); return; }
       setActa(r.data);
       if (r.data.evaluatedSigned) { setSignedAt(r.data.evaluatedSignedAt); setStep('done'); }
+      else if (r.data.pendingCodeExpiresAt) {
+        // Llegó desde el correo: ya tiene un código vigente, puede escribirlo sin pedir otro.
+        setExpiresAt(new Date(r.data.pendingCodeExpiresAt).getTime()); setSentAt(Date.now() - 30_000); setNow(Date.now()); setStep('code');
+      }
     })();
     return () => { alive = false; };
   }, [token]);
@@ -52,7 +57,7 @@ export default function PublicSign() {
     return () => window.clearTimeout(safety);
   }, [step, acta !== null]);
 
-  const left = step === 'code' ? Math.max(0, 300 - Math.floor((now - sentAt) / 1000)) : 0;
+  const left = step === 'code' ? Math.max(0, Math.floor((expiresAt - now) / 1000)) : 0;
   const cooldown = step === 'code' ? Math.max(0, 30 - Math.floor((now - sentAt) / 1000)) : 0;
   const expired = step === 'code' && left === 0;
 
@@ -61,7 +66,7 @@ export default function PublicSign() {
     const r = await callOtp<{ to: string; devCode?: string }>({ action: 'send', token });
     setBusy(null);
     if (r.error || !r.data) { setErr(r.error || 'No se pudo enviar el código.'); return; }
-    setTo(r.data.to); setDevCode(r.data.devCode || null); setSentAt(Date.now()); setNow(Date.now()); setStep('code');
+    setTo(r.data.to); setDevCode(r.data.devCode || null); setSentAt(Date.now()); setExpiresAt(Date.now() + 300_000); setNow(Date.now()); setStep('code');
   };
   const verify = async (c: string) => {
     if (c.length !== 6) return;
@@ -122,7 +127,7 @@ export default function PublicSign() {
                 </div>
               ) : (
                 <div className="grid gap-3">
-                  <p className="flex items-center justify-between text-sm text-slate-600"><span>Código enviado a <b className="text-slate-900">{to}</b></span><span className={`font-mono text-xs tabular-nums ${expired ? 'text-red-700' : 'text-slate-500'}`}>{expired ? 'Venció' : `Vence en ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`}</span></p>
+                  <p className="flex items-center justify-between text-sm text-slate-600"><span>Código enviado a <b className="text-slate-900">{to || acta.emailMask || 'tu correo'}</b></span><span className={`font-mono text-xs tabular-nums ${expired ? 'text-red-700' : 'text-slate-500'}`}>{expired ? 'Venció' : left >= 3600 ? `Vence en ${Math.floor(left / 3600)} h` : `Vence en ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`}</span></p>
                   {devCode && <p className="rounded-md border border-dashed border-slate-300 px-3 py-2 text-xs text-slate-500">Modo de pruebas, código: <code className="font-mono text-sm tracking-widest text-slate-900">{devCode}</code></p>}
                   <div data-otp><OtpInput label="Código de la persona evaluada" value={code} onChange={setCode} onComplete={verify} disabled={busy === 'verify' || expired || locked} invalid={!!err} /></div>
                   {err && <p role="alert" className="flex items-start gap-2 rounded-md bg-red-50 px-3 py-2 text-[12.5px] text-red-700"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />{err}</p>}

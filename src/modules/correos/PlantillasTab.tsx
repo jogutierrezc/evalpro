@@ -142,6 +142,7 @@ export default function PlantillasTab({ api }: { api: Api; boot?: Boot }) {
               <button className="ui-btn-secondary !py-1" onClick={() => setConfirm(null)}>Seguir editando</button>
             </div>
           )}
+          {key === 'firma_invitacion' && <p className="rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-700">Se envía a la persona evaluada cuando la persona evaluadora firma el acta. Debe conservar las variables <code className="font-mono text-[13px]">{'{{enlace}}'}</code> y <code className="font-mono text-[13px]">{'{{codigo}}'}</code>.</p>}
           {key === 'otp_firma' && <p className="rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-700">Esta plantilla también es la de los códigos de firma de las actas. Debe conservar la variable <code className="font-mono text-[13px]">{'{{codigo}}'}</code>.</p>}
 
           <div className="grid items-start gap-4 xl:grid-cols-2">

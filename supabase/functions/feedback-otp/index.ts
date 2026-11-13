@@ -6,6 +6,9 @@
 //   verify     { actaId, userId, code } | { token, code } -> verifica el OTP y registra la firma
 //   public_get { token }                          -> resumen del acta para la página pública del evaluado
 //
+// Cuando la persona evaluadora firma, la persona evaluada recibe por correo el enlace de firma y su propio código OTP
+// (plantilla firma_invitacion). Ese código dura lo mismo que el enlace (48 h); los que se piden después duran 5 min.
+//
 // El código nunca llega al navegador (salvo OTP_DEV_ECHO=true, solo para pruebas). En la base se guarda
 // únicamente su hash SHA-256. Vigencia 5 min, 3 intentos y 30 s entre reenvíos.
 //
@@ -121,6 +124,7 @@ function missingFields(a: any): string[] {
   return m;
 }
 
+const APP_URL = (Deno.env.get('APP_PUBLIC_URL') || 'https://planeacion.udes.edu.co/evalpro/').trim().replace(/\/*$/, '/');
 const PUBLIC_FN = (Deno.env.get('PUBLIC_FUNCTIONS_URL') || 'https://planeacion.udes.edu.co/3').replace(/\/+$/, '');
 const ANON = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
 
@@ -188,9 +192,11 @@ async function buildMail(name: string, numero: string, code: string, role: strin
   return { ...base, html: withPixel(base.html, token) };
 }
 
-async function sendBySmtp(cfg: NonNullable<ReturnType<typeof smtpConfig>>, to: string, name: string, numero: string, code: string, role: string, token?: string | null): Promise<string> {
+type Mail = { subject: string; html: string; text: string };
+
+async function sendBySmtp(cfg: NonNullable<ReturnType<typeof smtpConfig>>, to: string, mail: Mail): Promise<string> {
   if (!cfg.from) throw new HttpError(503, 'El envío de correos no está configurado (falta el remitente). Avisa al administrador.');
-  const { text, html, subject } = await buildMail(name, numero, code, role, token);
+  const { text, html, subject } = mail;
   const transporter = nodemailer.createTransport({
     host: cfg.host,
     port: cfg.port,
@@ -229,13 +235,13 @@ async function sendBySmtp(cfg: NonNullable<ReturnType<typeof smtpConfig>>, to: s
   }
 }
 
-async function sendByResend(to: string, name: string, numero: string, code: string, role: string, token?: string | null): Promise<string> {
+async function sendByResend(to: string, mail: Mail): Promise<string> {
   const { data: cfg } = await admin.from('admin_settings').select('value').eq('key', 'resend_config').maybeSingle();
   const apiKey = Deno.env.get('RESEND_API_KEY') || cfg?.value?.api_key;
   const from = Deno.env.get('RESEND_FROM_EMAIL') || cfg?.value?.from_email || 'notificaciones@evalpro.udes.edu.co';
   const enabled = cfg?.value?.enabled !== false;
   if (!apiKey || !enabled) throw new HttpError(503, 'El envío de correos no está configurado. Avisa al administrador.');
-  const { html, subject } = await buildMail(name, numero, code, role, token);
+  const { html, subject } = mail;
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
@@ -248,10 +254,86 @@ async function sendByResend(to: string, name: string, numero: string, code: stri
   return '';
 }
 
-async function sendEmail(to: string, name: string, numero: string, code: string, role: string, token?: string | null): Promise<string> {
+async function sendEmail(to: string, mail: Mail): Promise<string> {
   const smtp = smtpConfig();
-  if (smtp) return sendBySmtp(smtp, to, name, numero, code, role, token);
-  return sendByResend(to, name, numero, code, role, token);
+  if (smtp) return sendBySmtp(smtp, to, mail);
+  return sendByResend(to, mail);
+}
+
+/** Token del enlace de firma de la persona evaluada: reutiliza el vigente o crea uno nuevo. */
+async function ensureToken(actaId: string, minMs = 60_000): Promise<{ token: string; expiresAt: string }> {
+  const { data: cur } = await admin.from('feedback_sign_tokens').select('token, expires_at').eq('acta_id', actaId).maybeSingle();
+  if (cur?.token && new Date(cur.expires_at).getTime() >= Date.now() + minMs) return { token: cur.token, expiresAt: cur.expires_at };
+  const token = randomToken();
+  const expiresAt = new Date(Date.now() + TOKEN_TTL_MS).toISOString();
+  const { error } = await admin.from('feedback_sign_tokens').upsert({ acta_id: actaId, token, expires_at: expiresAt });
+  if (error) throw new HttpError(500, 'No se pudo generar el enlace de firma.');
+  return { token, expiresAt };
+}
+
+/** Correo para la persona evaluada: enlace de firma y su código OTP. Plantilla editable: mail_templates.firma_invitacion. */
+async function buildInvite(name: string, evaluador: string, numero: string, code: string, link: string, horas: number, token?: string | null): Promise<Mail> {
+  const spaced = `${code.slice(0, 3)} ${code.slice(3)}`;
+  const text = `Hola ${name},\n\n${evaluador} firmó el acta de retroalimentación ${numero} y ahora te corresponde firmarla a ti.\n\n1. Abre este enlace: ${link}\n2. Escribe este código cuando te lo pida: ${spaced}\n\nEl enlace y el código vencen en ${horas} horas y el código solo sirve una vez. Si no esperabas este mensaje, ignóralo y no compartas el código.\n\nEvalPro UDES`;
+  const html = `<!doctype html><html lang="es"><body style="margin:0;background:#f5f6f8;font-family:Segoe UI,Arial,sans-serif;color:#0f172a">
+  <table width="100%" cellpadding="0" cellspacing="0" style="padding:32px 16px"><tr><td align="center">
+   <table width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background:#ffffff;border:1px solid #e2e8f0;border-radius:8px">
+    <tr><td style="padding:24px 28px 8px;font-size:18px;font-weight:600">Firma del acta ${esc(numero)}</td></tr>
+    <tr><td style="padding:0 28px;font-size:14px;color:#334155;line-height:1.55">Hola ${esc(name)}, ${esc(evaluador)} firmó el acta de retroalimentación y ahora te corresponde firmarla a ti.</td></tr>
+    <tr><td align="center" style="padding:20px 28px 6px"><a href="${esc(link)}" style="display:inline-block;background:#1d4ed8;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;padding:12px 22px;border-radius:6px">Revisar y firmar el acta</a></td></tr>
+    <tr><td align="center" style="padding:14px 28px 4px;font-size:13px;color:#334155">Tu código de firma</td></tr>
+    <tr><td align="center" style="padding:0 28px 14px"><div style="display:inline-block;padding:14px 22px;border:1px solid #cbd5e1;border-radius:6px;font:600 30px ui-monospace,Menlo,Consolas,monospace;letter-spacing:6px">${spaced}</div></td></tr>
+    <tr><td style="padding:0 28px 24px;font-size:12.5px;color:#64748b;line-height:1.5">El enlace y el código vencen en ${horas} horas y el código solo sirve una vez. Si no esperabas este mensaje, ignóralo y no compartas el código.</td></tr>
+   </table></td></tr></table></body></html>`;
+  const base = { text, html, subject: `Te corresponde firmar el acta ${numero}` };
+  try {
+    const { data: t } = await admin.from('mail_templates').select('subject, html').eq('key', 'firma_invitacion').maybeSingle();
+    if (t?.html && /\{\{\s*codigo\s*\}\}/i.test(t.html) && /\{\{\s*enlace\s*\}\}/i.test(t.html)) {
+      const vars = { nombre: name, evaluador, acta: numero, codigo: spaced, enlace: link, vence_horas: String(horas) };
+      return { subject: renderTpl(t.subject || base.subject, vars, false), html: withPixel(renderTpl(t.html, vars), token), text };
+    }
+  } catch { /* usa la plantilla por defecto */ }
+  return { ...base, html: withPixel(html, token) };
+}
+
+/**
+ * Tras la firma de la persona evaluadora: envía a la persona evaluada el enlace de firma y su código OTP.
+ * Nunca interrumpe la firma ya hecha: si algo falla, devuelve el motivo para avisarlo en pantalla.
+ */
+async function inviteEvaluated(acta: any, evaluatorName: string, meta: Meta): Promise<{ sent: boolean; to?: string | null; reason?: string }> {
+  try {
+    if (acta.evaluated_signed_at) return { sent: false, reason: 'La persona evaluada ya firmó.' };
+    const evaluated = await loadUser(acta.evaluated_id);
+    if (!evaluated?.email) return { sent: false, reason: 'La persona evaluada no tiene correo registrado.' };
+    const { token, expiresAt } = await ensureToken(acta.id, 24 * 3600_000);
+    const code = randomCode();
+    const { error } = await admin.from('feedback_otps').upsert(
+      { acta_id: acta.id, role: 'evaluado', code_hash: await sha256(`${acta.id}:evaluado:${code}`), expires_at: expiresAt, attempts: 0, created_at: new Date().toISOString() },
+      { onConflict: 'acta_id,role' },
+    );
+    if (error) return { sent: false, reason: 'No se pudo generar el código de la persona evaluada.' };
+    const subject = `Te corresponde firmar el acta ${acta.numero}`;
+    const { data: logRow } = await admin.from('mail_log').insert({
+      kind: 'otp', template_key: 'firma_invitacion', to_email: evaluated.email, to_name: evaluated.full_name, user_id: evaluated.id, acta_id: acta.id, role: 'evaluado', subject, status: 'sending',
+    }).select('id, token').maybeSingle();
+    await trace('otp_generated', { acta, role: 'evaluado', logId: logRow?.id, meta, data: { invitacion: true, vigenciaSeg: Math.round((new Date(expiresAt).getTime() - Date.now()) / 1000) } });
+    try {
+      const horas = Math.max(1, Math.round((new Date(expiresAt).getTime() - Date.now()) / 3600_000));
+      const mail = await buildInvite(evaluated.full_name, evaluatorName, acta.numero, code, `${APP_URL}?module=firmar&t=${encodeURIComponent(token)}`, horas, logRow?.token);
+      const messageId = await sendEmail(evaluated.email, mail);
+      if (logRow) await admin.from('mail_log').update({ status: 'sent', sent_at: new Date().toISOString(), message_id: messageId || null }).eq('id', logRow.id);
+      await trace('otp_sent', { acta, role: 'evaluado', logId: logRow?.id, meta, data: { destino: mask(evaluated.email), invitacion: true } });
+      return { sent: true, to: mask(evaluated.email) };
+    } catch (e) {
+      await admin.from('feedback_otps').delete().eq('acta_id', acta.id).eq('role', 'evaluado');
+      if (logRow) await admin.from('mail_log').update({ status: 'failed', error: 'No se pudo entregar al servidor de correo' }).eq('id', logRow.id);
+      await trace('failed', { acta, role: 'evaluado', logId: logRow?.id, meta });
+      return { sent: false, reason: e instanceof HttpError ? e.message : 'No se pudo enviar el correo a la persona evaluada.' };
+    }
+  } catch (e) {
+    console.error('[feedback-otp] invitación', e);
+    return { sent: false, reason: 'No se pudo enviar el correo a la persona evaluada.' };
+  }
 }
 
 serve(async (req) => {
@@ -265,7 +347,10 @@ serve(async (req) => {
       const { acta, user } = await actor({ token: body.token });
       await trace('portal_open', { acta, role: 'evaluado', meta });
       const evaluator = await loadUser(acta.evaluator_id);
+      const { data: pend } = await admin.from('feedback_otps').select('expires_at').eq('acta_id', acta.id).eq('role', 'evaluado').maybeSingle();
+      const pending = pend && new Date(pend.expires_at).getTime() > Date.now() ? pend.expires_at : null;
       return json({
+        pendingCodeExpiresAt: pending,
         numero: acta.numero, fecha: acta.fecha, lugar: acta.lugar, hora_inicio: acta.hora_inicio, hora_fin: acta.hora_fin,
         objetivo: acta.objetivo, compromisos: acta.compromisos,
         evaluatorName: evaluator?.full_name ?? '', evaluatedName: user?.full_name ?? '', emailMask: mask(user?.email),
@@ -280,13 +365,7 @@ serve(async (req) => {
       if (role !== 'evaluador') throw new HttpError(403, 'Acción no permitida.');
       const miss = missingFields(acta);
       if (miss.length) throw new HttpError(422, `Completa el acta antes de firmar. Falta: ${miss.join(', ')}.`);
-      const { data: cur } = await admin.from('feedback_sign_tokens').select('token, expires_at').eq('acta_id', acta.id).maybeSingle();
-      let token = cur?.token;
-      if (!token || new Date(cur!.expires_at).getTime() < Date.now() + 60_000) {
-        token = randomToken();
-        const { error } = await admin.from('feedback_sign_tokens').upsert({ acta_id: acta.id, token, expires_at: new Date(Date.now() + TOKEN_TTL_MS).toISOString() });
-        if (error) throw new HttpError(500, 'No se pudo generar el enlace de firma.');
-      }
+      const { token } = await ensureToken(acta.id);
       const evaluated = await loadUser(acta.evaluated_id);
       return json({ token, evaluatorEmail: mask(user?.email), evaluatedEmail: mask(evaluated?.email) });
     }
@@ -319,7 +398,7 @@ serve(async (req) => {
       await trace('otp_generated', { acta, role, logId: logRow?.id, meta, data: { vigenciaSeg: OTP_TTL_MS / 1000 } });
       if (!echo) {
         try {
-          const messageId = await sendEmail(user.email, user.full_name, acta.numero, code, role === 'evaluador' ? 'persona evaluadora' : 'persona evaluada', logRow?.token);
+          const messageId = await sendEmail(user.email, await buildMail(user.full_name, acta.numero, code, role === 'evaluador' ? 'persona evaluadora' : 'persona evaluada', logRow?.token));
           if (logRow) await admin.from('mail_log').update({ status: 'sent', sent_at: new Date().toISOString(), message_id: messageId || null }).eq('id', logRow.id);
           await trace('otp_sent', { acta, role, logId: logRow?.id, meta, data: { destino: mask(user.email) } });
         } catch (e) {
@@ -368,7 +447,9 @@ serve(async (req) => {
       if (error) throw new HttpError(500, 'No se pudo registrar la firma.');
       await trace('sign_completed', { acta, role, meta, data: { firmaId: id, huella: patch.content_hash, firmadoEn: now } });
       const both = role === 'evaluador' ? !!acta.evaluated_signed_at : !!acta.evaluator_signed_at;
-      return json({ ok: true, signedAt: now, signId: id, finished: both, hash: patch.content_hash });
+      // La persona evaluadora acaba de firmar: la evaluada recibe por correo el enlace y su código.
+      const invitation = role === 'evaluador' ? await inviteEvaluated({ ...acta, ...patch }, user?.full_name ?? 'La persona evaluadora', meta) : undefined;
+      return json({ ok: true, signedAt: now, signId: id, finished: both, hash: patch.content_hash, ...(invitation ? { invitation } : {}) });
     }
 
     throw new HttpError(400, 'Acción no reconocida.');

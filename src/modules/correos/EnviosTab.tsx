@@ -185,7 +185,7 @@ function NuevoEnvio({ api, boot, runner, onBack }: { api: Api; boot: Boot; runne
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="grid gap-1.5"><label htmlFor="env-tpl" className="text-[13px] font-medium text-slate-700">Plantilla</label>
                 <select id="env-tpl" className="ui-input" value={templateKey} onChange={(e) => { const t = templates.find((x) => x.key === e.target.value); setTemplateKey(e.target.value); if (t) setSubject(t.subject); }}>
-                  {templates.filter((t) => t.key !== 'otp_firma').map((t) => <option key={t.key} value={t.key}>{t.name}</option>)}
+                  {templates.filter((t) => t.key !== 'otp_firma' && t.key !== 'firma_invitacion').map((t) => <option key={t.key} value={t.key}>{t.name}</option>)}
                 </select></div>
               <div className="grid gap-1.5"><label htmlFor="env-sub" className="text-[13px] font-medium text-slate-700">Asunto</label>
                 <input id="env-sub" className="ui-input" value={subject} onChange={(e) => setSubject(e.target.value)} maxLength={200} /></div>

@@ -59,6 +59,7 @@ export function SignDialog({ acta, evaluator, evaluated, currentUserId, onClose,
   const [devCode, setDevCode] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
   const [copied, setCopied] = useState(false);
+  const [invite, setInvite] = useState<{ sent: boolean; to?: string | null; reason?: string } | null>(null);
   const panel = useRef<HTMLDivElement>(null);
   const actaRef = useRef(acta); actaRef.current = acta;
 
@@ -125,7 +126,7 @@ export function SignDialog({ acta, evaluator, evaluated, currentUserId, onClose,
   const verify = useCallback(async (c: string) => {
     if (c.length !== 6) return;
     setBusy('verify'); setErr(null);
-    const r = await callOtp<{ signedAt: string; signId: string; finished: boolean; hash: string }>({ action: 'verify', actaId: acta.id, userId: currentUserId, code: c });
+    const r = await callOtp<{ signedAt: string; signId: string; finished: boolean; hash: string; invitation?: { sent: boolean; to?: string | null; reason?: string } }>({ action: 'verify', actaId: acta.id, userId: currentUserId, code: c });
     setBusy(null);
     if (r.error || !r.data) {
       setErr(r.error || 'No se pudo verificar el código.'); setCode('');
@@ -134,7 +135,7 @@ export function SignDialog({ acta, evaluator, evaluated, currentUserId, onClose,
       return;
     }
     onActa({ evaluator_signed_at: r.data.signedAt, evaluator_sign_id: r.data.signId, content_hash: r.data.hash });
-    setPhase('idle'); setDevCode(null);
+    setPhase('idle'); setDevCode(null); setInvite(r.data.invitation ?? null);
   }, [acta.id, currentUserId, onActa]);
 
   const copyLink = async () => {
@@ -204,10 +205,13 @@ export function SignDialog({ acta, evaluator, evaluated, currentUserId, onClose,
             {/* Evaluado por QR */}
             <div className="grid content-start gap-3.5 border-t border-slate-200 p-5 md:border-l md:border-t-0">
               <h3 className="text-sm font-semibold text-slate-900">Firma de {evaluated.nombre.split(' ')[0]}</h3>
-              <p className="text-sm text-slate-600">Muestra este QR a {evaluated.nombre.split(' ')[0]}. Al abrirlo en su celular recibe su propio código OTP en <b className="text-slate-900">{masks.evaluated || 'su correo'}</b> y firma desde allí.</p>
+              <p className="text-sm text-slate-600">Muestra este QR a {evaluated.nombre.split(' ')[0]}. Al abrirlo en su celular recibe su propio código OTP en <b className="text-slate-900">{masks.evaluated || 'su correo'}</b> y firma desde allí. Cuando firmes, también le llegará por correo el enlace con su código.</p>
               <div className={`mx-auto grid w-fit place-items-center rounded-lg border border-slate-300 bg-white p-3.5 transition-[opacity,filter] duration-300 ${guestSigned ? 'opacity-35 blur-[1.5px]' : ''}`}>
                 {qr ? <div className="h-44 w-44 [&>svg]:h-full [&>svg]:w-full" dangerouslySetInnerHTML={{ __html: qr }} aria-label="Código QR para firmar" role="img" /> : <div className="grid h-44 w-44 place-items-center"><Loader2 className="h-6 w-6 animate-spin text-slate-400" /></div>}
               </div>
+              {invite && (invite.sent
+                ? <p role="status" className="flex items-start gap-2 rounded-md bg-emerald-50 px-3 py-2 text-[12.5px] text-emerald-800"><Mail className="mt-0.5 h-4 w-4 shrink-0" />Enviamos a <b>{invite.to || 'su correo'}</b> el enlace de firma y su código OTP.</p>
+                : !guestSigned && <p role="alert" className="flex items-start gap-2 rounded-md bg-amber-50 px-3 py-2 text-[12.5px] text-amber-800"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />No se pudo enviar el correo: {invite.reason || 'intenta de nuevo.'} Usa el QR o copia el enlace.</p>)}
               {link && <p className="break-all text-center font-mono text-[11.5px] text-slate-500">{link.replace(/^https?:\/\//, '')}</p>}
               <p className={`flex items-center gap-2 text-sm font-medium ${guestSigned ? 'text-emerald-700' : 'text-slate-700'}`} aria-live="polite">
                 {guestSigned ? <><BadgeCheck className="h-4 w-4" />Firmó el {sello(acta.evaluated_signed_at!)}</> : <><span className="h-2 w-2 animate-pulse rounded-full bg-amber-500" />Esperando la firma</>}

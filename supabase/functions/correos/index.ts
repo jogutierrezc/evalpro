@@ -91,6 +91,7 @@ function validateTemplate(key: string, subject: string, html: string) {
   if (!html.trim()) throw new HttpError(400, 'El HTML no puede estar vacío.');
   if (html.length > 150_000) throw new HttpError(400, 'El HTML supera los 150 KB.');
   if (/<script[\s>]/i.test(html) || /\son[a-z]+\s*=/i.test(html) || /javascript:/i.test(html)) throw new HttpError(400, 'El HTML no puede incluir scripts ni eventos (los clientes de correo los bloquean).');
+  if (key === 'firma_invitacion' && !(/\{\{\s*codigo\s*\}\}/i.test(html) && /\{\{\s*enlace\s*\}\}/i.test(html))) throw new HttpError(400, 'La plantilla de invitación a firmar debe incluir las variables {{codigo}} y {{enlace}}.');
   if (key === 'otp_firma' && !/\{\{\s*codigo\s*\}\}/i.test(html)) throw new HttpError(400, 'La plantilla del código OTP debe incluir la variable {{codigo}}.');
 }
 
