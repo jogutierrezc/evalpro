@@ -564,14 +564,23 @@ export function DashboardModule() {
           completedQuery = completedQuery.eq('period_id', selectedPeriodId);
         }
 
-        const [employeesRes, officesRes, pendingRes, completedRes, rolesRes, usersData] = await Promise.all([
+        // Con un período elegido, "pendientes" usa la misma lógica del módulo Pendientes: filas sin completar más
+        // las autoevaluaciones habilitadas que aún no existen como fila. Con "todos" se mantiene el conteo de filas.
+        const pendingPromise: PromiseLike<{ count?: number | null; data?: any }> =
+          selectedPeriodId !== 'all'
+            ? supabase.rpc('pending_count', { p_period: selectedPeriodId })
+            : pendingQuery;
+
+        const [employeesRes, officesRes, pendingResRaw, completedRes, rolesRes, usersData] = await Promise.all([
           supabase.from('users').select('id', { count: 'exact', head: true }),
           supabase.from('offices').select('id', { count: 'exact', head: true }),
-          pendingQuery,
+          pendingPromise,
           completedQuery,
           supabase.from('roles').select('id', { count: 'exact', head: true }),
           supabase.from('users').select('campus'),
         ]);
+
+        const pendingTotal = Number(pendingResRaw.count ?? pendingResRaw.data ?? 0) || 0;
 
         // Calculate users by campus
         const campusDistribution: Record<string, number> = {};
@@ -583,7 +592,7 @@ export function DashboardModule() {
         setStats({
           totalEmployees: employeesRes.count || 0,
           totalOffices: officesRes.count || 0,
-          pendingEvaluations: pendingRes.count || 0,
+          pendingEvaluations: pendingTotal,
           completedEvaluations: completedRes.count || 0,
           totalRoles: rolesRes.count || 0,
         });
