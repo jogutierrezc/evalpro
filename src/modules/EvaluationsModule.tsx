@@ -5,6 +5,14 @@ import { EvaluationForm } from './evaluations/EvaluationForm';
 import { EvaluatorView } from './evaluations/EvaluatorView';
 
 
+/** Fecha de hoy en la zona horaria del equipo (AAAA-MM-DD). toISOString() daría la fecha UTC y desfasa el día por la tarde-noche. */
+const hoyLocal = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+const SIN_PERIODO = 'No hay un período de evaluación activo. Pide al administrador que cree o active el período antes de iniciar evaluaciones.';
+
 interface EvaluationsModuleProps {
   onNavigate: (module: string) => void;
 }
@@ -55,7 +63,7 @@ export function EvaluationsModule({ onNavigate }: EvaluationsModuleProps) {
       let query = supabase.from('evaluations').select('*');
 
       // Filtrar por período activo si existe (usando fecha local con timezone)
-      const todayStr = new Date().toISOString().slice(0, 10);
+      const todayStr = hoyLocal();
       const { data: periodData } = await supabase
         .from('evaluation_periods')
         .select('id, start_date, end_date, is_active')
@@ -128,7 +136,7 @@ export function EvaluationsModule({ onNavigate }: EvaluationsModuleProps) {
 
 
       // Find active period covering today (fecha local con timezone)
-      const todayStr = new Date().toISOString().slice(0, 10);
+      const todayStr = hoyLocal();
       const { data: periodData } = await supabase
         .from('evaluation_periods')
         .select('*')
@@ -573,6 +581,7 @@ export function EvaluationsModule({ onNavigate }: EvaluationsModuleProps) {
 
   const handleAdminTakeTemplate = async (template: EvaluationTemplate) => {
     if (!user) return;
+    if (!activePeriod) { alert(SIN_PERIODO); return; }
     // allow admin to create a test evaluation for themselves
     try {
       const { data, error } = await supabase
@@ -582,7 +591,7 @@ export function EvaluationsModule({ onNavigate }: EvaluationsModuleProps) {
             template_id: template.id,
             evaluator_id: user.id,
             evaluated_id: user.id,
-            period_id: activePeriod?.id || null,
+            period_id: activePeriod.id,
             status: 'pending',
           },
         ])
@@ -605,6 +614,7 @@ export function EvaluationsModule({ onNavigate }: EvaluationsModuleProps) {
   const handleTakeForEvaluated = async (template: EvaluationTemplate, evaluatedId: string) => {
     if (!user) return;
     if (!evaluatedId) { alert('Selecciona un colaborador para evaluar'); return; }
+    if (!activePeriod) { alert(SIN_PERIODO); return; }
 
     try {
       const evaluatorId = await getPersonIdForUser(user) || (user as any).id;
@@ -615,7 +625,7 @@ export function EvaluationsModule({ onNavigate }: EvaluationsModuleProps) {
             template_id: template.id,
             evaluator_id: evaluatorId,
             evaluated_id: evaluatedId,
-            period_id: activePeriod?.id || null,
+            period_id: activePeriod.id,
             status: 'pending',
           },
         ])
@@ -639,6 +649,7 @@ export function EvaluationsModule({ onNavigate }: EvaluationsModuleProps) {
       alert('Ya has tomado esta prueba');
       return;
     }
+    if (!activePeriod) { alert(SIN_PERIODO); return; }
 
     try {
       const collabId = await getPersonIdForUser(user) || (user as any).id;
@@ -649,7 +660,7 @@ export function EvaluationsModule({ onNavigate }: EvaluationsModuleProps) {
             template_id: template.id,
             evaluator_id: collabId,
             evaluated_id: collabId,
-            period_id: activePeriod?.id || null,
+            period_id: activePeriod.id,
             status: 'pending',
           },
         ])

@@ -159,10 +159,12 @@ export function EvaluationForm({ evaluation, onClose }: EvaluationFormProps) {
           return;
         }
 
-        await supabase
+        const { error: completeError } = await supabase
           .from('evaluations')
           .update({ status: 'completed', completed_at: new Date().toISOString() })
           .eq('id', evaluation.id);
+        // Antes el error se ignoraba y la evaluación quedaba abierta sin avisar.
+        if (completeError) throw completeError;
 
         // Clear auto-save on completion
         localStorage.removeItem(`eval_autosave_${evaluation.id}`);
