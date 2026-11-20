@@ -1,11 +1,38 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from 'react';
+import { gsap } from 'gsap';
 import { supabase, Evaluation, EvaluationQuestion } from '../../lib/supabase';
-import { ArrowLeft, Save } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Check, CheckCircle2, Save } from 'lucide-react';
+import { enviarCopiaSiCompleto } from './cierreCorreo';
 
 interface EvaluationFormProps {
   evaluation: Evaluation;
   onClose: () => void;
 }
+
+type Notice = { type: 'ok' | 'error'; text: string };
+
+const SCALE: { value: number; label: string }[] = [
+  { value: 1, label: 'Nunca' },
+  { value: 2, label: 'Casi nunca' },
+  { value: 3, label: 'A veces' },
+  { value: 4, label: 'Casi siempre' },
+  { value: 5, label: 'Siempre' },
+];
+
+/** Una respuesta cuenta solo si tiene contenido: el texto vacío o con solo espacios no cuenta. */
+const isAnswered = (v: unknown) => v !== undefined && v !== null && !(typeof v === 'string' && v.trim() === '');
+
+/** Las fechas sin hora (AAAA-MM-DD) se leen como día local: `new Date('2026-01-12')` es UTC y en Colombia mostraría el día anterior. */
+const fechaLarga = (iso: string) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  const d = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : new Date(iso);
+  return d.toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' });
+};
+
+const btnPrimary =
+  'inline-flex items-center justify-center gap-2 rounded-lg bg-blue-700 px-5 py-3 text-sm font-semibold text-white transition-[background-color,transform] duration-150 ease-out hover:bg-blue-800 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2';
+const btnSecondary =
+  'inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition-[background-color,transform] duration-150 ease-out hover:bg-slate-50 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2';
 
 export function EvaluationForm({ evaluation, onClose }: EvaluationFormProps) {
   const [questions, setQuestions] = useState<EvaluationQuestion[]>([]);
@@ -20,9 +47,36 @@ export function EvaluationForm({ evaluation, onClose }: EvaluationFormProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [periodInfo, setPeriodInfo] = useState<{ year: number; start_date: string; end_date: string } | null>(null);
+  const [meta, setMeta] = useState<{ templateName: string; evaluatedName: string | null }>({
+    templateName: (evaluation as any).template?.name || '',
+    evaluatedName: (evaluation as any).evaluated?.full_name || null,
+  });
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [done, setDone] = useState(false);
+  const [missingIds, setMissingIds] = useState<string[]>([]);
+  const root = useRef<HTMLDivElement>(null);
+
+  const isSelf = evaluation.evaluator_id === evaluation.evaluated_id;
 
   useEffect(() => {
     loadQuestionsAndResponses();
+  }, [evaluation.id]);
+
+  // Nombre de la plantilla y de la persona evaluada, si la pantalla anterior no los trajo (evaluación recién creada).
+  useEffect(() => {
+    (async () => {
+      try {
+        const [tpl, usr] = await Promise.all([
+          meta.templateName ? Promise.resolve({ data: null }) : supabase.from('evaluation_templates').select('name').eq('id', evaluation.template_id).maybeSingle(),
+          meta.evaluatedName || isSelf ? Promise.resolve({ data: null }) : supabase.from('users').select('full_name').eq('id', evaluation.evaluated_id).maybeSingle(),
+        ]);
+        setMeta((m) => ({
+          templateName: m.templateName || (tpl.data as any)?.name || '',
+          evaluatedName: m.evaluatedName || (usr.data as any)?.full_name || null,
+        }));
+      } catch { /* el título es opcional: se queda con «Evaluación» */ }
+    })();
   }, [evaluation.id]);
 
   const loadQuestionsAndResponses = async () => {
@@ -114,15 +168,15 @@ export function EvaluationForm({ evaluation, onClose }: EvaluationFormProps) {
   const handleResponseChange = (questionId: string, value: any) => {
     setResponses((prev) => ({ ...prev, [questionId]: value }));
   };
-
   const handleSave = async (complete: boolean = false) => {
     // Pre-validation: Don't allow saving if there are no responses but there are questions
     if (questions.length > 0 && Object.keys(responses).length === 0) {
-      alert('No se han detectado respuestas para guardar. Por favor responde al menos una pregunta.');
+      setNotice({ type: 'error', text: 'Aún no hay respuestas que guardar. Responde al menos una pregunta.' });
       return;
     }
 
     setSaving(true);
+    setNotice(null);
 
     try {
       const responsesToInsert = Object.entries(responses).map(([questionId, value]) => ({
@@ -152,10 +206,12 @@ export function EvaluationForm({ evaluation, onClose }: EvaluationFormProps) {
       }
 
       if (complete) {
-        const allAnswered = questions.every((q) => responses[q.id] !== undefined);
+        // Una respuesta de texto vacía o solo con espacios no cuenta como respondida.
+        const allAnswered = questions.every((q) => isAnswered(responses[q.id]));
         if (!allAnswered) {
-          alert('Por favor responde todas las preguntas antes de completar');
           setSaving(false);
+          setConfirming(false);
+          showMissing();
           return;
         }
 
@@ -350,6 +406,12 @@ export function EvaluationForm({ evaluation, onClose }: EvaluationFormProps) {
           console.error('Error saving evaluation results:', err);
         }
 
+        // Si esta era la última evaluación pendiente del período, la persona recibe su copia en PDF por correo.
+        // Va después de guardar los puntajes (el PDF los lee) y sin await: no retrasa ni bloquea el cierre.
+        void enviarCopiaSiCompleto(evaluation.evaluator_id).catch((err) =>
+          console.warn('[CopiaPDF] No se pudo enviar la copia:', err),
+        );
+
         // --- AUTO-NOTIFICACIÓN: Verificar si TODAS las evaluaciones están completas ---
         try {
           const session = await supabase.auth.getSession();
@@ -381,15 +443,16 @@ export function EvaluationForm({ evaluation, onClose }: EvaluationFormProps) {
           // No bloquear la experiencia del usuario si falla la notificación
         }
 
-        alert('Evaluación completada exitosamente');
-        onClose();
+        setConfirming(false);
+        setDone(true);
       } else {
-        alert('Progreso guardado');
+        setNotice({ type: 'ok', text: `Progreso guardado a las ${new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}.` });
       }
     } catch (error: any) {
       console.error('Error saving evaluation:', error);
       const msg = error?.message || error?.error || (typeof error === 'string' ? error : JSON.stringify(error || {}));
-      alert('Error al guardar la evaluación: ' + (msg || 'ver consola para más detalles'));
+      setConfirming(false);
+      setNotice({ type: 'error', text: 'No se pudo guardar la evaluación: ' + (msg || 'revisa la consola para más detalles') });
     } finally {
       setSaving(false);
     }
@@ -418,42 +481,116 @@ export function EvaluationForm({ evaluation, onClose }: EvaluationFormProps) {
 
     return (total / ratingQuestions.length).toFixed(2);
   };
+
+  // ---------- Presentación ----------
+  const total = questions.length;
+  const answeredCount = useMemo(() => questions.filter((q) => isAnswered(responses[q.id])).length, [questions, responses]);
+  const unanswered = total - answeredCount;
+  const ratio = total > 0 ? answeredCount / total : 0;
+  const hasRating = questions.some((q) => q.question_type === 'rating');
+
+  // Al responder, la pregunta deja de marcarse como faltante.
+  useEffect(() => {
+    setMissingIds((ids) => (ids.length ? ids.filter((id) => !isAnswered(responses[id])) : ids));
+  }, [responses]);
+
+  // Una sola entrada al abrir el formulario, y un momento propio al completar. Con «reducir movimiento» no se anima.
+  useLayoutEffect(() => {
+    if (loading || done) return;
+    const mm = gsap.matchMedia();
+    mm.add(
+      '(prefers-reduced-motion: no-preference)',
+      () => {
+        gsap.from('[data-rise]', { autoAlpha: 0, y: 12, duration: 0.6, ease: 'expo.out', stagger: 0.06, clearProps: 'transform,opacity,visibility' });
+      },
+      root.current ?? undefined,
+    );
+    return () => mm.revert();
+  }, [loading, done]);
+
+  useLayoutEffect(() => {
+    if (!done) return;
+    const mm = gsap.matchMedia();
+    mm.add(
+      '(prefers-reduced-motion: no-preference)',
+      () => {
+        const tl = gsap.timeline({ defaults: { ease: 'expo.out' } });
+        tl.from('[data-check]', { scale: 0.85, autoAlpha: 0, duration: 0.55, clearProps: 'transform,opacity,visibility' }, 0)
+          .from('[data-done]', { autoAlpha: 0, y: 10, duration: 0.55, stagger: 0.07, clearProps: 'transform,opacity,visibility' }, 0.08);
+      },
+      root.current ?? undefined,
+    );
+    return () => mm.revert();
+  }, [done]);
+
+  const showMissing = () => {
+    const ids = questions.filter((q) => !isAnswered(responses[q.id])).map((q) => q.id);
+    if (ids.length === 0) return;
+    setMissingIds(ids);
+    setNotice({ type: 'error', text: ids.length === 1 ? 'Falta 1 pregunta por responder.' : `Faltan ${ids.length} preguntas por responder.` });
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    document.getElementById(`q-${ids[0]}`)?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' });
+  };
+
+  const onCompleteClick = () => {
+    if (saving) return;
+    if (unanswered > 0) {
+      setConfirming(false);
+      showMissing();
+      return;
+    }
+    if (!confirming) {
+      setConfirming(true);
+      setNotice(null);
+      return;
+    }
+    handleSave(true);
+  };
+
   const renderQuestion = (question: EvaluationQuestion) => {
+    const value = responses[question.id];
     switch (question.question_type) {
-      case 'rating':
+      case 'rating': {
+        const current = SCALE.find((s) => s.value === value);
         return (
-          <div className="flex gap-2">
-            {[1, 2, 3, 4, 5].map((rating) => (
-              <button
-                key={rating}
-                type="button"
-                onClick={() => handleResponseChange(question.id, rating)}
-                className={`w-12 h-12 border-2 rounded-lg font-semibold transition-all ${responses[question.id] === rating
-                  ? 'border-blue-500 bg-blue-50 text-blue-700'
-                  : 'border-gray-300 hover:border-blue-300'
-                  }`}
-              >
-                {rating}
-              </button>
-            ))}
+          <div>
+            <div role="radiogroup" aria-labelledby={`qt-${question.id}`} className="flex gap-2">
+              {SCALE.map(({ value: v, label }) => (
+                <label key={v} className="min-w-0 flex-1 sm:max-w-[7.5rem]">
+                  <input
+                    type="radio"
+                    name={`question-${question.id}`}
+                    checked={value === v}
+                    onChange={() => handleResponseChange(question.id, v)}
+                    className="peer sr-only"
+                  />
+                  <span className="flex h-14 cursor-pointer select-none flex-col items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 transition-[background-color,border-color,color,transform] duration-150 ease-out active:scale-[0.97] peer-checked:border-blue-700 peer-checked:bg-blue-700 peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-blue-600 peer-focus-visible:ring-offset-2 [@media(hover:hover)]:[input:not(:checked)+&]:hover:border-blue-500 [@media(hover:hover)]:[input:not(:checked)+&]:hover:bg-blue-50">
+                    <span className="tabular text-lg font-semibold leading-none">{v}</span>
+                    <span className="mt-1 hidden text-[11px] font-medium leading-none opacity-80 sm:block">{label}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            <p className="mt-2 h-5 text-sm text-slate-500 sm:hidden" aria-hidden>{current ? `${current.value} · ${current.label}` : ''}</p>
           </div>
         );
+      }
       case 'multiple_choice':
         return (
-          <div className="space-y-2">
+          <div role="radiogroup" aria-labelledby={`qt-${question.id}`} className="space-y-2">
             {(question.options as string[])?.map((option, idx) => (
               <label
                 key={idx}
-                className="flex items-center gap-3 cursor-pointer p-3 border-2 border-gray-200 rounded-lg hover:border-blue-300 transition-colors"
+                className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 transition-colors duration-150 has-[:checked]:border-blue-700 has-[:checked]:bg-blue-50 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-blue-600 [@media(hover:hover)]:hover:border-blue-400"
               >
                 <input
                   type="radio"
                   name={`question-${question.id}`}
-                  checked={responses[question.id] === option}
+                  checked={value === option}
                   onChange={() => handleResponseChange(question.id, option)}
-                  className="w-4 h-4 text-blue-600"
+                  className="mt-0.5 h-4 w-4 border-slate-300 text-blue-700 focus:ring-0 focus:ring-offset-0"
                 />
-                <span className="text-gray-700">{option}</span>
+                <span className="text-slate-800">{option}</span>
               </label>
             ))}
           </div>
@@ -461,11 +598,12 @@ export function EvaluationForm({ evaluation, onClose }: EvaluationFormProps) {
       case 'text':
         return (
           <textarea
-            value={responses[question.id] || ''}
+            aria-labelledby={`qt-${question.id}`}
+            value={value || ''}
             onChange={(e) => handleResponseChange(question.id, e.target.value)}
-            className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="ui-input min-h-[7rem] resize-y px-4 py-3 text-base"
             rows={4}
-            placeholder="Escribe tu respuesta..."
+            placeholder="Escribe tu respuesta…"
           />
         );
       default:
@@ -473,147 +611,192 @@ export function EvaluationForm({ evaluation, onClose }: EvaluationFormProps) {
     }
   };
 
-  // build render blocks grouped by section to show section titles
-  const renderBlocks: JSX.Element[] = [];
-  let globalIndex = 0;
-  groupedSections.forEach((sec, sIdx) => {
-    renderBlocks.push(
-      <div key={`sec-${sec.id || 'general'}-${sIdx}`} className="pb-8 border-b border-gray-200 last:border-0">
-        <h2 className="text-xl font-semibold text-gray-800 mb-4">{sec.title}</h2>
-        <div className="space-y-6">
-          {sec.questions.map((question) => {
-            globalIndex += 1;
-            return (
-              <div key={question.id} className="pb-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">{globalIndex}. {question.question_text}</h3>
-                {renderQuestion(question)}
-              </div>
-            );
-          })}
+  // Secciones con preguntas; si la plantilla no tiene secciones, una lista plana sin título.
+  const blocks: { key: string; title: string | null; questions: EvaluationQuestion[] }[] = groupedSections.some((s) => s.questions.length > 0)
+    ? groupedSections.filter((s) => s.questions.length > 0).map((s, i) => ({ key: `${s.id || 'general'}-${i}`, title: s.title, questions: s.questions }))
+    : questions.length > 0
+      ? [{ key: 'plana', title: null, questions }]
+      : [];
+  let questionNumber = 0;
+
+  const asunto = meta.templateName || 'Evaluación';
+  const quien = isSelf ? 'Autoevaluación' : meta.evaluatedName ? `Evaluado: ${meta.evaluatedName}` : null;
+  const periodo = periodInfo ? `Período ${periodInfo.year} · ${fechaLarga(periodInfo.start_date)} al ${fechaLarga(periodInfo.end_date)}` : null;
+
+  let content: ReactNode;
+
+  if (loading) {
+    content = (
+      <div className="mx-auto max-w-3xl animate-pulse space-y-6" aria-busy="true" aria-label="Cargando evaluación">
+        <div className="h-5 w-24 rounded bg-slate-200" />
+        <div className="space-y-3">
+          <div className="h-8 w-2/3 rounded bg-slate-200" />
+          <div className="h-4 w-1/2 rounded bg-slate-200" />
+        </div>
+        <div className="space-y-px overflow-hidden rounded-xl border border-slate-200 bg-white">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="space-y-4 p-6">
+              <div className="h-5 w-3/4 rounded bg-slate-100" />
+              <div className="flex gap-2">{[0, 1, 2, 3, 4].map((j) => <div key={j} className="h-14 flex-1 rounded-lg bg-slate-100" />)}</div>
+            </div>
+          ))}
         </div>
       </div>
     );
-  });
+  } else if (done) {
+    content = (
+      <div className="mx-auto flex max-w-md flex-col items-center px-2 py-16 text-center">
+        <span data-check className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+          <Check className="h-8 w-8" strokeWidth={2.5} aria-hidden />
+        </span>
+        <h1 data-done className="mt-6 text-2xl font-semibold tracking-tight text-slate-900">Evaluación completada</h1>
+        <p data-done className="mt-2 text-slate-600">Tus respuestas quedaron registradas.</p>
+        <p data-done className="mt-4 font-medium text-slate-900">{asunto}</p>
+        {quien && <p data-done className="text-sm text-slate-500">{quien}</p>}
+        <p data-done className="mt-5 text-sm text-slate-500">Puedes ver el informe y descargar el PDF desde la pestaña Completadas.</p>
+        <button data-done onClick={onClose} className={`${btnPrimary} mt-8`}>
+          Volver a mis evaluaciones
+        </button>
+      </div>
+    );
+  } else {
+    content = (
+      <div className="mx-auto max-w-3xl">
+        <button
+          data-rise
+          onClick={onClose}
+          className="-ml-2 mb-4 inline-flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+        >
+          <ArrowLeft className="h-4 w-4" aria-hidden />
+          Volver a mis evaluaciones
+        </button>
 
-  if (loading) {
-    return <div className="text-center py-8">Cargando...</div>;
-  }
-
-  return (
-    <div>
-      <button
-        onClick={onClose}
-        className="flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-6"
-      >
-        <ArrowLeft className="w-5 h-5" />
-        Volver
-      </button>
-
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-4">Evaluación</h1>
-
-          {periodInfo && (
-            <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-lg p-4 mb-4 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 bg-green-400 rounded-full animate-pulse"></span>
-                    <span className="text-white font-semibold">Período Activo {periodInfo.year}</span>
-                  </div>
-                </div>
-                <span className="text-blue-100 text-sm">
-                  {new Date(periodInfo.start_date).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })} — {new Date(periodInfo.end_date).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })}
-                </span>
-              </div>
-            </div>
+        <header data-rise className="border-b border-slate-200 pb-6">
+          <h1 className="text-balance text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">{asunto}</h1>
+          {(quien || periodo) && (
+            <p className="mt-2 text-sm text-slate-500">
+              {quien && <span className="font-medium text-slate-700">{quien}</span>}
+              {quien && periodo && ' · '}
+              {periodo}
+            </p>
           )}
+          <p className="mt-4 max-w-prose text-sm leading-relaxed text-slate-600">
+            Responde todas las preguntas. Mientras respondes, tu avance se conserva en este equipo; usa «Guardar progreso» para
+            poder continuar después desde cualquier equipo.
+          </p>
+        </header>
 
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-            <p className="text-sm text-gray-600">
-              Completa todas las preguntas de esta evaluación. Puedes guardar tu progreso y continuar más tarde.
-            </p>
-          </div>
-
-          {/* Rating Scale Instructions */}
-          <div className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded-lg">
-            <h3 className="font-semibold text-amber-900 mb-2">Escala de Calificación</h3>
-            <p className="text-sm text-amber-800 mb-3">
-              Para las preguntas con escala numérica, seleccione de <strong>1 a 5</strong> de acuerdo con la frecuencia:
-            </p>
-            <div className="grid grid-cols-5 gap-2 text-center text-xs">
-              <div className="bg-red-100 border border-red-300 rounded p-2">
-                <div className="font-bold text-red-700 text-lg">1</div>
-                <div className="text-red-600 mt-1 font-semibold">Nunca</div>
-              </div>
-              <div className="bg-orange-100 border border-orange-300 rounded p-2">
-                <div className="font-bold text-orange-700 text-lg">2</div>
-                <div className="text-orange-600 mt-1 font-semibold">Casi nunca</div>
-              </div>
-              <div className="bg-yellow-100 border border-yellow-300 rounded p-2">
-                <div className="font-bold text-yellow-700 text-lg">3</div>
-                <div className="text-yellow-600 mt-1 font-semibold">A veces</div>
-              </div>
-              <div className="bg-lime-100 border border-lime-300 rounded p-2">
-                <div className="font-bold text-lime-700 text-lg">4</div>
-                <div className="text-lime-600 mt-1 font-semibold">Casi siempre</div>
-              </div>
-              <div className="bg-green-100 border border-green-300 rounded p-2">
-                <div className="font-bold text-green-700 text-lg">5</div>
-                <div className="text-green-600 mt-1 font-semibold">Siempre</div>
-              </div>
-            </div>
-            <p className="text-xs text-amber-700 mt-3 italic">
-              * Donde <strong>1 = Nunca</strong> y <strong>5 = Siempre</strong>
-            </p>
-          </div>
-        </div>
-
-        <div className="space-y-8">
-          {groupedSections && groupedSections.length > 0 ? (
-            // render grouped sections (we built renderBlocks earlier)
-            <div>{renderBlocks}</div>
-          ) : (
-            // fallback: render flat questions
-            <div className="space-y-8">
-              {questions.map((question, index) => (
-                <div key={question.id} className="pb-8 border-b border-gray-200 last:border-0">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                    {index + 1}. {question.question_text}
-                  </h3>
-                  {renderQuestion(question)}
-                </div>
+        {hasRating && (
+          <div data-rise className="mt-6 rounded-xl border border-slate-200 bg-white px-5 py-4">
+            <p className="text-sm font-semibold text-slate-900">Escala de 1 a 5, según la frecuencia</p>
+            <ul className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm text-slate-600">
+              {SCALE.map((s) => (
+                <li key={s.value}><span className="tabular font-semibold text-slate-900">{s.value}</span> {s.label}</li>
               ))}
-            </div>
-          )}
-        </div>
+            </ul>
+          </div>
+        )}
 
-        {questions.length === 0 && (
-          <div className="text-center py-12 text-gray-500">
-            Este formulario no tiene preguntas configuradas
+        {blocks.length === 0 ? (
+          <div data-rise className="mt-6 rounded-xl border border-dashed border-slate-300 px-6 py-14 text-center">
+            <p className="text-sm font-semibold text-slate-900">Este formulario aún no tiene preguntas</p>
+            <p className="mt-1 text-sm text-slate-500">Avísale al administrador para que configure la plantilla.</p>
+          </div>
+        ) : (
+          <div className="mt-8 space-y-8">
+            {blocks.map((block) => {
+              const answeredInBlock = block.questions.filter((q) => isAnswered(responses[q.id])).length;
+              return (
+                <section key={block.key} data-rise aria-label={block.title || 'Preguntas'}>
+                  {block.title && (
+                    <div className="mb-3 flex items-baseline justify-between gap-4 px-1">
+                      <h2 className="text-lg font-semibold text-slate-900">{block.title}</h2>
+                      <span className="tabular shrink-0 text-sm text-slate-500">{answeredInBlock} de {block.questions.length}</span>
+                    </div>
+                  )}
+                  <ol className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white">
+                    {block.questions.map((question) => {
+                      questionNumber += 1;
+                      const answered = isAnswered(responses[question.id]);
+                      const missing = missingIds.includes(question.id);
+                      return (
+                        <li
+                          key={question.id}
+                          id={`q-${question.id}`}
+                          className={`scroll-mt-24 px-5 py-6 sm:px-7 ${missing ? 'bg-red-50' : ''}`}
+                        >
+                          <div className="flex items-start gap-3">
+                            <span className={`tabular mt-0.5 flex h-6 w-7 shrink-0 items-center text-sm font-semibold ${answered ? 'text-emerald-600' : 'text-slate-400'}`}>
+                              {answered ? <Check className="h-4 w-4" aria-label="Respondida" /> : questionNumber}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <h3 id={`qt-${question.id}`} className="max-w-prose text-base font-medium leading-relaxed text-slate-900">
+                                {question.question_text}
+                              </h3>
+                              {missing && <p className="mt-1 text-sm text-red-700">Esta pregunta falta por responder.</p>}
+                              <div className="mt-4">{renderQuestion(question)}</div>
+                            </div>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                </section>
+              );
+            })}
           </div>
         )}
 
         {questions.length > 0 && (
-          <div className="mt-8 flex gap-3 pt-6 border-t border-gray-200">
-            <button
-              onClick={() => handleSave(false)}
-              disabled={saving}
-              className="flex items-center gap-2 bg-gray-200 hover:bg-gray-300 text-gray-700 px-6 py-3 rounded-lg transition-colors disabled:opacity-50"
-            >
-              <Save className="w-5 h-5" />
-              Guardar Progreso
-            </button>
-            <button
-              onClick={() => handleSave(true)}
-              disabled={saving}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg transition-colors disabled:opacity-50"
-            >
-              Completar Evaluación
-            </button>
+          <div data-rise className="sticky bottom-4 z-20 mt-8">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-lg shadow-slate-900/10 sm:p-5">
+              <div className="flex items-baseline justify-between gap-3 text-sm">
+                <span className="tabular font-semibold text-slate-900">{answeredCount} de {total} respondidas</span>
+                {unanswered > 0 && <span className="text-slate-500">{unanswered === 1 ? 'Falta 1' : `Faltan ${unanswered}`}</span>}
+              </div>
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100" role="progressbar" aria-valuemin={0} aria-valuemax={total} aria-valuenow={answeredCount} aria-label="Preguntas respondidas">
+                <div className="h-full origin-left rounded-full bg-blue-700 transition-transform duration-300 ease-out" style={{ transform: `scaleX(${ratio})` }} />
+              </div>
+
+              <div aria-live="polite" className="empty:hidden">
+                {notice && (
+                  <p
+                    role={notice.type === 'error' ? 'alert' : 'status'}
+                    className={`mt-3 flex items-start gap-2 rounded-lg px-3 py-2 text-sm ${notice.type === 'error' ? 'bg-red-50 text-red-800' : 'bg-emerald-50 text-emerald-800'}`}
+                  >
+                    {notice.type === 'error' ? <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden /> : <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />}
+                    {notice.text}
+                  </p>
+                )}
+              </div>
+
+              {confirming ? (
+                <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-sm text-slate-700">Al completar no podrás cambiar tus respuestas. ¿Confirmas?</p>
+                  <div className="grid grid-cols-2 gap-2 sm:flex">
+                    <button onClick={() => setConfirming(false)} disabled={saving} className={btnSecondary}>Seguir revisando</button>
+                    <button onClick={onCompleteClick} disabled={saving} className={btnPrimary}>
+                      {saving ? 'Guardando…' : 'Sí, completar'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-4 grid grid-cols-2 gap-2 sm:flex sm:justify-end">
+                  <button onClick={() => handleSave(false)} disabled={saving} aria-label="Guardar progreso" className={btnSecondary}>
+                    <Save className="h-4 w-4" aria-hidden />
+                    {saving ? 'Guardando…' : (<><span className="sm:hidden">Guardar</span><span className="hidden sm:inline">Guardar progreso</span></>)}
+                  </button>
+                  <button onClick={onCompleteClick} disabled={saving} aria-label="Completar evaluación" className={btnPrimary}>
+                    <span className="sm:hidden">Completar</span><span className="hidden sm:inline">Completar evaluación</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
-    </div>
-  );
+    );
+  }
+
+  return <div ref={root}>{content}</div>;
 }

@@ -697,8 +697,24 @@ export function EvaluationsModule({ onNavigate }: EvaluationsModuleProps) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-gray-500">Cargando...</div>
+      <div className="mx-auto max-w-4xl animate-pulse space-y-6" aria-busy="true" aria-label="Cargando evaluaciones">
+        <div className="space-y-2 border-b border-slate-200 pb-6">
+          <div className="h-7 w-56 rounded bg-slate-200" />
+          <div className="h-4 w-72 rounded bg-slate-200" />
+        </div>
+        <div className="h-36 rounded-2xl bg-slate-200" />
+        <div className="h-10 w-80 rounded bg-slate-200" />
+        <div className="space-y-px overflow-hidden rounded-xl border border-slate-200 bg-white">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="flex items-center justify-between gap-4 p-5">
+              <div className="w-2/3 space-y-2">
+                <div className="h-4 w-3/4 rounded bg-slate-100" />
+                <div className="h-3 w-1/2 rounded bg-slate-100" />
+              </div>
+              <div className="h-10 w-28 rounded-lg bg-slate-100" />
+            </div>
+          ))}
+        </div>
       </div>
     );
   }

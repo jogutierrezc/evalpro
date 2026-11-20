@@ -20,6 +20,9 @@ export interface ResSeccion {
 }
 export interface Resultados {
   version: 1;
+  /** Solo en la copia de la autoevaluación (función evaluacion_propia_resultados). */
+  kind?: 'autoevaluacion';
+  completed_at?: string | null;
   generated_at: string;
   evaluation_id: string;
   template: string;
