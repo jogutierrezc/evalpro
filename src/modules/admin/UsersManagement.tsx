@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { createClient } from '@supabase/supabase-js';
 import { supabase, User, Office, UserRole, Role } from '../../lib/supabase';
 import { Plus, Edit2, Trash2, Search, Upload, X, ChevronLeft, ChevronRight, Users, Filter, Download, Save } from 'lucide-react';
 import * as XLSX from 'xlsx';
@@ -50,30 +49,17 @@ export function UsersManagement() {
     })();
   }, []);
 
-  // Helper that creates an auth user using a temporary client
-  // so the current authenticated session is NOT replaced.
+  // Crea la cuenta de acceso (Auth) mediante la función admin-users, que usa la llave de servicio: no cambia la sesión del
+  // administrador, deja la cuenta confirmada y reutiliza correos huérfanos de usuarios ya borrados.
+  // Devuelve la misma forma que signUp ({ data: { user: { id } }, error }) para no tocar los flujos que la usan.
   const signUpPreserveCreator = async (opts: { email: string; password: string }) => {
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL ?? 'https://abchjsydqtfbwivygpet.supabase.co';
-    const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-    if (!supabaseAnonKey) {
-      throw new Error('Missing VITE_SUPABASE_ANON_KEY');
+    const { data, error } = await supabase.functions.invoke('admin-users', { body: { action: 'create', ...opts } });
+    if (error) {
+      let message = error.message;
+      try { message = (await (error as any).context?.json())?.error || message; } catch { /* sin cuerpo */ }
+      return { data: null as any, error: { message, status: (error as any).context?.status ?? 400 } as any };
     }
-
-    // Create a temporary client that behaves like an incognito window
-    // It will NOT persist the session key to localStorage, thus preserving the admin's session.
-    const tempClient = createClient(supabaseUrl, supabaseAnonKey, {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-        detectSessionInUrl: false,
-      },
-    });
-
-    return await tempClient.auth.signUp({
-      email: opts.email,
-      password: opts.password,
-    });
+    return { data: { user: { id: data.id } } as any, error: null };
   };
 
   // Sync collaborator_offices: add new ones, remove missing ones
@@ -583,12 +569,18 @@ export function UsersManagement() {
     if (!confirm('¿Está seguro de eliminar este usuario?')) return;
 
     try {
-      const { error } = await supabase.from('users').delete().eq('id', id);
-      if (error) throw error;
+      // Borra el perfil y también la cuenta de Auth, para poder volver a usar el correo.
+      const { data, error } = await supabase.functions.invoke('admin-users', { body: { action: 'delete', userId: id } });
+      if (error) {
+        let message = error.message;
+        try { message = (await (error as any).context?.json())?.error || message; } catch { /* sin cuerpo */ }
+        throw new Error(message);
+      }
+      if (data?.error) throw new Error(data.error);
       loadData();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error deleting user:', error);
-      alert('Error al eliminar el usuario');
+      alert('Error al eliminar el usuario: ' + (error?.message || 'ver consola'));
     }
   };
 

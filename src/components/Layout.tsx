@@ -19,6 +19,7 @@ import {
   Mail
 } from 'lucide-react';
 import { useFeedbackAccess } from '../modules/feedback/useFeedbackAccess';
+import { MODULES, isAdminKey, useModuleAccess } from '../lib/permissions';
 
 interface LayoutProps {
   children: ReactNode;
@@ -32,49 +33,31 @@ export function Layout({ children, activeModule, onModuleChange }: LayoutProps) 
   // Retroalimentación: administración y quienes evalúan a otras personas. No aparece para quien solo es evaluado.
   const feedbackAccess = useFeedbackAccess(user);
 
-  const menuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['*'] },
-    { id: 'evaluations', label: 'Evaluaciones', icon: FileText, roles: ['*'] },
-    { id: 'feedback', label: 'Retroalimentación', icon: MessageSquareText, roles: ['*'] },
-    { id: 'plan-mejora', label: 'Plan de Mejora', icon: ClipboardCheck, roles: ['*'] },
-    { id: 'supervision-planes', label: 'Supervisión planes', icon: ShieldCheck, roles: ['admin'] },
-    { id: 'correos', label: 'Correos', icon: Mail, roles: ['admin'] },
-    { id: 'results', label: 'Resultados', icon: BarChart3, roles: ['admin'] },
-    { id: 'reports', label: 'Informes', icon: FileText, roles: ['admin'] },
-    { id: 'export', label: 'Exportar', icon: FileSpreadsheet, roles: ['admin'] },
-    { id: 'self-report', label: 'Mi Resultado Prisma', icon: BrainCircuit, roles: ['*'] },
-    { id: 'my-collaborators', label: 'Mis Colaboradores', icon: Users, roles: ['office_manager', 'admin'] },
-    { id: 'admin', label: 'Administración', icon: Settings, roles: ['admin'] },
-    { id: 'guide', label: 'Ayuda', icon: BookOpen, roles: ['*'] },
-  ];
+  const { can, configured } = useModuleAccess(user?.role);
 
-  const isAdmin = ['admin', 'administrador', 'superadmin'].includes((user?.role || '').toString().toLowerCase());
+  const ICONS: Record<string, typeof LayoutDashboard> = {
+    dashboard: LayoutDashboard, evaluations: FileText, feedback: MessageSquareText, 'plan-mejora': ClipboardCheck,
+    'supervision-planes': ShieldCheck, correos: Mail, results: BarChart3, reports: FileText, export: FileSpreadsheet,
+    'self-report': BrainCircuit, 'my-collaborators': Users, admin: Settings, guide: BookOpen,
+  };
+  // Orden del menú: el de la lista de módulos, salvo que Retroalimentación y Plan de Mejora siguen a Evaluaciones.
+  const menuItems = MODULES.map((m) => ({ id: m.id, label: m.label, icon: ICONS[m.id] }));
+
+  const isAdmin = isAdminKey(user?.role);
 
   // Items ocultos para admin
   const hiddenForAdmin = new Set(['my-collaborators', 'evaluations', 'guide', 'self-report']);
 
   const filteredMenuItems = menuItems.filter(item => {
-    if (item.id === 'feedback') return feedbackAccess.allowed;
-    // Plan de Mejora: quienes evalúan a otras personas (administración usa Supervisión planes).
-    if (item.id === 'plan-mejora') return feedbackAccess.allowed && !isAdmin;
-    // Ocultar items específicos para usuarios admin
     if (isAdmin && hiddenForAdmin.has(item.id)) return false;
-
-    const ur = (user?.role || '').toString().toLowerCase();
-    const matchesRole = (roleKey: string) => {
-      const rk = (roleKey || '').toString().toLowerCase();
-      if (!rk) return false;
-      if (rk === '*') return true;
-      if (rk === ur) return true;
-      if (rk === 'employee' && (ur.includes('colaborador') || ur.includes('employee') || ur.includes('coordinador') || ur.includes('director') || ur.includes('lider') || ur.includes('jefe'))) return true;
-      if (rk === 'office_manager' && (ur.includes('jefe') || ur.includes('manager') || ur.includes('oficina') || ur.includes('coordinador') || ur.includes('director') || ur.includes('lider'))) return true;
-      if (rk === 'admin') {
-        return ur === 'admin' || ur === 'administrador' || ur === 'superadmin';
-      }
-      if (ur.includes(rk) || rk.includes(ur)) return true;
-      return false;
-    };
-    return item.roles.some(matchesRole);
+    // Rol sin configurar: reglas anteriores (quien evalúa a otras personas ve Retroalimentación y Plan de Mejora).
+    if (!configured && !isAdmin) {
+      if (item.id === 'feedback') return feedbackAccess.allowed;
+      if (item.id === 'plan-mejora') return feedbackAccess.allowed;
+    }
+    if (isAdmin && item.id === 'feedback') return feedbackAccess.allowed;
+    if (isAdmin && item.id === 'plan-mejora') return false;
+    return can(item.id);
   });
 
   const handleSignOut = async () => {

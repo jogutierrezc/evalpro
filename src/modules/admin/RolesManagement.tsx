@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { supabase, Role } from '../../lib/supabase';
-import { Plus, Edit2, Trash2 } from 'lucide-react';
+import { Plus, Edit2, Trash2, SlidersHorizontal } from 'lucide-react';
+import RolePermissionsPanel from './RolePermissionsPanel';
 
 export default function RolesManagement() {
   const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Role | null>(null);
+  const [permRole, setPermRole] = useState<Role | null>(null);
   const [form, setForm] = useState({ key: '', label: '', description: '' });
 
   useEffect(() => { loadRoles(); }, []);
@@ -68,6 +70,8 @@ export default function RolesManagement() {
 
   if (loading) return <div className="py-8 text-center">Cargando roles...</div>;
 
+  if (permRole) return <RolePermissionsPanel role={permRole} allRoles={roles} onBack={() => setPermRole(null)} />;
+
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
@@ -86,6 +90,7 @@ export default function RolesManagement() {
               {r.description && <div className="text-sm mt-1">{r.description}</div>}
             </div>
             <div className="flex gap-2">
+              <button onClick={() => setPermRole(r)} className="text-slate-700 px-2 py-1 rounded text-sm"><SlidersHorizontal className="w-4 h-4 inline"/> Permisos</button>
               <button onClick={() => openEdit(r)} className="text-blue-600 px-2 py-1 rounded text-sm"><Edit2 className="w-4 h-4 inline"/> Editar</button>
               <button onClick={() => handleDelete(r.id)} className="text-red-600 px-2 py-1 rounded text-sm"><Trash2 className="w-4 h-4 inline"/> Eliminar</button>
             </div>

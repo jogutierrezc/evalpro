@@ -3,7 +3,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { LoginPage } from './components/LoginPage';
 import { Layout } from './components/Layout';
 import { DashboardModule } from './modules/DashboardModule';
-import { isAdminRole } from './modules/feedback/useFeedbackAccess';
+import { useModuleAccess } from './lib/permissions';
 
 // Módulos pesados cargados bajo demanda: reducen el bundle inicial (antes ~3.4 MB en un solo chunk).
 const AdminModule = lazy(() => import('./modules/AdminModule').then((m) => ({ default: m.AdminModule })));
@@ -36,6 +36,7 @@ function ModuleFallback() {
 
 function AppContent() {
   const { loading, user } = useAuth();
+  const { can } = useModuleAccess(user?.role);
 
   // Initialize state from URL param if present
   const [activeModule, setActiveModule] = useState(() => {
@@ -141,15 +142,15 @@ function AppContent() {
         )}
         {activeModule === 'feedback' && <FeedbackModule />}
         {activeModule === 'plan-mejora' && <PlanMejoraModule />}
-        {activeModule === 'correos' && isAdminRole(user.role) && <CorreosModule />}
-        {activeModule === 'supervision-planes' && user.role === 'admin' && <SupervisionPlanesModule />}
-        {activeModule === 'results' && <ResultsModule />}
-        {activeModule === 'reports' && user.role === 'admin' && <ReportsManagement />}
-        {activeModule === 'export' && user.role === 'admin' && <ExportModule />}
-        {activeModule === 'self-report' && <PrismaReport />}
-        {activeModule === 'my-collaborators' && <MyCollaboratorsModule />}
+        {activeModule === 'correos' && can('correos') && <CorreosModule />}
+        {activeModule === 'supervision-planes' && can('supervision-planes') && <SupervisionPlanesModule />}
+        {activeModule === 'results' && can('results') && <ResultsModule />}
+        {activeModule === 'reports' && can('reports') && <ReportsManagement />}
+        {activeModule === 'export' && can('export') && <ExportModule />}
+        {activeModule === 'self-report' && can('self-report') && <PrismaReport />}
+        {activeModule === 'my-collaborators' && can('my-collaborators') && <MyCollaboratorsModule />}
         {activeModule === 'guide' && <UserGuideModule />}
-        {activeModule === 'admin' && user.role === 'admin' && <AdminModule />}
+        {activeModule === 'admin' && can('admin') && <AdminModule />}
         {activeModule === 'collaborators' && <MyCollaboratorsModule />}
       </Suspense>
     </Layout>
