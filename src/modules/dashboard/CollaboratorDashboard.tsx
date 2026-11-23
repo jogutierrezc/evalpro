@@ -74,11 +74,12 @@ export function CollaboratorDashboard(props: CollaboratorDashboardProps) {
   const startSelfEvaluation = async (tpl: EvaluationTemplate) => {
     if (!user?.id) return;
     setError(null);
+    if (!activePeriod) { setError('No hay un período de evaluación activo. Intenta cuando se abra uno.'); return; }
     setBusyTemplate(tpl.id);
     try {
       const { data, error: insertError } = await supabase
         .from('evaluations')
-        .insert([{ template_id: tpl.id, evaluator_id: user.id, evaluated_id: user.id, status: 'pending' }])
+        .insert([{ template_id: tpl.id, evaluator_id: user.id, evaluated_id: user.id, period_id: activePeriod.id, status: 'pending' }])
         .select('*')
         .single();
       if (insertError) throw insertError;
@@ -95,11 +96,12 @@ export function CollaboratorDashboard(props: CollaboratorDashboardProps) {
   const startEvaluationOf = async (tpl: EvaluationTemplate, evaluatedId: string) => {
     if (!user?.id || !evaluatedId) return;
     setError(null);
+    if (!activePeriod) { setError('No hay un período de evaluación activo. Intenta cuando se abra uno.'); return; }
     setBusyTemplate(tpl.id);
     try {
       const { data, error: insertError } = await supabase
         .from('evaluations')
-        .insert([{ template_id: tpl.id, evaluator_id: user.id, evaluated_id: evaluatedId, status: 'pending' }])
+        .insert([{ template_id: tpl.id, evaluator_id: user.id, evaluated_id: evaluatedId, period_id: activePeriod.id, status: 'pending' }])
         .select('*')
         .single();
       if (insertError) throw insertError;
