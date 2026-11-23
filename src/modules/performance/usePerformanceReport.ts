@@ -63,6 +63,17 @@ export interface PerformanceReport {
   benchmark: BenchmarkState;
 }
 
+/** Resultado de quien solo tiene autoevaluación (aún sin evaluación de un líder). */
+export interface SelfOnlyReport {
+  person: { name: string; role: string; office: string };
+  template: string;
+  date: string;
+  periodLabel: string;
+  otherPeriod: boolean;
+  global: number | null;
+  competencies: { id: string; title: string; score: number | null; criteria: { id: string; text: string; score: number }[] }[];
+}
+
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const mean = (v: number[]) => (v.length ? v.reduce((a, b) => a + b, 0) / v.length : null);
 const dateFmt = (iso: string) => new Date(iso).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -137,6 +148,7 @@ export function usePerformanceReport({ personId, periodId, periods, evaluationId
   const [listed, setListed] = useState<ListedEvaluation[]>([]);
   const [selectedFormId, setSelectedFormId] = useState<string | undefined>();
   const [report, setReport] = useState<PerformanceReport | null>(null);
+  const [selfOnly, setSelfOnly] = useState<SelfOnlyReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -145,7 +157,7 @@ export function usePerformanceReport({ personId, periodId, periods, evaluationId
   // 1) Evaluaciones de otras personas (líderes) sobre esta persona en el periodo
   useEffect(() => {
     let alive = true;
-    if (!personId || !periodId) { setListed([]); setLoading(false); return; }
+    if (!personId || !periodId) { setListed([]); setSelfOnly(null); setLoading(false); return; }
     (async () => {
       try {
         setLoading(true); setError(null);
@@ -167,7 +179,47 @@ export function usePerformanceReport({ personId, periodId, periods, evaluationId
           const fromOpened = evaluationId ? list.find((l) => l.id === evaluationId)?.templateId : undefined;
           return fromOpened || list[0]?.templateId;
         });
-        if (!list.length) { setReport(null); setLoading(false); }
+        if (list.length) { setSelfOnly(null); }
+        else {
+          // Sin evaluación de un líder: si la persona completó su autoevaluación, se muestra ese resultado.
+          setReport(null);
+          const { data: selfRows } = await supabase
+            .from('evaluations')
+            .select('id, template_id, period_id, created_at, template:evaluation_templates ( name )')
+            .eq('evaluated_id', personId).eq('evaluator_id', personId).eq('status', 'completed')
+            .order('created_at', { ascending: false });
+          const rows: any[] = selfRows || [];
+          const row = rows.find((r) => r.period_id === periodId) || rows[0] || null;
+          if (!row) { if (alive) { setSelfOnly(null); setLoading(false); } return; }
+          const [answers, { data: personRow }] = await Promise.all([
+            loadAnswers(row.id),
+            supabase.from('users').select('full_name, role, office:offices ( name )').eq('id', personId).maybeSingle(),
+          ]);
+          const bySec = new Map<string, { id: string; title: string; order: number; criteria: { id: string; text: string; order: number; score: number }[] }>();
+          answers.forEach((a) => {
+            if (!bySec.has(a.sectionId)) bySec.set(a.sectionId, { id: a.sectionId, title: a.sectionTitle, order: a.sectionOrder, criteria: [] });
+            bySec.get(a.sectionId)!.criteria.push({ id: a.questionId, text: a.text, order: a.order, score: a.score });
+          });
+          const competencies = Array.from(bySec.values())
+            .sort((a, b2) => a.order - b2.order || a.title.localeCompare(b2.title, 'es'))
+            .map((c) => {
+              const m = mean(c.criteria.map((x) => x.score));
+              return { id: c.id, title: c.title, score: m !== null ? round2(m) : null, criteria: c.criteria.sort((a, b2) => a.order - b2.order).map(({ id, text, score }) => ({ id, text, score })) };
+            });
+          const g = mean(competencies.map((c) => c.score).filter((v): v is number => v !== null));
+          const selfPeriod = periods.find((p: any) => p.id === row.period_id);
+          if (!alive) return;
+          setSelfOnly({
+            person: { name: (personRow as any)?.full_name || 'Colaborador', role: ((personRow as any)?.role || '').replace(/_/g, ' '), office: (personRow as any)?.office?.name || '' },
+            template: row.template?.name || 'Autoevaluación',
+            date: dateFmt(row.created_at),
+            periodLabel: selfPeriod ? (selfPeriod.name || `Periodo ${selfPeriod.year}`) : 'sin periodo asignado',
+            otherPeriod: row.period_id !== periodId,
+            global: g !== null ? round2(g) : null,
+            competencies,
+          });
+          setLoading(false);
+        }
       } catch (err: any) {
         if (!alive) return;
         console.error('[Desempeño] evaluaciones', err);
@@ -336,5 +388,5 @@ export function usePerformanceReport({ personId, periodId, periods, evaluationId
     return () => { alive = false; };
   }, [personId, selectedFormId, listed, periodId, periods]);
 
-  return { forms, selectedFormId, setSelectedFormId, report, loading, error, hasEvaluations: listed.length > 0 };
+  return { forms, selectedFormId, setSelectedFormId, report, selfOnly, loading, error, hasEvaluations: listed.length > 0 };
 }

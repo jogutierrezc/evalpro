@@ -83,14 +83,14 @@ export default function PerformanceDashboard({ targetUserId, evaluationId, viewM
     return () => { alive = false; };
   }, [periods, activePeriod, periodsLoading, periodId, evaluationId]);
 
-  const { forms, selectedFormId, setSelectedFormId, report, loading, error, hasEvaluations } = usePerformanceReport({ personId, periodId, periods, evaluationId });
+  const { forms, selectedFormId, setSelectedFormId, report, selfOnly, loading, error, hasEvaluations } = usePerformanceReport({ personId, periodId, periods, evaluationId });
 
   // Si el periodo por defecto no tiene evaluaciones, prueba el anterior (solo mientras la persona no haya elegido uno).
   useEffect(() => {
-    if (userPicked || loading || !periodId || hasEvaluations || error) return;
+    if (userPicked || loading || !periodId || hasEvaluations || selfOnly || error) return;
     const i = periods.findIndex((p: any) => p.id === periodId);
     if (i >= 0 && i < periods.length - 1) setPeriodId(periods[i + 1].id);
-  }, [userPicked, loading, periodId, hasEvaluations, error, periods]);
+  }, [userPicked, loading, periodId, hasEvaluations, selfOnly, error, periods]);
 
   const axes: Axis[] = useMemo(() => (report?.competencies || []).map((c) => ({ id: c.id, label: c.title, leader: c.leader, self: c.self, office: c.office })), [report]);
 
@@ -203,6 +203,47 @@ export default function PerformanceDashboard({ targetUserId, evaluationId, viewM
           {Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-24 animate-pulse bg-white" />)}
         </div>
         <div className="grid gap-6 lg:grid-cols-2"><div className="h-96 animate-pulse rounded-lg bg-white" /><div className="h-96 animate-pulse rounded-lg bg-white" /></div>
+      </div>
+    );
+  }
+
+  // Sin evaluación de un líder pero con autoevaluación completada: se muestra la autoevaluación.
+  if (!report && selfOnly) {
+    return (
+      <div className="mx-auto max-w-5xl space-y-6">
+        {controls}
+        <header className="border-b border-slate-200 pb-4">
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Resultado de la autoevaluación</h1>
+          <p className="mt-1 text-lg text-slate-800">{selfOnly.person.name}</p>
+          <p className="mt-0.5 text-sm text-slate-500">{[selfOnly.person.role, selfOnly.person.office].filter(Boolean).join(', ')}</p>
+          <p className="mt-2 text-xs text-slate-500">{selfOnly.template}, {selfOnly.date}{selfOnly.otherPeriod ? `, de otro periodo (${selfOnly.periodLabel})` : ''}. Escala de 1 a 5.</p>
+        </header>
+        <p className="rounded-md bg-slate-100 px-3 py-2 text-[13px] text-slate-600">
+          {viewMode === 'manager' ? `${name} aún no tiene una evaluación de líder` : 'Aún no tienes una evaluación de líder'} en este periodo. Cuando exista, aquí aparecerá la comparación con tu autoevaluación.
+        </p>
+        <section aria-label="Resultado global" className="rounded-lg border border-slate-200 bg-white p-4">
+          <p className="text-xs font-medium text-slate-500">Autoevaluación</p>
+          <p className="mt-1 text-3xl font-semibold tabular-nums" style={{ color: COLORS.self }}>{fmt(selfOnly.global)}</p>
+        </section>
+        <section aria-label="Competencias" className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+          {selfOnly.competencies.map((c) => (
+            <div key={c.id} className="border-b border-slate-100 last:border-b-0">
+              <div className="flex items-center justify-between gap-4 bg-slate-50 px-4 py-2.5">
+                <h2 className="text-sm font-semibold text-slate-900">{c.title}</h2>
+                <span className="text-sm font-semibold tabular-nums" style={{ color: COLORS.self }}>{fmt(c.score)}</span>
+              </div>
+              <ul className="divide-y divide-slate-100">
+                {c.criteria.map((q) => (
+                  <li key={q.id} className="flex items-start justify-between gap-4 px-4 py-2 text-sm text-slate-700">
+                    <span className="max-w-[70ch]">{q.text}</span>
+                    <span className="tabular-nums" style={{ color: COLORS.self }}>{fmt(q.score)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+          {selfOnly.competencies.length === 0 && <p className="px-4 py-6 text-center text-sm text-slate-500">La autoevaluación no tiene preguntas de calificación.</p>}
+        </section>
       </div>
     );
   }
