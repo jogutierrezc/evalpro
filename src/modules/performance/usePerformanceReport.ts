@@ -77,7 +77,7 @@ export interface SelfOnlyReport {
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const mean = (v: number[]) => (v.length ? v.reduce((a, b) => a + b, 0) / v.length : null);
 const dateFmt = (iso: string) => new Date(iso).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' });
-const normTitle = (t: string) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+export const normTitle = (t: string) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 
 function toScore(val: any): number {
   if (val === null || val === undefined || val === '') return 0;
@@ -101,7 +101,7 @@ interface RawAnswer {
 }
 
 /** Respuestas con nota de una evaluación (solo preguntas de calificación). */
-async function loadAnswers(evaluationId: string): Promise<RawAnswer[]> {
+export async function loadAnswers(evaluationId: string): Promise<RawAnswer[]> {
   const { data, error } = await supabase
     .from('evaluation_responses')
     .select('response_value, question:evaluation_questions ( id, question_text, question_type, order_index, section:evaluation_sections ( id, title, order_index ) )')

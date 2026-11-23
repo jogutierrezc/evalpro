@@ -19,6 +19,7 @@ export const MODULES: ModuleDef[] = [
   { id: 'guide', label: 'Ayuda', description: 'Guía de usuario.', legacyRoles: ['*'], locked: true },
   { id: 'feedback', label: 'Retroalimentación', description: 'Actas de retroalimentación con el equipo evaluado.', legacyRoles: ['*'] },
   { id: 'plan-mejora', label: 'Plan de Mejora', description: 'Planes de mejora derivados de la evaluación.', legacyRoles: ['*'] },
+  { id: 'my-self-evaluations', label: 'Mis Autoevaluaciones', description: 'Historial, evolución y recomendaciones de sus autoevaluaciones. Por defecto aparece para quienes solo se autoevalúan.', legacyRoles: ['*'] },
   { id: 'self-report', label: 'Mi Resultado Prisma', description: 'Informe personal de resultados.', legacyRoles: ['*'] },
   { id: 'my-collaborators', label: 'Mis Colaboradores', description: 'Seguimiento de las personas a su cargo.', legacyRoles: ['office_manager', 'admin'] },
   { id: 'results', label: 'Resultados', description: 'Análisis de resultados.', legacyRoles: ['admin'] },

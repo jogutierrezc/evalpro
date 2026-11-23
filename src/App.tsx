@@ -14,6 +14,7 @@ const VafAnalyticsModule = lazy(() => import('./modules/admin/VafAnalyticsModule
 const ReportsManagement = lazy(() => import('./modules/admin/ReportsManagement').then((m) => ({ default: m.ReportsManagement })));
 const UserGuideModule = lazy(() => import('./modules/UserGuideModule').then((m) => ({ default: m.UserGuideModule })));
 const TechnicalReportViewer = lazy(() => import('./modules/TechnicalReportViewer').then((m) => ({ default: m.TechnicalReportViewer })));
+const MySelfEvaluationsModule = lazy(() => import('./modules/selfeval/MySelfEvaluationsModule'));
 const PrismaReport = lazy(() => import('./modules/PrismaReport'));
 const MyCollaboratorsModule = lazy(() => import('./modules/MyCollaboratorsModule').then((m) => ({ default: m.MyCollaboratorsModule })));
 const ExportModule = lazy(() => import('./modules/ExportModule'));
@@ -147,6 +148,7 @@ function AppContent() {
         {activeModule === 'results' && can('results') && <ResultsModule />}
         {activeModule === 'reports' && can('reports') && <ReportsManagement />}
         {activeModule === 'export' && can('export') && <ExportModule />}
+        {activeModule === 'my-self-evaluations' && can('my-self-evaluations') && <MySelfEvaluationsModule onNavigate={setActiveModule} />}
         {activeModule === 'self-report' && can('self-report') && <PrismaReport />}
         {activeModule === 'my-collaborators' && can('my-collaborators') && <MyCollaboratorsModule />}
         {activeModule === 'guide' && <UserGuideModule />}

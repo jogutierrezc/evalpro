@@ -15,11 +15,13 @@ import {
   FileSpreadsheet,
   MessageSquareText,
   ClipboardCheck,
+  ClipboardList,
   ShieldCheck,
   Mail
 } from 'lucide-react';
 import { useFeedbackAccess } from '../modules/feedback/useFeedbackAccess';
 import { MODULES, isAdminKey, useModuleAccess } from '../lib/permissions';
+import { useSelfOnlyAccess } from '../modules/selfeval/useMySelfEvaluations';
 
 interface LayoutProps {
   children: ReactNode;
@@ -34,11 +36,13 @@ export function Layout({ children, activeModule, onModuleChange }: LayoutProps) 
   const feedbackAccess = useFeedbackAccess(user);
 
   const { can, configured } = useModuleAccess(user?.role);
+  // «Mis Autoevaluaciones» aparece por defecto solo para quien únicamente se autoevalúa (si su rol no está configurado).
+  const selfOnly = useSelfOnlyAccess(user?.id, !isAdminKey(user?.role) && !configured);
 
   const ICONS: Record<string, typeof LayoutDashboard> = {
     dashboard: LayoutDashboard, evaluations: FileText, feedback: MessageSquareText, 'plan-mejora': ClipboardCheck,
     'supervision-planes': ShieldCheck, correos: Mail, results: BarChart3, reports: FileText, export: FileSpreadsheet,
-    'self-report': BrainCircuit, 'my-collaborators': Users, admin: Settings, guide: BookOpen,
+    'self-report': BrainCircuit, 'my-self-evaluations': ClipboardList, 'my-collaborators': Users, admin: Settings, guide: BookOpen,
   };
   // Orden del menú: el de la lista de módulos, salvo que Retroalimentación y Plan de Mejora siguen a Evaluaciones.
   const menuItems = MODULES.map((m) => ({ id: m.id, label: m.label, icon: ICONS[m.id] }));
@@ -50,6 +54,7 @@ export function Layout({ children, activeModule, onModuleChange }: LayoutProps) 
 
   const filteredMenuItems = menuItems.filter(item => {
     if (isAdmin && hiddenForAdmin.has(item.id)) return false;
+    if (item.id === 'my-self-evaluations') return !isAdmin && (configured ? can(item.id) : selfOnly);
     // Rol sin configurar: reglas anteriores (quien evalúa a otras personas ve Retroalimentación y Plan de Mejora).
     if (!configured && !isAdmin) {
       if (item.id === 'feedback') return feedbackAccess.allowed;
