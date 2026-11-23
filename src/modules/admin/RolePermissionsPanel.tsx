@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Check, Lock, Save } from 'lucide-react';
+import { ArrowLeft, Check, ChevronDown, Lock, Save } from 'lucide-react';
 import { supabase, Role } from '../../lib/supabase';
 import { CONFIGURED, MODULES, clearPermissionsCache, legacyAllows } from '../../lib/permissions';
 
@@ -162,7 +162,7 @@ export default function RolePermissionsPanel({ role, allRoles, onBack }: { role:
       </div>
 
       {message && (
-        <div role="status" className={`mb-4 rounded border px-3 py-2 text-sm ${message.kind === 'ok' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-red-200 bg-red-50 text-red-800'}`}>
+        <div role="status" className={`animate-in mb-4 rounded border px-3 py-2 text-sm ${message.kind === 'ok' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-red-200 bg-red-50 text-red-800'}`}>
           {message.text}
         </div>
       )}
@@ -182,6 +182,7 @@ export default function RolePermissionsPanel({ role, allRoles, onBack }: { role:
       </div>
       <p className="mb-4 mt-3 text-sm text-slate-500">{TABS.find((t) => t.id === tab)?.hint}</p>
 
+      <div key={tab} className="animate-in">
       {tab === 'modulos' && (
         <ul className="divide-y divide-slate-100 rounded border border-slate-200 bg-white">
           {MODULES.map((m) => {
@@ -237,7 +238,10 @@ export default function RolePermissionsPanel({ role, allRoles, onBack }: { role:
                   className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
                 >
                   <span className="text-sm text-slate-900">{ft.label}</span>
-                  <span className={`text-xs ${count ? 'font-medium text-blue-700' : 'text-slate-400'}`}>{count ? `${count} rol${count !== 1 ? 'es' : ''}` : 'Ninguno'}</span>
+                  <span className="flex items-center gap-3">
+                    <span className={`text-xs ${count ? 'font-medium text-blue-700' : 'text-slate-400'}`}>{count ? `${count} rol${count !== 1 ? 'es' : ''}` : 'Ninguno'}</span>
+                    <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] ${open ? 'rotate-180' : ''}`} aria-hidden />
+                  </span>
                 </button>
                 {open && (
                   <div className="grid gap-x-6 gap-y-1 border-t border-slate-100 bg-slate-50 px-4 py-3 sm:grid-cols-2">
@@ -258,6 +262,7 @@ export default function RolePermissionsPanel({ role, allRoles, onBack }: { role:
           {formTypes.length === 0 && <li className="px-4 py-6 text-center text-sm text-slate-500">No hay formularios creados.</li>}
         </ul>
       )}
+      </div>
     </div>
   );
 }

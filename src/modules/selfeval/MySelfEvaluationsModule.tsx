@@ -1,5 +1,6 @@
-import { useMemo } from 'react';
-import { ArrowRight, AlertCircle, CheckCircle2, ClipboardList, Info, TrendingUp } from 'lucide-react';
+import { useLayoutEffect, useMemo, useRef } from 'react';
+import { gsap } from 'gsap';
+import { AlertCircle, ArrowRight, CheckCircle2, ChevronDown, ClipboardList, Info, TrendingUp } from 'lucide-react';
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { useAuth } from '../../contexts/AuthContext';
 import { COLORS } from '../performance/charts';
@@ -39,6 +40,7 @@ function Delta({ d }: { d: number | null }) {
 export function MySelfEvaluationsModule({ onNavigate }: { onNavigate?: (m: string) => void }) {
   const { user } = useAuth();
   const { entries, loading, error } = useMySelfEvaluations(user?.id);
+  const scope = useRef<HTMLDivElement>(null);
 
   const latest = entries[entries.length - 1];
   const prev = useMemo(() => previousOf(entries), [entries]);
@@ -60,6 +62,17 @@ export function MySelfEvaluationsModule({ onNavigate }: { onNavigate?: (m: strin
 
   const globalDelta = latest?.global != null && prev?.global != null ? Math.round((latest.global - prev.global) * 100) / 100 : null;
   const avg = entries.length ? entries.reduce((a, e) => a + (e.global ?? 0), 0) / entries.filter((e) => e.global !== null).length : null;
+
+  // Entrada escalonada (misma que el Dashboard): solo transform y opacidad, 280 ms; con movimiento reducido no anima.
+  const ready = !loading && !error && entries.length > 0;
+  useLayoutEffect(() => {
+    if (!ready || !scope.current || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const ctx = gsap.context(() => {
+      gsap.from('[data-reveal]', { y: 8, opacity: 0, duration: 0.28, ease: 'power2.out', stagger: 0.05, clearProps: 'transform,opacity' });
+    }, scope);
+    const safety = window.setTimeout(() => ctx.revert(), 1500); // si no avanza, el contenido nunca queda invisible
+    return () => { window.clearTimeout(safety); ctx.revert(); };
+  }, [ready]);
 
   if (loading) {
     return (
@@ -90,13 +103,13 @@ export function MySelfEvaluationsModule({ onNavigate }: { onNavigate?: (m: strin
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-8">
-      <header className="border-b border-slate-200 pb-4">
+    <div ref={scope} className="mx-auto max-w-5xl space-y-8">
+      <header data-reveal className="border-b border-slate-200 pb-4">
         <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Mis Autoevaluaciones</h1>
         <p className="mt-1 text-sm text-slate-500">Tu resultado más reciente, cómo ha cambiado entre períodos y qué puedes trabajar. Escala de 1 a 5.</p>
       </header>
 
-      <section aria-label="Resumen" className="grid grid-cols-2 divide-slate-200 overflow-hidden rounded-lg border border-slate-200 bg-white md:grid-cols-4 md:divide-x">
+      <section data-reveal aria-label="Resumen" className="grid grid-cols-2 divide-slate-200 overflow-hidden rounded-lg border border-slate-200 bg-white md:grid-cols-4 md:divide-x">
         <div className="p-4">
           <p className="text-xs font-medium text-slate-500">Última autoevaluación</p>
           <p className="mt-1 text-3xl font-semibold tabular-nums" style={{ color: COLORS.self }}>{fmt(latest.global)}</p>
@@ -119,12 +132,12 @@ export function MySelfEvaluationsModule({ onNavigate }: { onNavigate?: (m: strin
         </div>
       </section>
 
-      <section aria-labelledby="sec-reco">
+      <section data-reveal aria-labelledby="sec-reco">
         <h2 id="sec-reco" className="mb-3 text-lg font-semibold text-slate-900">Recomendaciones según tus resultados</h2>
         <ul className="space-y-2">{insights.map((i, k) => <InsightRow key={k} i={i} />)}</ul>
       </section>
 
-      <section aria-labelledby="sec-evo">
+      <section data-reveal aria-labelledby="sec-evo">
         <h2 id="sec-evo" className="mb-3 flex items-center gap-2 text-lg font-semibold text-slate-900"><TrendingUp className="h-5 w-5 text-slate-500" />Evolución</h2>
         {entries.length > 1 ? (
           <div className="rounded-lg border border-slate-200 bg-white p-4">
@@ -179,7 +192,7 @@ export function MySelfEvaluationsModule({ onNavigate }: { onNavigate?: (m: strin
         )}
       </section>
 
-      <section aria-labelledby="sec-hist">
+      <section data-reveal aria-labelledby="sec-hist">
         <h2 id="sec-hist" className="mb-3 text-lg font-semibold text-slate-900">Historial</h2>
         <div className="divide-y divide-slate-200 overflow-hidden rounded-lg border border-slate-200 bg-white">
           {[...entries].reverse().map((e: SelfEntry, idx) => (
@@ -189,7 +202,10 @@ export function MySelfEvaluationsModule({ onNavigate }: { onNavigate?: (m: strin
                   <span className="block truncate text-sm font-medium text-slate-900">{e.periodFull}</span>
                   <span className="block text-xs text-slate-500">{e.template}, {dateFmt(e.date)}</span>
                 </span>
-                <span className="text-lg font-semibold tabular-nums" style={{ color: COLORS.self }}>{fmt(e.global)}</span>
+                <span className="flex items-center gap-3">
+                  <span className="text-lg font-semibold tabular-nums" style={{ color: COLORS.self }}>{fmt(e.global)}</span>
+                  <ChevronDown className="h-4 w-4 text-slate-400 transition-transform duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] group-open:rotate-180" aria-hidden />
+                </span>
               </summary>
               <div className="border-t border-slate-100 bg-slate-50 px-4 py-3">
                 {e.competencies.map((c) => (
