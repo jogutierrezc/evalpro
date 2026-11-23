@@ -1,54 +1,59 @@
-import { useMemo } from 'react';
-import { generarInformeIA } from '../lib/ai-report-logic';
-import { AiReportRenderer } from '../components/AiReportRenderer';
-import { useEvaluationReport } from '../hooks/useEvaluationReport';
+import { useEffect, useMemo, useState } from 'react';
+import { InformeEvaluacion } from './informe/InformeEvaluacion';
+import { fetchInforme, type Informe } from './informe/informe';
 
 interface TechnicalReportViewerProps {
     evaluationId?: string;
 }
 
+/** Informe de una evaluación o autoevaluación (ruta ?module=technical-report&id=...), sin menú lateral. */
 export function TechnicalReportViewer({ evaluationId: propId }: TechnicalReportViewerProps) {
-    // Get ID from props or URL params
     const evaluationId = useMemo(() => {
         if (propId) return propId;
-        const params = new URLSearchParams(window.location.search);
-        return params.get('id') || undefined;
+        return new URLSearchParams(window.location.search).get('id') || undefined;
     }, [propId]);
 
-    // Solo espera los datos reales: sin temporizadores ni mensajes simulados.
-    const { inputData, loading: dataLoading, error: errorMsg } = useEvaluationReport({ evaluationId });
+    const [informe, setInforme] = useState<Informe | null>(null);
+    const [error, setError] = useState<string | null>(null);
+    const [loading, setLoading] = useState(Boolean(evaluationId));
 
-    // Informe generado con reglas a partir de los puntajes (no llama a ningún modelo).
-    const informe = useMemo(() => {
-        if (!inputData) return null;
-        return generarInformeIA(inputData);
-    }, [inputData]);
+    useEffect(() => {
+        if (!evaluationId) { setLoading(false); return; }
+        let vivo = true;
+        setLoading(true);
+        setError(null);
+        fetchInforme(evaluationId)
+            .then((r) => { if (vivo) setInforme(r); })
+            .catch((e: Error) => { if (vivo) setError(e.message); })
+            .finally(() => { if (vivo) setLoading(false); });
+        return () => { vivo = false; };
+    }, [evaluationId]);
 
-    if (dataLoading) {
+    if (loading) {
         return (
-            <div className="flex min-h-screen items-center justify-center bg-slate-50">
+            <div className="flex min-h-screen items-center justify-center bg-slate-100" role="status" aria-live="polite">
                 <div className="flex flex-col items-center gap-3 text-sm text-slate-600">
-                    <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-blue-700" />
-                    Cargando informe...
+                    <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-200 border-t-blue-700" />
+                    Preparando el informe…
                 </div>
             </div>
         );
     }
 
-    if (errorMsg) return (
-        <div className="p-8 text-center bg-white rounded-lg shadow min-h-screen flex items-center justify-center">
-            <div>
-                <h2 className="text-xl font-bold text-red-600 mb-2">Error</h2>
-                <p className="text-gray-600">{errorMsg}</p>
+    if (error || !informe) {
+        return (
+            <div className="flex min-h-screen items-center justify-center bg-slate-100 p-6">
+                <div role="alert" className="max-w-md rounded-2xl bg-white p-8 text-center shadow-sm">
+                    <h1 className="text-lg font-semibold text-slate-900">
+                        {evaluationId ? 'No pudimos abrir el informe' : 'Falta indicar la evaluación'}
+                    </h1>
+                    <p className="mt-2 text-sm text-slate-600">
+                        {error ?? (evaluationId ? 'No hay datos para esta evaluación.' : 'El enlace no trae el identificador de la evaluación.')}
+                    </p>
+                </div>
             </div>
-        </div>
-    );
+        );
+    }
 
-    if (!inputData || !informe) return (
-        <div className="p-8 text-center bg-white rounded-lg shadow min-h-screen flex items-center justify-center">
-            <h2 className="text-xl font-bold text-gray-800">No hay datos disponibles</h2>
-        </div>
-    );
-
-    return <AiReportRenderer inputData={inputData} informe={informe} />;
+    return <InformeEvaluacion informe={informe} />;
 }
