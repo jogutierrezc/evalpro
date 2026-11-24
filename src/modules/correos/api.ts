@@ -90,4 +90,6 @@ export const SAMPLE_VARS: Record<string, string> = {
   nombre: 'Lucía Ortega Peña', correo: 'lortega@udes.edu.co', oficina: 'Dirección de Planeación', periodo: 'periodo 2026', fecha_limite: '30 de noviembre de 2026',
   total: '4', pendientes: '2', evaluaciones_texto: 'evaluaciones', enlace: 'https://planeacion.udes.edu.co/evalpro/',
   mensaje: 'Escriba aquí el texto del aviso.\nLos saltos de línea se respetan.', acta: '014-2026', rol: 'persona evaluada', codigo: '123 456', vence_minutos: '5',
+  sin_acta: '2', sin_firmar: '1', total_pendientes_retro: '3', retro_texto: 'retroalimentaciones', lista_evaluados: 'Ana Gómez, Luis Pérez y 1 más',
+  detalle_retro: '2 evaluaciones aún no tienen acta y 1 acta falta por firmar.', enlace_retro: 'https://planeacion.udes.edu.co/evalpro/?module=feedback',
 };

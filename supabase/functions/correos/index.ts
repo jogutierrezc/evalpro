@@ -172,18 +172,23 @@ const sentToday = async () => {
 /* ---------- audiencia ---------- */
 
 interface Audience { periodId?: string | null; scope?: string; campus?: string; officeId?: string | null; role?: string }
-type Person = { user_id: string; full_name: string; email: string; office: string; campus: string; role: string; pendientes: number; total: number };
+type Person = { user_id: string; full_name: string; email: string; office: string; campus: string; role: string; pendientes: number; total: number; sin_acta?: number; sin_firmar?: number; evaluados_sin_acta?: string[]; evaluados_sin_firmar?: string[] };
 
 async function resolveAudience(a: Audience): Promise<Person[]> {
-  const scope = ['asignadas', 'pendientes', 'todos'].includes(String(a.scope)) ? String(a.scope) : 'asignadas';
+  const scope = ['asignadas', 'pendientes', 'todos', 'retro_pendiente'].includes(String(a.scope)) ? String(a.scope) : 'asignadas';
   if (scope !== 'todos' && !a.periodId) throw new HttpError(400, 'Elige el periodo para esta audiencia.');
   const out: Person[] = [];
   for (let from = 0; from < 10000; from += 1000) {
-    const { data, error } = await admin.rpc('mail_audience', {
-      p_period: a.periodId || null, p_scope: scope, p_campus: a.campus || null, p_office: a.officeId || null, p_role: a.role || null,
-    }).range(from, from + 999);
-    if (error) throw new HttpError(500, 'No se pudo calcular la audiencia. ¿Está aplicada la migración del módulo Correos?');
-    out.push(...((data as Person[]) ?? []));
+    // 'retro_pendiente': quien evaluó a otras personas y tiene actas sin crear o sin firmar (RPC propia, ver migración 20261125000000).
+    const { data, error } = scope === 'retro_pendiente'
+      ? await admin.rpc('mail_audience_retro', { p_period: a.periodId || null, p_campus: a.campus || null, p_office: a.officeId || null, p_role: a.role || null }).range(from, from + 999)
+      : await admin.rpc('mail_audience', {
+        p_period: a.periodId || null, p_scope: scope, p_campus: a.campus || null, p_office: a.officeId || null, p_role: a.role || null,
+      }).range(from, from + 999);
+    if (error) throw new HttpError(500, scope === 'retro_pendiente'
+      ? 'No se pudo calcular la audiencia. ¿Está aplicada la migración 20261125000000_recordatorio_retroalimentacion?'
+      : 'No se pudo calcular la audiencia. ¿Está aplicada la migración del módulo Correos?');
+    out.push(...((data as any[] ?? []).map((r) => (scope === 'retro_pendiente' ? { ...r, pendientes: (r.sin_acta ?? 0) + (r.sin_firmar ?? 0) } : r)) as Person[]));
     if (!data || data.length < 1000) break;
   }
   const seen = new Set<string>();
@@ -211,8 +216,23 @@ async function bootstrap() {
   };
 }
 
+/** Variables del recordatorio de retroalimentación (A = sin acta, B = acta sin firmar). Valores en texto plano: render() los escapa. */
+function retroVars(p: Person) {
+  const a = p.sin_acta ?? 0, f = p.sin_firmar ?? 0, t = a + f;
+  const nombres = Array.from(new Set([...(p.evaluados_sin_acta ?? []), ...(p.evaluados_sin_firmar ?? [])].map(titleCase)));
+  const lista = nombres.length ? nombres.slice(0, 6).join(', ') + (nombres.length > 6 ? ` y ${nombres.length - 6} más` : '') : 'sin nombres';
+  const detalle = a && f ? `${a} ${a === 1 ? 'evaluación aún no tiene acta' : 'evaluaciones aún no tienen acta'} y ${f} ${f === 1 ? 'acta falta por firmar' : 'actas faltan por firmar'}.`
+    : a ? `${a === 1 ? 'Esa evaluación aún no tiene acta de retroalimentación' : 'Esas evaluaciones aún no tienen acta de retroalimentación'}.`
+    : `${f === 1 ? 'El acta ya está creada, pero falta' : 'Las actas ya están creadas, pero falta'} completar ${f === 1 ? 'una firma' : 'firmas'}.`;
+  return {
+    sin_acta: String(a), sin_firmar: String(f), total_pendientes_retro: String(t), retro_texto: t === 1 ? 'retroalimentación' : 'retroalimentaciones',
+    lista_evaluados: lista, detalle_retro: detalle, enlace_retro: `${APP_URL}?module=feedback`,
+  };
+}
+
 function varsFor(p: Person, ctx: { periodo: string; fechaLimite: string; mensaje: string }) {
   return {
+    ...(p.sin_acta !== undefined || p.sin_firmar !== undefined ? retroVars(p) : {}),
     nombre: titleCase(p.full_name || ''), correo: p.email, oficina: p.office, periodo: ctx.periodo, fecha_limite: ctx.fechaLimite,
     total: String(p.total), pendientes: String(p.pendientes), evaluaciones_texto: p.total === 1 ? 'evaluación' : 'evaluaciones',
     enlace: APP_URL, mensaje: ctx.mensaje,
@@ -389,7 +409,9 @@ async function sendTest(b: any, who: { id: string; email: string | null }) {
   const html = String(b.html || '');
   const subject = str(b.subject, 200);
   validateTemplate(String(b.templateKey || 'prueba'), subject || 'x', html);
-  const vars = { nombre: titleCase(u?.full_name || 'Persona de prueba'), correo: to, oficina: 'Oficina de ejemplo', periodo: `periodo ${new Date().getFullYear()}`, fecha_limite: fechaLarga(new Date().toISOString()), total: '3', pendientes: '2', evaluaciones_texto: 'evaluaciones', enlace: APP_URL, mensaje: str(b.message, 4000) || 'Este es un mensaje de ejemplo.', acta: '014-2026', rol: 'persona evaluada', codigo: '123 456', vence_minutos: '5' };
+  const vars = { nombre: titleCase(u?.full_name || 'Persona de prueba'), correo: to, oficina: 'Oficina de ejemplo', periodo: `periodo ${new Date().getFullYear()}`, fecha_limite: fechaLarga(new Date().toISOString()), total: '3', pendientes: '2', evaluaciones_texto: 'evaluaciones', enlace: APP_URL, mensaje: str(b.message, 4000) || 'Este es un mensaje de ejemplo.', acta: '014-2026', rol: 'persona evaluada', codigo: '123 456', vence_minutos: '5',
+    sin_acta: '2', sin_firmar: '1', total_pendientes_retro: '3', retro_texto: 'retroalimentaciones', lista_evaluados: 'Ana Gómez, Luis Pérez y 1 más',
+    detalle_retro: '2 evaluaciones aún no tienen acta y 1 acta falta por firmar.', enlace_retro: `${APP_URL}?module=feedback` };
   const { data: log } = await admin.from('mail_log').insert({ kind: 'test', template_key: String(b.templateKey || '') || null, to_email: to, to_name: vars.nombre, user_id: u?.id ?? null, subject: `[Prueba] ${render(subject, vars, false)}`, status: 'sending', created_by: who.id }).select('id, token').single();
   const transporter = transporterOf(smtp);
   try {
@@ -870,8 +892,9 @@ serve(async (req) => {
         const people = await resolveAudience(b.audience ?? {});
         const by = (f: (p: Person) => string) => Object.entries(people.reduce((a: Record<string, number>, p) => ((a[f(p) || 'Sin dato'] = (a[f(p) || 'Sin dato'] ?? 0) + 1), a), {})).sort((x, y) => y[1] - x[1]).slice(0, 8);
         return json({
-          count: people.length, conPendientes: people.filter((p) => p.pendientes > 0).length, evaluaciones: people.reduce((n, p) => n + p.total, 0),
-          sample: people.slice(0, 6).map((p) => ({ nombre: titleCase(p.full_name), correo: p.email, oficina: p.office, total: p.total, pendientes: p.pendientes })),
+          count: people.length, conPendientes: people.filter((p) => p.pendientes > 0).length,
+          sinActa: people.reduce((n, p) => n + (p.sin_acta ?? 0), 0), sinFirmar: people.reduce((n, p) => n + (p.sin_firmar ?? 0), 0), evaluaciones: people.reduce((n, p) => n + p.total, 0),
+          sample: people.slice(0, 6).map((p) => ({ nombre: titleCase(p.full_name), correo: p.email, oficina: p.office, total: p.total, pendientes: p.pendientes, ...(p.sin_acta !== undefined ? { ...retroVars(p), sinActa: p.sin_acta, sinFirmar: p.sin_firmar } : {}) })),
           byCampus: by((p) => p.campus),
         });
       }

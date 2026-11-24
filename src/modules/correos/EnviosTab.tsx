@@ -1,14 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { gsap } from 'gsap';
 import { ArrowLeft, Loader2, PauseCircle, PlayCircle, Plus, Send, XCircle } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { Api, Boot, Campaign, SAMPLE_VARS, Template, renderTemplate } from './api';
 import { Bar, Empty, ErrorNote, StatusPill, Tabs, fmtDT, pct, plural, useReveal } from './parts';
 import type { Runner } from './useCampaignRunner';
 
-type Audience = { periodId: string; scope: 'asignadas' | 'pendientes' | 'todos'; campus: string; role: string; officeId: string };
-interface Preview { count: number; conPendientes: number; evaluaciones: number; sample: { nombre: string; correo: string; oficina: string; total: number; pendientes: number }[]; byCampus: [string, number][] }
+type Audience = { periodId: string; scope: 'asignadas' | 'pendientes' | 'retro_pendiente' | 'todos'; campus: string; role: string; officeId: string };
+interface Preview { count: number; conPendientes: number; evaluaciones: number; sinActa?: number; sinFirmar?: number; sample: { nombre: string; correo: string; oficina: string; total: number; pendientes: number; sin_acta?: string; sin_firmar?: string; total_pendientes_retro?: string; retro_texto?: string; lista_evaluados?: string; detalle_retro?: string; enlace_retro?: string; sinActa?: number; sinFirmar?: number }[]; byCampus: [string, number][] }
 
-const SCOPE_LABEL: Record<Audience['scope'], string> = { asignadas: 'Con evaluaciones asignadas', pendientes: 'Con evaluaciones pendientes', todos: 'Toda la comunidad' };
+const SCOPE_LABEL: Record<Audience['scope'], string> = { asignadas: 'Con evaluaciones asignadas', pendientes: 'Con evaluaciones pendientes', retro_pendiente: 'Retroalimentación pendiente', todos: 'Toda la comunidad' };
 
 export default function EnviosTab({ api, boot, runner }: { api: Api; boot: Boot; runner: Runner }) {
   const [view, setView] = useState<'list' | 'new'>('list');
@@ -93,6 +94,40 @@ export default function EnviosTab({ api, boot, runner }: { api: Api; boot: Boot;
   );
 }
 
+/** Explica qué cuenta como retroalimentación pendiente (A y B) y muestra cuántas hay en la audiencia elegida. */
+function RetroExplainer({ prev, busy }: { prev: Preview | null; busy: boolean }) {
+  const ref = useRef<HTMLDivElement>(null);
+  // Entra una sola vez al elegir este alcance: desplazamiento corto y opacidad, sin animar tamaño. Sin movimiento si el sistema lo pide.
+  useLayoutEffect(() => {
+    if (!ref.current || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const ctx = gsap.context(() => {
+      gsap.from('[data-retro-in]', { y: 6, opacity: 0, duration: 0.22, ease: 'power3.out', stagger: 0.06, clearProps: 'transform,opacity' });
+    }, ref);
+    return () => ctx.revert();
+  }, []);
+  const n = (v?: number) => (busy && !prev ? '-' : (v ?? 0).toLocaleString('es-CO'));
+  return (
+    <div ref={ref} className="grid gap-3 rounded-md border border-blue-100 bg-blue-50/50 p-3.5" role="note" aria-label="Qué se considera retroalimentación pendiente">
+      <p data-retro-in className="text-[13px] leading-relaxed text-slate-700">
+        Se envía <b>un solo correo por persona evaluadora y periodo</b>, a quien evaluó a otra persona (las autoevaluaciones no cuentan) y todavía no cierra la retroalimentación. Le avisa que ya puede crear el acta y el plan de mejora desde Aluna Eval.
+      </p>
+      <dl className="grid gap-2 sm:grid-cols-2">
+        <div data-retro-in className="rounded border border-slate-200 bg-white p-3">
+          <dt className="text-xs font-semibold text-slate-500">A. Sin acta</dt>
+          <dd className="mt-0.5 text-xl font-semibold tabular-nums text-slate-900">{n(prev?.sinActa)}</dd>
+          <dd className="mt-1 text-xs leading-snug text-slate-500">Evaluaciones completadas de otra persona que todavía no tienen acta de retroalimentación.</dd>
+        </div>
+        <div data-retro-in className="rounded border border-slate-200 bg-white p-3">
+          <dt className="text-xs font-semibold text-slate-500">B. Acta sin firmar</dt>
+          <dd className="mt-0.5 text-xl font-semibold tabular-nums text-slate-900">{n(prev?.sinFirmar)}</dd>
+          <dd className="mt-1 text-xs leading-snug text-slate-500">El acta existe, pero falta la firma de la persona evaluadora o de la evaluada.</dd>
+        </div>
+      </dl>
+      <p data-retro-in className="text-xs leading-snug text-slate-500">Un acta firmada por ambas partes no cuenta como pendiente, aunque no tenga compromisos.</p>
+    </div>
+  );
+}
+
 /* ---------- asistente de nuevo envío ---------- */
 
 function NuevoEnvio({ api, boot, runner, onBack }: { api: Api; boot: Boot; runner: Runner; onBack: () => void }) {
@@ -143,6 +178,7 @@ function NuevoEnvio({ api, boot, runner, onBack }: { api: Api; boot: Boot; runne
     return {
       ...SAMPLE_VARS,
       ...(s ? { nombre: s.nombre, correo: s.correo, oficina: s.oficina, total: String(s.total), pendientes: String(s.pendientes), evaluaciones_texto: s.total === 1 ? 'evaluación' : 'evaluaciones' } : {}),
+      ...(s?.sin_acta !== undefined ? { sin_acta: s.sin_acta, sin_firmar: s.sin_firmar ?? '0', total_pendientes_retro: s.total_pendientes_retro ?? '0', retro_texto: s.retro_texto ?? '', lista_evaluados: s.lista_evaluados ?? '', detalle_retro: s.detalle_retro ?? '', enlace_retro: s.enlace_retro ?? '' } : {}),
       periodo: period ? `periodo ${period.year}` : 'periodo vigente',
       fecha_limite: period ? new Date(`${period.end_date}T12:00:00`).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' }) : '',
       mensaje: message || SAMPLE_VARS.mensaje,
@@ -171,7 +207,13 @@ function NuevoEnvio({ api, boot, runner, onBack }: { api: Api; boot: Boot; runne
     } catch (e: any) { setError(e.message); setCreating(false); setConfirming(false); }
   }
 
-  const set = <K extends keyof Audience>(k: K, v: Audience[K]) => { setAud((a) => ({ ...a, [k]: v })); setConfirming(false); };
+  const RETRO_KEY = 'recordatorio_retroalimentacion';
+  const pickTemplate = (key: string) => { const t = templates.find((x) => x.key === key); if (t) { setTemplateKey(key); setSubject(t.subject); } };
+  const set = <K extends keyof Audience>(k: K, v: Audience[K]) => {
+    setAud((a) => ({ ...a, [k]: v })); setConfirming(false);
+    // Alcance y plantilla van juntos: la plantilla de retroalimentación solo tiene sentido con ese alcance.
+    if (k === 'scope') { if (v === 'retro_pendiente') pickTemplate(RETRO_KEY); else if (templateKey === RETRO_KEY) pickTemplate('recordatorio_pendientes'); }
+  };
 
   return (
     <div ref={root} className="grid gap-5">
@@ -184,7 +226,7 @@ function NuevoEnvio({ api, boot, runner, onBack }: { api: Api; boot: Boot; runne
               <input id="env-name" className="ui-input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej. Apertura de evaluaciones 2026" maxLength={120} /></div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="grid gap-1.5"><label htmlFor="env-tpl" className="text-[13px] font-medium text-slate-700">Plantilla</label>
-                <select id="env-tpl" className="ui-input" value={templateKey} onChange={(e) => { const t = templates.find((x) => x.key === e.target.value); setTemplateKey(e.target.value); if (t) setSubject(t.subject); }}>
+                <select id="env-tpl" className="ui-input" value={templateKey} onChange={(e) => { pickTemplate(e.target.value); if (e.target.value === RETRO_KEY) { setAud((a) => ({ ...a, scope: 'retro_pendiente' })); setConfirming(false); } }}>
                   {templates.filter((t) => t.key !== 'otp_firma' && t.key !== 'firma_invitacion').map((t) => <option key={t.key} value={t.key}>{t.name}</option>)}
                 </select></div>
               <div className="grid gap-1.5"><label htmlFor="env-sub" className="text-[13px] font-medium text-slate-700">Asunto</label>
@@ -198,6 +240,7 @@ function NuevoEnvio({ api, boot, runner, onBack }: { api: Api; boot: Boot; runne
           <section data-reveal className="grid gap-3.5" aria-labelledby="env-2">
             <h2 id="env-2" className="text-sm font-semibold text-slate-900">Destinatarios</h2>
             <Tabs label="Alcance" value={aud.scope} onChange={(v) => set('scope', v)} items={(Object.keys(SCOPE_LABEL) as Audience['scope'][]).map((k) => [k, SCOPE_LABEL[k]])} />
+            {aud.scope === 'retro_pendiente' && <RetroExplainer prev={prev} busy={prevBusy} />}
             <div className="grid gap-3 sm:grid-cols-2">
               {needsPeriod && <div className="grid gap-1.5"><label htmlFor="env-per" className="text-[13px] font-medium text-slate-700">Periodo</label>
                 <select id="env-per" className="ui-input" value={aud.periodId} onChange={(e) => set('periodId', e.target.value)}>{boot.periods.map((p) => <option key={p.id} value={p.id}>Periodo {p.year}{p.is_active ? ' (vigente)' : ''}</option>)}</select></div>}
@@ -212,7 +255,8 @@ function NuevoEnvio({ api, boot, runner, onBack }: { api: Api; boot: Boot; runne
               {prevBusy && !prev ? <p className="flex items-center gap-2 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" />Calculando destinatarios</p> : prev ? (
                 <div className="grid gap-2">
                   <p className="text-sm text-slate-700"><b className="text-lg tabular-nums text-slate-900">{prev.count.toLocaleString('es-CO')}</b> {prev.count === 1 ? 'persona recibirá' : 'personas recibirán'} este correo{prevBusy ? '…' : ''}</p>
-                  {prev.count > 0 && <p className="text-xs tabular-nums text-slate-500">{plural(prev.evaluaciones, 'evaluación asignada', 'evaluaciones asignadas')}, {prev.conPendientes.toLocaleString('es-CO')} con pendientes. {prev.byCampus.slice(0, 4).map(([c, n]) => `${c}: ${n}`).join(' · ')}</p>}
+                  {prev.count > 0 && aud.scope === 'retro_pendiente' && <p className="text-xs tabular-nums text-slate-500">{plural(prev.sinActa ?? 0, 'evaluación sin acta', 'evaluaciones sin acta')} y {plural(prev.sinFirmar ?? 0, 'acta sin firmar', 'actas sin firmar')}. {prev.byCampus.slice(0, 4).map(([c, n]) => `${c}: ${n}`).join(' · ')}</p>}
+                  {prev.count > 0 && aud.scope !== 'retro_pendiente' && <p className="text-xs tabular-nums text-slate-500">{plural(prev.evaluaciones, 'evaluación asignada', 'evaluaciones asignadas')}, {prev.conPendientes.toLocaleString('es-CO')} con pendientes. {prev.byCampus.slice(0, 4).map(([c, n]) => `${c}: ${n}`).join(' · ')}</p>}
                   {prev.sample.length > 0 && <p className="truncate text-xs text-slate-500">Ejemplo: {prev.sample.slice(0, 3).map((s) => s.nombre).join(', ')}…</p>}
                 </div>
               ) : <p className="text-sm text-slate-500">Elige un periodo para calcular los destinatarios.</p>}
