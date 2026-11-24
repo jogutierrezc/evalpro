@@ -90,10 +90,17 @@ export function UsersManagement() {
     if (error) {
       let message = error.message;
       const status = (error as any).context?.status ?? 400;
-      try { message = (await (error as any).context?.json())?.error || message; } catch { /* sin cuerpo */ }
+      let raw = '';
+      try {
+        raw = await (error as any).context?.text?.() ?? '';
+        let j: any = null;
+        try { j = JSON.parse(raw); } catch { /* no es JSON */ }
+        message = j?.error || j?.message || j?.msg || message;
+      } catch { /* sin cuerpo */ }
       if (status === 404) message = 'La función «admin-users» no está desplegada en el servidor (404). Despliégala con: bash supabase/subir-funcion.sh admin-users';
       else if (status === 401 || status === 403) message = message || 'Tu sesión no tiene permiso de administrador para crear usuarios.';
-      else if (message === error.message) message = friendlyError(error);
+      else if (message === error.message) message = friendlyError(error) + ` [HTTP ${status}${raw ? `: ${raw.slice(0, 200)}` : ''}]`;
+      console.error('admin-users', status, raw);
       return { data: null as any, error: { message, status } as any };
     }
     return { data: { user: { id: data.id } } as any, error: null };
