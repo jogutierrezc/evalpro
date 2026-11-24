@@ -23,7 +23,7 @@ export function useMySelfEvaluations(userId?: string) {
         const [evRes, perRes] = await Promise.all([
           supabase
             .from('evaluations')
-            .select('id, template_id, period_id, created_at, completed_at, template:evaluation_templates ( name )')
+            .select('id, template_id, period_id, created_at, completed_at, template:evaluation_templates ( name, type )')
             .eq('evaluated_id', userId).eq('evaluator_id', userId).eq('status', 'completed')
             .order('created_at', { ascending: false }).limit(MAX_ENTRIES),
           supabase.from('evaluation_periods').select('id, name, year, start_date, end_date'),
@@ -50,7 +50,7 @@ export function useMySelfEvaluations(userId?: string) {
           const p = r.period_id ? periods.get(r.period_id) : null;
           const date = r.completed_at || r.created_at;
           return {
-            id: r.id, templateId: r.template_id, template: r.template?.name || 'Autoevaluación', periodId: r.period_id,
+            id: r.id, templateId: r.template_id, template: r.template?.name || 'Autoevaluación', typeKey: r.template?.type ?? null, periodId: r.period_id,
             periodName: p ? (p.name || `Periodo ${p.year}`) : new Date(date).toLocaleDateString('es-CO', { month: 'short', year: 'numeric' }),
             periodFull: p ? periodLabel(p) : 'Sin período asignado',
             date, global: g !== null ? round2(g) : null, competencies,

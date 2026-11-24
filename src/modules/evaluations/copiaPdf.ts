@@ -1,5 +1,7 @@
 /**
- * PDF «Copia de tus evaluaciones». Usa la plantilla de resultados del acta (título, lectura, mapa de competencias,
+ * PDF «Copia de tus evaluaciones» (el que va adjunto al correo de cierre) y, con la misma plantilla, el «Certificado de
+ * evaluación» que se emite desde Resultados y Mis autoevaluaciones para cualquier tipo de evaluación: cambian el título,
+ * la ficha, los rótulos y el color distintivo del tipo, pero el diseño y el motor son uno solo. Usa la plantilla de resultados del acta (título, lectura, mapa de competencias,
  * tabla por criterio con diferencias y nota metodológica) y el formato de números de resultados.ts, dibujada con el
  * motor de paginación de src/lib/pdf, así que se ajusta a cualquier tamaño de hoja.
  */
@@ -7,10 +9,28 @@ import { ACCENT, INK, MUTED, PdfFlow, RGB, bytesToBase64, clean, rgb } from '../
 import type { FlowBrand, TCol, TRow } from '../../lib/pdf/flow';
 import type { PaperSpec } from '../../lib/pdf/paper';
 import type { Resultados } from '../feedback/resultados';
-import { diff, fmt, fmtDiff, toneOf } from '../feedback/resultados';
+import { diff, fmt, fmtDiff, lecturaTexto, notaMetodo, toneOf } from '../feedback/resultados';
+import { onTypeColor } from '../../lib/evaluationTypes';
 import { fechaLarga } from '../feedback/types';
 
+/** Tipo de evaluación de cada resultado (alineado por posición con `resultados`). */
+export interface TipoPdf {
+  key: string;
+  label: string;
+  /** Color distintivo del tipo (#RRGGBB), de src/lib/evaluationTypes. */
+  color: string;
+  /** propia: autoevaluación; evaluado: quien recibe la evaluación; evaluador: quien la diligenció (otra persona es la evaluada). */
+  rol: 'propia' | 'evaluado' | 'evaluador';
+  evaluado?: string;
+  evaluador?: string;
+}
+
 export interface CopiaPdfInput {
+  /** copia: correo de cierre (por defecto). certificado: documento de una evaluación, emitido desde Resultados. */
+  modo?: 'copia' | 'certificado';
+  tipos?: (TipoPdf | undefined)[];
+  /** Solo en el certificado: quién diligenció la evaluación. */
+  evaluador?: string;
   persona: { nombre: string; cargo?: string };
   /** «Periodo 2026». */
   periodo: string;
@@ -43,8 +63,19 @@ const SERIE_STYLE: Record<Serie, { color: RGB; dash: number[]; marker: 'circle' 
   udes: { color: rgb('#475569'), dash: [0.5, 2.6], marker: 'square' },
 };
 
-const LABELS: Record<Serie, string> = { persona: 'Tu autoevaluación', equipo: 'Equipo', udes: 'Promedio UDES' };
-const HEADS = { persona: 'Tu resultado', equipo: 'Equipo', udes: 'Promedio UDES', dEquipo: 'Dif. equipo', dUdes: 'Diferencia' };
+type Labels = Record<Serie, string>;
+type Heads = { persona: string; equipo: string; udes: string; dEquipo: string; dUdes: string };
+const HEADS_BASE = { equipo: 'Equipo', udes: 'Promedio UDES', dEquipo: 'Dif. equipo', dUdes: 'Diferencia' };
+
+/** Rótulos según el modo y el tipo: la copia habla en segunda persona; el certificado, en neutro. */
+function rotulos(modo: 'copia' | 'certificado', tipo?: TipoPdf): { labels: Labels; heads: Heads } {
+  const propiaCopia = modo === 'copia' && (!tipo || tipo.rol === 'propia');
+  const persona = propiaCopia ? 'Tu autoevaluación' : tipo?.rol === 'propia' ? 'Autoevaluación' : 'Evaluación';
+  return {
+    labels: { persona, equipo: 'Equipo', udes: 'Promedio UDES' },
+    heads: { ...HEADS_BASE, persona: propiaCopia ? 'Tu resultado' : 'Resultado' },
+  };
+}
 
 /** Fecha larga en hora de Colombia (UTC-5): una hora de la noche no debe caer en el día siguiente por estar guardada en UTC. */
 const diaColombia = (iso?: string | null) => {
@@ -57,11 +88,13 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 const posicion = (d: number | null) => (d == null ? '' : Math.abs(d) < 0.05 ? 'igual' : d > 0 ? `${fmt(Math.abs(d))} por encima` : `${fmt(Math.abs(d))} por debajo`);
 
 /** Frase de lectura de la autoevaluación. Solo describe los datos, sin juicios. */
-export function lecturaCopia(r: Resultados): string {
+export function lecturaCopia(r: Resultados, nombre?: string): string {
   const o = r.overall;
-  const partes = [`Obtuviste ${fmt(o.persona)} de ${fmt(r.scale)} en tu autoevaluación (${r.template}).`];
+  const partes = [nombre
+    ? `${nombre} obtuvo ${fmt(o.persona)} de ${fmt(r.scale)} en su autoevaluación (${r.template}).`
+    : `Obtuviste ${fmt(o.persona)} de ${fmt(r.scale)} en tu autoevaluación (${r.template}).`];
   const dUd = diff(o.persona, o.udes);
-  if (dUd != null) partes.push(`Frente al promedio UDES de este formulario (${plural(r.udes_n, 'autoevaluación', 'autoevaluaciones')}) quedas ${posicion(dUd)}.`);
+  if (dUd != null) partes.push(`Frente al promedio UDES de este formulario (${plural(r.udes_n, 'autoevaluación', 'autoevaluaciones')}) ${nombre ? 'queda' : 'quedas'} ${posicion(dUd)}.`);
   const conBrecha = r.sections.map((s) => ({ s, d: diff(s.persona, s.udes) })).filter((x) => x.d != null) as { s: Resultados['sections'][number]; d: number }[];
   if (conBrecha.length >= 2) {
     const menor = conBrecha.reduce((m, x) => (x.d < m.d ? x : m));
@@ -72,10 +105,10 @@ export function lecturaCopia(r: Resultados): string {
   return partes.join(' ');
 }
 
-export function notaCopia(r: Resultados): string {
-  const base = `Escala de 1 a ${fmt(r.scale).replace(',00', '')}. Este es tu resultado tal como quedó registrado en Aluna Eval.`;
+export function notaCopia(r: Resultados, tercera = false): string {
+  const base = `Escala de 1 a ${fmt(r.scale).replace(',00', '')}. Este es ${tercera ? 'el' : 'tu'} resultado tal como quedó registrado en Aluna Eval.`;
   const udes = r.overall.udes != null || r.sections.some((s) => s.udes != null)
-    ? ` Promedio UDES: promedio de las autoevaluaciones completadas de este formulario en el periodo (${plural(r.udes_n, 'autoevaluación', 'autoevaluaciones')}). Diferencia = tu resultado menos el promedio.`
+    ? ` Promedio UDES: promedio de las autoevaluaciones completadas de este formulario en el periodo (${plural(r.udes_n, 'autoevaluación', 'autoevaluaciones')}). Diferencia = ${tercera ? 'el' : 'tu'} resultado menos el promedio.`
     : ' El promedio UDES no se muestra porque hay menos de 3 autoevaluaciones completadas de este formulario.';
   return base + udes;
 }
@@ -188,7 +221,7 @@ function drawSwatch(f: PdfFlow, x: number, y: number, w: number, k: Serie) {
 }
 
 /** Calcula el alto del mapa de competencias sin dibujarlo, para poder reservar su espacio junto con el título de la sección. */
-function planMapa(f: PdfFlow, res: Resultados): { h: number; draw: (y: number) => void } {
+function planMapa(f: PdfFlow, res: Resultados, labels: Labels): { h: number; draw: (y: number) => void } {
   const s = f.s;
   const W = f.L.width;
   const sections = res.sections;
@@ -258,7 +291,7 @@ function planMapa(f: PdfFlow, res: Resultados): { h: number; draw: (y: number) =
       d.setFont('helvetica', 'normal');
       d.setFontSize(fs);
       d.setTextColor(...INK);
-      d.text(clean(LABELS[k]), keyX + 24 * s + 6 * s, ky + fs * 0.34);
+      d.text(clean(labels[k]), keyX + 24 * s + 6 * s, ky + fs * 0.34);
       ky += 14 * s;
     });
     d.setFontSize(fs * 0.92);
@@ -270,7 +303,7 @@ function planMapa(f: PdfFlow, res: Resultados): { h: number; draw: (y: number) =
 
 /* ---------- tabla por criterio ---------- */
 
-function tabla(f: PdfFlow, res: Resultados) {
+function tabla(f: PdfFlow, res: Resultados, heads: Heads, nota: string) {
   const s = f.s;
   const hasEq = res.sections.some((x) => x.equipo != null) || res.overall.equipo != null;
   const hasUd = res.sections.some((x) => x.udes != null) || res.overall.udes != null;
@@ -278,11 +311,11 @@ function tabla(f: PdfFlow, res: Resultados) {
   // Columnas numéricas: ancho propio, y si la hoja es angosta el criterio conserva al menos el 38%.
   const nNum = 1 + (hasEq ? 2 : 0) + (hasUd ? 2 : 0);
   const numW = Math.max(Math.min(0.13, 0.62 / nNum), 0.08);
-  const cols: TCol[] = [{ header: 'Criterio', width: 1 - numW * nNum, align: 'left' }, { header: HEADS.persona, width: numW }];
-  if (hasEq) cols.push({ header: HEADS.equipo, width: numW });
-  if (hasUd) cols.push({ header: HEADS.udes, width: numW });
-  if (hasEq) cols.push({ header: HEADS.dEquipo, width: numW });
-  if (hasUd) cols.push({ header: HEADS.dUdes, width: numW });
+  const cols: TCol[] = [{ header: 'Criterio', width: 1 - numW * nNum, align: 'left' }, { header: heads.persona, width: numW }];
+  if (hasEq) cols.push({ header: heads.equipo, width: numW });
+  if (hasUd) cols.push({ header: heads.udes, width: numW });
+  if (hasEq) cols.push({ header: heads.dEquipo, width: numW });
+  if (hasUd) cols.push({ header: heads.dUdes, width: numW });
 
   const vals = (p: number | null, e: number | null, u: number | null, bold: boolean) => {
     const out = [{ text: fmt(p), bold: true }] as { text: string; bold?: boolean; color?: RGB }[];
@@ -303,7 +336,6 @@ function tabla(f: PdfFlow, res: Resultados) {
   if (rows.length) rows[rows.length - 1].keepWithNext = true;   // el último criterio viaja con el total
   rows.push({ cells: [{ text: 'Resultado global' }, ...vals(res.overall.persona, res.overall.equipo, res.overall.udes, true)], fill: HEAD, bold: true, strongTop: true });
 
-  const nota = notaCopia(res);
   const notaM = f.measure(nota, { size: 7.4 * s, lh: 1.4 });
   f.table({ cols, rows, band: 'RESULTADOS POR CRITERIO', fontSize: 8.4 * s, pad: 3.7 * s, bandFill: BAND, headFill: HEAD, border: BORDER, grid: GRID, badge: BAND }, notaM.h + 6 * s);
   f.gap(5 * s);
@@ -312,31 +344,11 @@ function tabla(f: PdfFlow, res: Resultados) {
 
 /* ---------- documento ---------- */
 
-async function construir(inp: CopiaPdfInput, fit: number) {
-  const f = await PdfFlow.create({
-    fit,
-    paper: inp.paper,
-    landscape: inp.landscape,
-    title: `Copia de tus evaluaciones - ${inp.periodo}`,
-    subject: `Copia de las evaluaciones de ${inp.persona.nombre}`,
-    author: 'Aluna Eval - Universidad de Santander',
-    brand: {
-      logo: inp.logo ?? null,
-      wordmark: 'Eval',
-      right: 'Copia de tus evaluaciones',
-      footerLeft: `${inp.persona.nombre} · ${inp.periodo}`,
-    },
-  });
+/** Ficha de datos (caja de celdas con rótulo) con anchos proporcionales. */
+function ficha(f: PdfFlow, datos: [string, string][], pesos: number[]) {
   const s = f.s;
   const W = f.L.width;
-
-  // Título
-  f.text('Copia de tus evaluaciones', { size: 22 * s, bold: true, color: NAVY, lh: 1.15, after: 3 * s });
-  f.text(`${inp.periodo} · Aluna Eval`, { size: 10.5 * s, color: ACCENT, bold: true, after: 12 * s });
-
-  // Ficha: persona, cargo y fecha de cierre
-  const datos: [string, string][] = [['Persona', inp.persona.nombre], ['Cargo', inp.persona.cargo || '-'], ['Cierre de tus evaluaciones', diaColombia(inp.fechaCierre) || '-']];
-  const w = [W * 0.38, W * 0.3, W * 0.32];
+  const w = pesos.map((p) => W * p);
   const pad = 6 * s;
   const vs = 9.4 * s;
   const heights = datos.map(([, v], i) => f.measure(v, { size: vs, width: w[i] - 2 * pad, lh: 1.25 }).h);
@@ -361,23 +373,95 @@ async function construir(inp: CopiaPdfInput, fit: number) {
       x += w[i];
     });
   });
+}
 
-  f.text('Esta es la copia de lo que diligenciaste en Aluna Eval: tu resultado en cada criterio, el mapa de competencias y la comparación con el promedio UDES cuando hay datos suficientes.', { size: 9.4 * s, lh: 1.45, after: 14 * s });
+/** Insignia del tipo de evaluación: banda del color distintivo con su nombre. Devuelve su alto (con el espacio de abajo). */
+function chipTipo(f: PdfFlow, tipo: TipoPdf): { h: number; draw: (y: number) => void } {
+  const s = f.s;
+  const fs = 8.2 * s;
+  const padX = 7 * s;
+  const h = fs + 8 * s;
+  const texto = tipo.label.toUpperCase();
+  return {
+    h: h + 6 * s,
+    draw: (y) => {
+      const d = f.doc;
+      d.setFont('helvetica', 'bold');
+      d.setFontSize(fs);
+      const w = d.getTextWidth(clean(texto)) + padX * 2 + 10 * s;
+      const col = rgb(tipo.color);
+      d.setFillColor(...col);
+      d.roundedRect(f.L.left, y, w, h, h / 2, h / 2, 'F');
+      const ink = rgb(onTypeColor(tipo.color));
+      d.setFillColor(...ink);
+      d.circle(f.L.left + padX, y + h / 2, 2 * s, 'F');
+      d.setTextColor(...ink);
+      d.text(clean(texto), f.L.left + padX + 7 * s, y + h / 2 + fs * 0.34);
+    },
+  };
+}
+
+async function construir(inp: CopiaPdfInput, fit: number) {
+  const modo = inp.modo ?? 'copia';
+  const cert = modo === 'certificado';
+  const tipoDe = (i: number) => inp.tipos?.[i];
+  const unico = inp.resultados.length === 1 ? tipoDe(0) : undefined;
+  const titulo = cert ? 'Certificado de evaluación' : 'Copia de tus evaluaciones';
+  const f = await PdfFlow.create({
+    fit,
+    paper: inp.paper,
+    landscape: inp.landscape,
+    title: `${titulo} - ${inp.periodo}`,
+    subject: cert ? `Certificado de la evaluación de ${inp.persona.nombre}` : `Copia de las evaluaciones de ${inp.persona.nombre}`,
+    author: 'Aluna Eval - Universidad de Santander',
+    brand: {
+      logo: inp.logo ?? null,
+      wordmark: 'Eval',
+      right: titulo,
+      footerLeft: `${inp.persona.nombre} · ${inp.periodo}`,
+    },
+  });
+  const s = f.s;
+
+  // Título
+  f.text(titulo, { size: 22 * s, bold: true, color: NAVY, lh: 1.15, after: 3 * s });
+  f.text(`${inp.periodo} · Aluna Eval`, { size: 10.5 * s, color: ACCENT, bold: true, after: unico ? 8 * s : 12 * s });
+  if (unico) { const c = chipTipo(f, unico); f.block(c.h, c.draw); f.gap(4 * s); }
+
+  // Ficha
+  if (cert) {
+    const datos: [string, string][] = [['Evaluado', inp.persona.nombre], ['Cargo', inp.persona.cargo || '-'], ['Evaluador', inp.evaluador || inp.persona.nombre], ['Fecha de cierre', diaColombia(inp.fechaCierre) || '-']];
+    ficha(f, datos, [0.29, 0.21, 0.27, 0.23]);
+    f.text('Este certificado resume la evaluación tal como quedó registrada en Aluna Eval: el resultado en cada criterio, el mapa de competencias y la comparación con el promedio UDES cuando hay datos suficientes.', { size: 9.4 * s, lh: 1.45, after: 14 * s });
+  } else {
+    ficha(f, [['Persona', inp.persona.nombre], ['Cargo', inp.persona.cargo || '-'], ['Cierre de tus evaluaciones', diaColombia(inp.fechaCierre) || '-']], [0.38, 0.3, 0.32]);
+    f.text('Esta es la copia de lo que diligenciaste en Aluna Eval: tu resultado en cada criterio, el mapa de competencias y la comparación con el promedio UDES cuando hay datos suficientes.', { size: 9.4 * s, lh: 1.45, after: 14 * s });
+  }
 
   inp.resultados.forEach((res, i) => {
-    const heading = `${i + 1}. ${res.template || 'Autoevaluación'}`;
+    const tipo = tipoDe(i);
+    const { labels, heads } = rotulos(modo, tipo);
+    const heading = `${i + 1}. ${res.template || 'Evaluación'}`;
     const hm = f.measure(heading, { size: 13.5 * s, bold: true, lh: 1.2 });
-    const lead = lecturaCopia(res);
+    const propia = !tipo || tipo.rol === 'propia';
+    const lead = propia
+      ? lecturaCopia(res, cert ? inp.persona.nombre : undefined)
+      : lecturaTexto(res, tipo.evaluado || inp.persona.nombre);
+    const nota = propia ? notaCopia(res, cert) : notaMetodo(res);
     const lm = f.measure(lead, { size: 9.4 * s, lh: 1.45 });
-    const plan = planMapa(f, res);
+    const plan = planMapa(f, res, labels);
+    const chip = !unico && tipo ? chipTipo(f, tipo) : null;
     // El título, su subtítulo, la lectura y el mapa forman una unidad: si no caben en lo que queda de la hoja, pasan completos a la siguiente.
-    f.ensure(Math.min(hm.h + 1 * s + 13 * s + lm.h + 9 * s + plan.h, f.pageBody));
+    f.ensure(Math.min(hm.h + 1 * s + 13 * s + lm.h + 9 * s + plan.h + (chip?.h ?? 0), f.pageBody));
+    if (chip) f.block(chip.h, chip.draw);
     f.text(heading, { size: 13.5 * s, bold: true, color: NAVY, lh: 1.2, after: 1 * s });
-    const cierre = res.completed_at ? `Autoevaluación completada el ${diaColombia(res.completed_at)}` : 'Autoevaluación completada';
+    const cierre = res.completed_at
+      ? `${propia ? 'Autoevaluación' : 'Evaluación'} completada el ${diaColombia(res.completed_at)}`
+      : `${propia ? 'Autoevaluación' : 'Evaluación'} completada`;
     f.text(cierre, { size: 8.4 * s, color: MUTED, after: 7 * s });
     f.text(lead, { size: 9.4 * s, lh: 1.45, after: 9 * s });
     f.block(plan.h, plan.draw);
-    tabla(f, res);
+    tabla(f, res, heads, nota);
     f.gap(10 * s);
   });
 
@@ -403,3 +487,6 @@ export async function generarCopiaPdf(inp: CopiaPdfInput): Promise<CopiaPdfOut &
   const { out, fit } = mejor!;
   return { bytes: out.bytes, base64: bytesToBase64(out.bytes), pages: out.pages, ajuste: fit };
 }
+
+/** Mismo motor, en modo certificado de una evaluación (cualquier tipo). */
+export const generarCertificadoPdf = (inp: Omit<CopiaPdfInput, 'modo'>) => generarCopiaPdf({ ...inp, modo: 'certificado' });

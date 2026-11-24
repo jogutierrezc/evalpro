@@ -599,6 +599,7 @@ const hoyColombia = () => new Date(Date.now() - 5 * 3600e3).toISOString().slice(
 const diaColombia = (iso?: string | null) => { const t = Date.parse(String(iso ?? '')); return Number.isNaN(t) ? '' : new Date(t - 5 * 3600e3).toISOString().slice(0, 10); };
 const slugName = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 60) || 'persona';
 const COPIA_MAX_B64 = 4_200_000;          // ≈ 3 MB de PDF
+const REENVIO_ESPERA_MS = 3 * 60_000;     // una persona (no administradora) no puede reenviarse el correo más seguido que esto
 const COPIA_SENDING_TTL_MS = 10 * 60_000; // una reserva «enviando» más vieja que esto se considera caída y se puede retomar
 
 type CopiaUser = { id: string; full_name: string; email: string | null; role: string | null; role_id: string | null; isAdmin: boolean };
@@ -626,7 +627,8 @@ async function copiaObjetivo(b: any, caller: CopiaUser): Promise<CopiaUser> {
 
 async function copiaPeriodo(b: any, caller: CopiaUser) {
   const cols = 'id, year, start_date, end_date, is_active';
-  if (b.periodId && caller.isAdmin) {
+  // Un administrador puede pedir cualquier periodo; el resto solo opera sobre su propia copia (ver copiaObjetivo).
+  if (b.periodId) {
     const { data } = await admin.from('evaluation_periods').select(cols).eq('id', String(b.periodId)).maybeSingle();
     return data;
   }
@@ -645,7 +647,8 @@ async function cargoDe(u: CopiaUser): Promise<string> {
 /** Estado de la persona: ¿terminó todo?, ¿ya se le envió?, ¿qué autoevaluaciones entran en el PDF? */
 async function copiaCalcular(b: any, caller: CopiaUser) {
   const target = await copiaObjetivo(b, caller);
-  const forzar = !!b.forzar && caller.isAdmin;
+  // Reenviar: un administrador para cualquiera; cada persona, solo el suyo (con espera entre envíos).
+  const forzar = !!b.forzar && (caller.isAdmin || target.id === caller.id);
   const periodo = await copiaPeriodo(b, caller);
   const persona = { id: target.id, nombre: titleCase(target.full_name || ''), cargo: await cargoDe(target), email: target.email };
   if (!periodo) return { target, forzar, periodo: null, est: { elegible: false, motivo: 'No hay un periodo de evaluación activo.', persona } };
@@ -653,7 +656,7 @@ async function copiaCalcular(b: any, caller: CopiaUser) {
   const [pend, done, claim] = await Promise.all([
     admin.rpc('pendientes_de_usuario', { p_user: target.id, p_period: periodo.id }),
     admin.from('evaluations').select('id, evaluator_id, evaluated_id, completed_at').eq('evaluator_id', target.id).eq('period_id', periodo.id).eq('status', 'completed'),
-    admin.from('evaluation_copy_sent').select('status, sent_at, created_at').eq('user_id', target.id).eq('period_id', periodo.id).maybeSingle(),
+    admin.from('evaluation_copy_sent').select('status, sent_at, created_at, last_attempt_at, send_count').eq('user_id', target.id).eq('period_id', periodo.id).maybeSingle(),
   ]);
   if (pend.error || done.error || claim.error) throw new HttpError(500, 'Falta aplicar la migración de copias de evaluaciones en la base de datos.');
 
@@ -661,14 +664,18 @@ async function copiaCalcular(b: any, caller: CopiaUser) {
   const propias = hechas.filter((e) => e.evaluator_id === e.evaluated_id);
   const fechaCierre = hechas.map((e) => e.completed_at).filter(Boolean).sort().pop() ?? null;
   const pendientes = Number(pend.data ?? 0);
-  const c = claim.data as { status: string; created_at: string } | null;
-  const enCurso = c?.status === 'sending' && Date.now() - Date.parse(c.created_at) < COPIA_SENDING_TTL_MS;
+  const c = claim.data as { status: string; created_at: string; sent_at: string | null; last_attempt_at: string | null; send_count: number } | null;
+  const inicioIntento = c ? Date.parse(c.last_attempt_at ?? c.created_at) : 0;
+  const enCurso = c?.status === 'sending' && Date.now() - inicioIntento < COPIA_SENDING_TTL_MS;
+  const email = String(target.email || '').trim().toLowerCase();
 
   let motivo: string | undefined;
   if (!hechas.length) motivo = 'No tienes evaluaciones completadas en este periodo.';
   else if (pendientes > 0) motivo = `Aún tienes ${pendientes} ${pendientes === 1 ? 'evaluación pendiente' : 'evaluaciones pendientes'}.`;
+  else if (!email || email.endsWith('@evaluation.local')) motivo = 'La persona no tiene un correo real registrado.';
   else if (c?.status === 'sent' && !forzar) motivo = 'La copia de este periodo ya se envió.';
-  else if (enCurso && !forzar) motivo = 'La copia se está enviando.';
+  else if (enCurso) motivo = 'La copia se está enviando.';
+  else if (forzar && !caller.isAdmin && c?.sent_at && Date.now() - Date.parse(c.sent_at) < REENVIO_ESPERA_MS) motivo = 'Ya se envió hace pocos minutos. Revisa tu bandeja (y el correo no deseado) antes de reenviar.';
 
   return {
     target, forzar, periodo, claim: c,
@@ -709,18 +716,30 @@ async function copiaEnviar(b: any, caller: CopiaUser) {
   }
 
   // Reserva única por persona y periodo: dos pestañas o dos clics no envían dos veces.
-  if (forzar) await admin.from('evaluation_copy_sent').delete().eq('user_id', target.id).eq('period_id', periodo.id);
-  const fila = { user_id: target.id, period_id: periodo.id, status: 'sending', to_email: to, with_pdf: !!pdf, evaluations: est.autoevaluaciones.length, pdf_bytes: pdf?.bytes ?? null, created_by: caller.id, error: null, created_at: new Date().toISOString(), sent_at: null };
-  const { error: ce } = await admin.from('evaluation_copy_sent').insert(fila);
-  if (ce) {
-    // Ya existe: solo se retoma una reserva fallida o abandonada, y de forma atómica.
-    const cur = claim as { status: string; created_at: string } | null;
-    const retomable = !!cur && (cur.status === 'failed' || (cur.status === 'sending' && Date.now() - Date.parse(cur.created_at) >= COPIA_SENDING_TTL_MS));
-    if (!retomable) return { enviado: false, motivo: 'La copia ya se envió o se está enviando.' };
-    const { data: won } = await admin.from('evaluation_copy_sent').update(fila).eq('user_id', target.id).eq('period_id', periodo.id).eq('status', cur!.status).select('id');
-    if (!won?.length) return { enviado: false, motivo: 'La copia ya se está enviando.' };
+  // Un reenvío (forzar) retoma la fila existente SIN borrarla: si el nuevo intento falla, el envío anterior sigue constando.
+  const prev = claim as { status: string; created_at: string; sent_at: string | null; last_attempt_at: string | null; send_count: number } | null;
+  const ahoraIso = new Date().toISOString();
+  const fila = { user_id: target.id, period_id: periodo.id, status: 'sending', to_email: to, with_pdf: !!pdf, evaluations: est.autoevaluaciones.length, pdf_bytes: pdf?.bytes ?? null, created_by: caller.id, error: null, last_attempt_at: ahoraIso };
+  const tomar = async (estadoActual: string) => {
+    const { data: won } = await admin.from('evaluation_copy_sent').update(fila).eq('user_id', target.id).eq('period_id', periodo.id).eq('status', estadoActual).select('id');
+    return !!won?.length;
+  };
+  if (prev && forzar) {
+    if (!(await tomar(prev.status))) return { enviado: false, motivo: 'La copia ya se está enviando.' };
+  } else {
+    const { error: ce } = await admin.from('evaluation_copy_sent').insert({ ...fila, created_at: ahoraIso, sent_at: null, send_count: 0 });
+    if (ce) {
+      // Ya existe: solo se retoma una reserva fallida o abandonada, y de forma atómica.
+      const retomable = !!prev && (prev.status === 'failed' || (prev.status === 'sending' && Date.now() - Date.parse(prev.last_attempt_at ?? prev.created_at) >= COPIA_SENDING_TTL_MS));
+      if (!retomable) return { enviado: false, motivo: 'La copia ya se envió o se está enviando.' };
+      if (!(await tomar(prev!.status))) return { enviado: false, motivo: 'La copia ya se está enviando.' };
+    }
   }
-  const liberar = () => admin.from('evaluation_copy_sent').delete().eq('user_id', target.id).eq('period_id', periodo.id);
+  const yaEnviada = prev?.status === 'sent';
+  // Si no se llega a enviar, la fila vuelve a como estaba (enviada) o se elimina (era nueva).
+  const liberar = () => yaEnviada
+    ? admin.from('evaluation_copy_sent').update({ status: 'sent' }).eq('user_id', target.id).eq('period_id', periodo.id)
+    : admin.from('evaluation_copy_sent').delete().eq('user_id', target.id).eq('period_id', periodo.id);
 
   const { data: tpl } = await admin.from('mail_templates').select('subject, html').eq('key', 'copia_evaluaciones').maybeSingle();
   if (!tpl) { await liberar(); return { enviado: false, motivo: 'Falta la plantilla «copia_evaluaciones». Aplica la migración de copias.' }; }
@@ -744,12 +763,12 @@ async function copiaEnviar(b: any, caller: CopiaUser) {
     const ahora = new Date().toISOString();
     await admin.from('mail_log').update({ status: 'sent', sent_at: ahora, message_id: messageId || null }).eq('id', log!.id);
     await admin.from('mail_events').insert({ log_id: log!.id, type: 'sent' });
-    await admin.from('evaluation_copy_sent').update({ status: 'sent', sent_at: ahora, mail_log_id: log!.id }).eq('user_id', target.id).eq('period_id', periodo.id);
+    await admin.from('evaluation_copy_sent').update({ status: 'sent', sent_at: ahora, mail_log_id: log!.id, send_count: (prev?.send_count ?? 0) + 1, error: null }).eq('user_id', target.id).eq('period_id', periodo.id);
     return { enviado: true, conPdf: !!pdf };
   } catch (e) {
     await admin.from('mail_log').update({ status: 'failed', error: errText(e) }).eq('id', log!.id);
     await admin.from('mail_events').insert({ log_id: log!.id, type: 'failed', meta: { error: errText(e) } });
-    await admin.from('evaluation_copy_sent').update({ status: 'failed', error: errText(e), mail_log_id: log!.id }).eq('user_id', target.id).eq('period_id', periodo.id);
+    await admin.from('evaluation_copy_sent').update({ status: yaEnviada ? 'sent' : 'failed', error: errText(e), mail_log_id: log!.id }).eq('user_id', target.id).eq('period_id', periodo.id);
     return { enviado: false, motivo: 'No se pudo entregar al servidor de correo. Se reintentará la próxima vez.' };
   } finally { try { transporter.close(); } catch { /* cerrado */ } }
 }

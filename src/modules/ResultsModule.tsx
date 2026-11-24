@@ -2,13 +2,18 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { useState, useEffect, useMemo, Fragment } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, Evaluation } from '../lib/supabase';
-import { BarChart3, Eye, Trash2, X, Search, Filter, AlertCircle, ChevronLeft, ChevronRight, Building2, RefreshCw, Calendar } from 'lucide-react';
+import { BarChart3, Eye, Trash2, X, Search, Filter, AlertCircle, ChevronLeft, ChevronRight, Building2, RefreshCw, Calendar, FileDown, Loader2, Mail, Send } from 'lucide-react';
 import { usePeriods } from '../hooks/usePeriods';
 import { applySnapshot, periodLabel } from '../lib/evaluationSnapshot';
 import SectionAnalysis, { SectionSummaryRow } from './SectionAnalysis';
 import OfficeAnalysis from './OfficeAnalysis';
 import CampusAnalysis from './CampusAnalysis';
 import UniversityAnalysis from './UniversityAnalysis';
+import { EvalTypeBadge } from '../components/EvalTypeBadge';
+import { CorreoEstadoBadge, ReenviarCorreoDialog, type ReenvioObjetivo } from '../components/CorreoResultado';
+import { evalTypeColor } from '../lib/evaluationTypes';
+import { ESTADO_META, LOTE_BASE, REENVIABLES, fetchEstadosCorreo, type CorreoInfo, type EstadoCorreo } from './evaluations/correoResultado';
+import { descargarCertificado } from './evaluations/certificado';
 
 interface EvaluationListItem {
   id: string;
@@ -25,6 +30,8 @@ interface EvaluationListItem {
   evaluator_campus: string;
   evaluated_campus: string;
   template_name: string;
+  template_type?: string;
+  period_id?: string | null;
   results?: any;
 }
 
@@ -74,6 +81,14 @@ export function ResultsModule() {
   const [filterCampus, setFilterCampus] = useState('');
   const [filterEvaluator, setFilterEvaluator] = useState('');
   const [filterFormType, setFilterFormType] = useState('');
+  const [filterCorreo, setFilterCorreo] = useState<'' | EstadoCorreo>('');
+  // Correo de resultados: estado por persona evaluadora (quien termina todo recibe el correo), reenvío y certificado.
+  const [correos, setCorreos] = useState<Map<string, CorreoInfo>>(new Map());
+  const [correosLoading, setCorreosLoading] = useState(false);
+  const [correosError, setCorreosError] = useState<string | null>(null);
+  const [reenvio, setReenvio] = useState<ReenvioObjetivo[] | null>(null);
+  const [certBusy, setCertBusy] = useState<string | null>(null);
+  const [certError, setCertError] = useState<string | null>(null);
   
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -153,7 +168,7 @@ export function ResultsModule() {
             period_id, evaluator_snapshot, evaluated_snapshot,
             evaluator:users!evaluator_id ( full_name, campus, role, office:offices ( name ) ),
             evaluated:users!evaluated_id ( full_name, campus, role, office:offices ( name ) ),
-            template:evaluation_templates ( name ),
+            template:evaluation_templates ( name, type ),
             results:evaluation_results ( overall_score, category_scores )
           `)
           .eq('status', 'completed')
@@ -196,6 +211,8 @@ export function ResultsModule() {
           evaluator_campus: normalizeCampus(e.evaluator?.campus),
           evaluated_campus: normalizeCampus(e.evaluated?.campus),
           template_name: e.template?.name,
+          template_type: e.template?.type,
+          period_id: e.period_id,
           results: resultsData
         };
       });
@@ -411,6 +428,32 @@ export function ResultsModule() {
     }
   };
 
+  const roleLowerAll = (user?.role || '').toLowerCase();
+  const isAdminUser = roleLowerAll === 'admin' || roleLowerAll.includes('administrador');
+
+  const loadCorreos = async () => {
+    if (!periodId) return;
+    try {
+      setCorreosLoading(true);
+      setCorreosError(null);
+      setCorreos(await fetchEstadosCorreo(periodId));
+    } catch (e) {
+      setCorreos(new Map());
+      setCorreosError(e instanceof Error ? e.message : 'No se pudo consultar el estado de los correos.');
+    } finally {
+      setCorreosLoading(false);
+    }
+  };
+  useEffect(() => { loadCorreos(); }, [periodId, user?.id]);
+
+  const handleCertificado = async (evalId: string) => {
+    setCertBusy(evalId);
+    setCertError(null);
+    try { await descargarCertificado(evalId); }
+    catch (e) { setCertError(e instanceof Error ? e.message : 'No se pudo generar el certificado.'); }
+    finally { setCertBusy(null); }
+  };
+
   const uniqueOffices = useMemo(() => {
     const offices = new Set(allEvaluations.map(e => e.evaluated_office).filter(Boolean));
     return Array.from(offices).sort();
@@ -442,10 +485,22 @@ export function ResultsModule() {
       const matchesCampus = !filterCampus || e.evaluated_campus === filterCampus;
       const matchesEvaluator = !filterEvaluator || e.evaluator_name === filterEvaluator;
       const matchesFormType = !filterFormType || e.template_name === filterFormType;
+      const matchesCorreo = !filterCorreo || correos.get(e.evaluator_id)?.estado === filterCorreo;
 
-      return matchesSearch && matchesOffice && matchesCampus && matchesEvaluator && matchesFormType;
+      return matchesSearch && matchesOffice && matchesCampus && matchesEvaluator && matchesFormType && matchesCorreo;
     });
-  }, [allEvaluations, searchTerm, filterOffice, filterCampus, filterEvaluator, filterFormType]);
+  }, [allEvaluations, searchTerm, filterOffice, filterCampus, filterEvaluator, filterFormType, filterCorreo, correos]);
+
+  // Personas (no filas) de la lista filtrada, por estado de correo: el correo es uno por persona y periodo.
+  const correoResumen = useMemo(() => {
+    const porPersona = new Map<string, ReenvioObjetivo>();
+    filteredEvaluations.forEach((e) => {
+      if (!porPersona.has(e.evaluator_id)) porPersona.set(e.evaluator_id, { userId: e.evaluator_id, nombre: e.evaluator_name || 'Sin nombre', info: correos.get(e.evaluator_id) });
+    });
+    const personas = Array.from(porPersona.values());
+    const cuenta = (estados: EstadoCorreo[]) => personas.filter((p) => p.info && estados.includes(p.info.estado)).length;
+    return { personas, enviados: cuenta(['sent']), noEnviados: cuenta(['no_enviado']), fallidos: cuenta(['failed']), sinRegistro: cuenta(['sin_registro']), loteable: cuenta([...LOTE_BASE, 'sin_registro']) };
+  }, [filteredEvaluations, correos]);
 
   // Pagination
   const paginatedEvaluations = useMemo(() => {
@@ -497,10 +552,11 @@ export function ResultsModule() {
     setFilterCampus('');
     setFilterEvaluator('');
     setFilterFormType('');
+    setFilterCorreo('');
     setCurrentPage(1);
   };
 
-  const activeFiltersCount = [filterOffice, filterCampus, filterEvaluator, filterFormType]
+  const activeFiltersCount = [filterOffice, filterCampus, filterEvaluator, filterFormType, filterCorreo]
     .filter(Boolean).length;
 
   if (loading) {
@@ -614,12 +670,13 @@ export function ResultsModule() {
               </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-3">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
                   type="text"
                   placeholder="Buscar..."
+                  aria-label="Buscar"
                   value={searchTerm}
                   onChange={(e) => {
                     setSearchTerm(e.target.value);
@@ -684,7 +741,51 @@ export function ResultsModule() {
                   <option key={type} value={type}>{type}</option>
                 ))}
               </select>
+
+              <select
+                value={filterCorreo}
+                aria-label="Estado del correo de resultados"
+                onChange={(e) => {
+                  setFilterCorreo(e.target.value as '' | EstadoCorreo);
+                  setCurrentPage(1);
+                }}
+                className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              >
+                <option value="">Correo: todos</option>
+                {(['sent', 'no_enviado', 'failed', 'sin_registro', 'pendiente', 'sin_correo'] as EstadoCorreo[]).map((k) => (
+                  <option key={k} value={k}>{k === 'no_enviado' ? 'Correo: no enviados' : `Correo: ${ESTADO_META[k].label.toLowerCase()}`}</option>
+                ))}
+              </select>
             </div>
+
+            {isAdminUser && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2.5">
+                <p className="text-[13px] text-slate-600" aria-live="polite">
+                  {correosError
+                    ? <span className="text-red-700">{correosError}</span>
+                    : correosLoading
+                      ? 'Consultando el estado de los correos...'
+                      : <>Correo de resultados (por persona): <b className="text-emerald-700">{correoResumen.enviados} enviados</b> · <b className="text-amber-700">{correoResumen.noEnviados} no enviados</b>{correoResumen.fallidos > 0 && <> · <b className="text-red-700">{correoResumen.fallidos} fallidos</b></>}{correoResumen.sinRegistro > 0 && <> · {correoResumen.sinRegistro} sin registro</>}</>}
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setFilterCorreo('no_enviado')}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-100"
+                  >
+                    Ver no enviados
+                  </button>
+                  <button
+                    onClick={() => setReenvio(correoResumen.personas)}
+                    disabled={correosLoading || correoResumen.loteable === 0}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-[transform,background-color] duration-150 hover:bg-blue-700 active:scale-[0.97] disabled:opacity-50"
+                  >
+                    <Send className="h-3.5 w-3.5" /> Reenviar pendientes ({correoResumen.noEnviados + correoResumen.fallidos})
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {certError && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[13px] text-red-700">{certError}</div>}
 
             {activeFiltersCount > 0 && (
               <button
@@ -713,13 +814,14 @@ export function ResultsModule() {
                     <th className="px-4 py-3 text-left font-medium text-gray-600 w-32">Campus</th>
                     <th className="px-4 py-3 text-left font-medium text-gray-600 w-48">Formulario</th>
                     <th className="px-4 py-3 text-left font-medium text-gray-600 w-32">Fecha</th>
-                    <th className="px-4 py-3 text-center font-medium text-gray-600 w-24">Acciones</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-600 w-32" title="Correo con los resultados que recibe la persona evaluadora al terminar todas sus evaluaciones">Correo</th>
+                    <th className="px-4 py-3 text-center font-medium text-gray-600 w-36">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                   {paginatedEvaluations.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-4 py-8 text-center">
+                      <td colSpan={8} className="px-4 py-8 text-center">
                         <div className="flex flex-col items-center gap-2 text-gray-500">
                           <AlertCircle className="w-8 h-8 text-gray-400" />
                           <p>No hay evaluaciones disponibles</p>
@@ -729,16 +831,45 @@ export function ResultsModule() {
                   ) : (
                     paginatedEvaluations.map((evaluation) => (
                       <tr key={evaluation.id} className="hover:bg-gray-50 transition-colors">
-                        <td className="px-4 py-3 font-medium text-gray-900 truncate max-w-[12rem]" title={evaluation.evaluated_name}>{evaluation.evaluated_name || 'N/A'}</td>
+                        <td className="border-l-4 px-4 py-3 font-medium text-gray-900 truncate max-w-[12rem]" style={{ borderLeftColor: evalTypeColor(evaluation.template_type) }} title={evaluation.evaluated_name}>{evaluation.evaluated_name || 'N/A'}</td>
                         <td className="px-4 py-3 text-gray-700 truncate max-w-[12rem]" title={evaluation.evaluator_name}>{evaluation.evaluator_name || 'N/A'}</td>
                         <td className="px-4 py-3 text-gray-600 truncate max-w-[10rem]" title={evaluation.evaluated_office}>{evaluation.evaluated_office || 'N/A'}</td>
                         <td className="px-4 py-3 text-gray-600 truncate max-w-[8rem]" title={evaluation.evaluated_campus}>{evaluation.evaluated_campus || 'N/A'}</td>
-                        <td className="px-4 py-3 text-gray-600 truncate max-w-[12rem]" title={evaluation.template_name}>{evaluation.template_name || 'N/A'}</td>
+                        <td className="px-4 py-3 text-gray-600 max-w-[14rem]">
+                          <div className="truncate" title={evaluation.template_name}>{evaluation.template_name || 'N/A'}</div>
+                          <EvalTypeBadge typeKey={evaluation.template_type} className="mt-1" />
+                        </td>
                         <td className="px-4 py-3 text-gray-600">
                           {new Date(evaluation.created_at).toLocaleDateString('es-CO')}
                         </td>
                         <td className="px-4 py-3">
-                          <div className="flex items-center justify-center gap-2">
+                          <CorreoEstadoBadge info={correos.get(evaluation.evaluator_id)} loading={correosLoading && !correos.size} />
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center justify-center gap-1">
+                            {(isAdminUser || evaluation.evaluator_id === user?.id) && (
+                              <>
+                                <button
+                                  onClick={() => handleCertificado(evaluation.id)}
+                                  disabled={certBusy === evaluation.id}
+                                  className="p-2 text-slate-600 hover:bg-slate-100 rounded transition-colors disabled:opacity-60"
+                                  title="Descargar certificado (PDF)"
+                                  aria-label={`Descargar certificado de ${evaluation.evaluated_name || 'la evaluación'}`}
+                                >
+                                  {certBusy === evaluation.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
+                                </button>
+                                {REENVIABLES.includes(correos.get(evaluation.evaluator_id)?.estado as EstadoCorreo) && (
+                                  <button
+                                    onClick={() => setReenvio([{ userId: evaluation.evaluator_id, nombre: evaluation.evaluator_name || 'Sin nombre', info: correos.get(evaluation.evaluator_id) }])}
+                                    className="p-2 text-emerald-700 hover:bg-emerald-50 rounded transition-colors"
+                                    title="Reenviar correo de resultados"
+                                    aria-label={`Reenviar correo de resultados a ${evaluation.evaluator_name || 'la persona evaluadora'}`}
+                                  >
+                                    <Mail className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </>
+                            )}
                             <button
                               onClick={() => handleViewAnalysis(evaluation.id)}
                               className="p-2 text-blue-600 hover:bg-blue-50 rounded transition-colors"
@@ -1209,6 +1340,17 @@ export function ResultsModule() {
       ) : null}
 
       {/* Analysis Modal */}
+      {reenvio && (
+        <ReenviarCorreoDialog
+          objetivos={reenvio}
+          periodId={periodId}
+          periodoNombre={periodLabel(periods.find((p: any) => p.id === periodId))}
+          propio={reenvio.length === 1 && reenvio[0].userId === user?.id}
+          onClose={() => setReenvio(null)}
+          onDone={loadCorreos}
+        />
+      )}
+
       {selectedEvaluation && (
         <SectionAnalysis
           evaluation={selectedEvaluation}

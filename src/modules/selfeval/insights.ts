@@ -7,6 +7,8 @@ export interface SelfEntry {
   id: string;
   templateId: string;
   template: string;
+  /** Tipo del formulario (form_types.key), para el color distintivo. */
+  typeKey?: string | null;
   periodId: string | null;
   periodName: string;      // corto, para el eje del gráfico
   periodFull: string;      // con fechas, para el detalle

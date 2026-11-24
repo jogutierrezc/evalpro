@@ -1,10 +1,15 @@
-import { useLayoutEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { gsap } from 'gsap';
-import { AlertCircle, ArrowRight, CheckCircle2, ChevronDown, ClipboardList, Info, TrendingUp } from 'lucide-react';
+import { AlertCircle, ArrowRight, CheckCircle2, ChevronDown, ClipboardList, FileDown, Info, Loader2, Mail, TrendingUp } from 'lucide-react';
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { useAuth } from '../../contexts/AuthContext';
 import { COLORS } from '../performance/charts';
 import { useMySelfEvaluations } from './useMySelfEvaluations';
+import { EvalTypeBadge } from '../../components/EvalTypeBadge';
+import { CorreoEstadoBadge, ReenviarCorreoDialog } from '../../components/CorreoResultado';
+import { evalTypeColor } from '../../lib/evaluationTypes';
+import { REENVIABLES, detalleCorreo, fetchEstadosCorreo, type CorreoInfo } from '../evaluations/correoResultado';
+import { descargarCertificado } from '../evaluations/certificado';
 import { buildInsights, previousOf, signed, TOL, type Insight, type SelfEntry, type Tone } from './insights';
 
 const fmt = (n: number | null | undefined) => (n === null || n === undefined ? '-' : n.toFixed(2).replace('.', ','));
@@ -41,6 +46,28 @@ export function MySelfEvaluationsModule({ onNavigate }: { onNavigate?: (m: strin
   const { user } = useAuth();
   const { entries, loading, error } = useMySelfEvaluations(user?.id);
   const scope = useRef<HTMLDivElement>(null);
+
+  // Correo de resultados por periodo (el correo es uno por persona y periodo) y certificado por autoevaluación.
+  const [correos, setCorreos] = useState<Map<string, CorreoInfo | null>>(new Map());
+  const [reenvio, setReenvio] = useState<{ periodId: string; periodo: string } | null>(null);
+  const [certBusy, setCertBusy] = useState<string | null>(null);
+  const [certError, setCertError] = useState<string | null>(null);
+  const periodIds = useMemo(() => Array.from(new Set(entries.map((e) => e.periodId).filter((x): x is string => !!x))), [entries]);
+  const cargarCorreos = useCallback(async () => {
+    if (!user?.id || !periodIds.length) return;
+    const next = new Map<string, CorreoInfo | null>();
+    await Promise.all(periodIds.map(async (pid) => {
+      try { next.set(pid, (await fetchEstadosCorreo(pid, [user.id])).get(user.id) ?? null); } catch { next.set(pid, null); }
+    }));
+    setCorreos(next);
+  }, [user?.id, periodIds]);
+  useEffect(() => { cargarCorreos(); }, [cargarCorreos]);
+  const descargar = async (id: string) => {
+    setCertBusy(id); setCertError(null);
+    try { await descargarCertificado(id); }
+    catch (e) { setCertError(e instanceof Error ? e.message : 'No se pudo generar el certificado.'); }
+    finally { setCertBusy(null); }
+  };
 
   const latest = entries[entries.length - 1];
   const prev = useMemo(() => previousOf(entries), [entries]);
@@ -194,13 +221,17 @@ export function MySelfEvaluationsModule({ onNavigate }: { onNavigate?: (m: strin
 
       <section data-reveal aria-labelledby="sec-hist">
         <h2 id="sec-hist" className="mb-3 text-lg font-semibold text-slate-900">Historial</h2>
+        {certError && <div role="alert" className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-[13px] text-red-700">{certError}</div>}
         <div className="divide-y divide-slate-200 overflow-hidden rounded-lg border border-slate-200 bg-white">
           {[...entries].reverse().map((e: SelfEntry, idx) => (
-            <details key={e.id} open={idx === 0} className="group">
+            <details key={e.id} open={idx === 0} className="group border-l-4" style={{ borderLeftColor: evalTypeColor(e.typeKey) }}>
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 [&::-webkit-details-marker]:hidden">
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-medium text-slate-900">{e.periodFull}</span>
-                  <span className="block text-xs text-slate-500">{e.template}, {dateFmt(e.date)}</span>
+                  <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
+                    <span>{e.template}, {dateFmt(e.date)}</span>
+                    <EvalTypeBadge typeKey={e.typeKey} />
+                  </span>
                 </span>
                 <span className="flex items-center gap-3">
                   <span className="text-lg font-semibold tabular-nums" style={{ color: COLORS.self }}>{fmt(e.global)}</span>
@@ -208,6 +239,25 @@ export function MySelfEvaluationsModule({ onNavigate }: { onNavigate?: (m: strin
                 </span>
               </summary>
               <div className="border-t border-slate-100 bg-slate-50 px-4 py-3">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-3 rounded-md border border-slate-200 bg-white px-3 py-2">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2 text-[13px] text-slate-600">
+                    <span className="font-medium text-slate-700">Correo de resultados</span>
+                    {e.periodId
+                      ? <CorreoEstadoBadge info={correos.get(e.periodId)} loading={!correos.has(e.periodId)} />
+                      : <span className="text-slate-400">Sin periodo asignado</span>}
+                    {e.periodId && correos.get(e.periodId) && <span className="hidden max-w-[48ch] text-xs text-slate-500 md:inline">{detalleCorreo(correos.get(e.periodId))}</span>}
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => descargar(e.id)} disabled={certBusy === e.id} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition-[transform,background-color] duration-150 hover:bg-slate-100 active:scale-[0.97] disabled:opacity-60">
+                      {certBusy === e.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileDown className="h-3.5 w-3.5" />} Certificado
+                    </button>
+                    {e.periodId && REENVIABLES.includes(correos.get(e.periodId)?.estado as never) && (
+                      <button onClick={() => setReenvio({ periodId: e.periodId as string, periodo: e.periodFull })} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-[transform,background-color] duration-150 hover:bg-blue-700 active:scale-[0.97]">
+                        <Mail className="h-3.5 w-3.5" /> Reenviar a mi correo
+                      </button>
+                    )}
+                  </div>
+                </div>
                 {e.competencies.map((c) => (
                   <div key={c.key} className="py-2">
                     <div className="flex items-center justify-between gap-4">
@@ -229,6 +279,17 @@ export function MySelfEvaluationsModule({ onNavigate }: { onNavigate?: (m: strin
           ))}
         </div>
       </section>
+
+      {reenvio && user?.id && (
+        <ReenviarCorreoDialog
+          objetivos={[{ userId: user.id, nombre: 'ti', info: correos.get(reenvio.periodId) }]}
+          periodId={reenvio.periodId}
+          periodoNombre={reenvio.periodo}
+          propio
+          onClose={() => setReenvio(null)}
+          onDone={cargarCorreos}
+        />
+      )}
     </div>
   );
 }

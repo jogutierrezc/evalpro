@@ -14,6 +14,9 @@
 import { supabase } from '../../lib/supabase';
 import type { PaperSpec } from '../../lib/pdf/paper';
 import type { Resultados } from '../feedback/resultados';
+import { evalTypeColor, evalTypeLabel } from '../../lib/evaluationTypes';
+import { loadFormTypeLabels } from '../../hooks/useFormTypes';
+import type { TipoPdf } from './copiaPdf';
 
 export interface CopiaOpts {
   /** Solo administradores: reenviar aunque ya se haya enviado. */
@@ -56,7 +59,7 @@ async function invocar<T>(body: Record<string, unknown>): Promise<T> {
   throw new Error(motivo);
 }
 
-async function cargarLogo() {
+export async function cargarLogo() {
   try {
     const r = await fetch(`${BASE}brand/aluna-color.png`);
     if (!r.ok) return null;
@@ -74,6 +77,21 @@ async function cargarLogo() {
   } catch {
     return null; // el PDF sale igual, solo con el nombre de la marca
   }
+}
+
+async function tiposDe(ids: string[], nombre: string): Promise<Map<string, TipoPdf>> {
+  const out = new Map<string, TipoPdf>();
+  try {
+    const [{ data }, labels] = await Promise.all([
+      supabase.from('evaluations').select('id, template:evaluation_templates ( type )').in('id', ids),
+      loadFormTypeLabels(),
+    ]);
+    for (const row of (data as unknown as { id: string; template: { type: string } | { type: string }[] | null }[]) ?? []) {
+      const t = Array.isArray(row.template) ? row.template[0] : row.template;
+      if (t?.type) out.set(row.id, { key: t.type, label: evalTypeLabel(t.type, labels), color: evalTypeColor(t.type), rol: 'propia', evaluado: nombre, evaluador: nombre });
+    }
+  } catch { /* sin distintivo */ }
+  return out;
 }
 
 async function ejecutar(userId: string, opts: CopiaOpts): Promise<CopiaResultado> {
@@ -96,12 +114,15 @@ async function ejecutar(userId: string, opts: CopiaOpts): Promise<CopiaResultado
     if (!resultados.length) return { enviado: false, motivo: 'No se pudieron leer los resultados para armar el PDF.' };
     resultados.sort((a, b) => String(a.completed_at ?? '').localeCompare(String(b.completed_at ?? '')));
 
+    // Tipo (y color) de cada autoevaluación, para el distintivo del PDF. Si no se puede leer, el PDF sale sin distintivo.
+    const tipos = await tiposDe(resultados.map((r) => r.evaluation_id), est.persona.nombre);
     const [{ generarCopiaPdf }, logo] = await Promise.all([import('./copiaPdf'), cargarLogo()]);
     const out = await generarCopiaPdf({
       persona: { nombre: est.persona.nombre, cargo: est.persona.cargo },
       periodo: (est.periodo ?? 'periodo').replace(/^./, (c) => c.toUpperCase()),
       fechaCierre: est.fechaCierre ?? new Date().toISOString(),
       resultados,
+      tipos: resultados.map((r) => tipos.get(r.evaluation_id)),
       logo,
       paper: opts.paper,
       landscape: opts.landscape,

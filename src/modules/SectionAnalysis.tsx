@@ -1,9 +1,16 @@
 import { useEffect, useState } from 'react';
 import { supabase, Evaluation } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
+import { EvalTypeBadge } from '../components/EvalTypeBadge';
+import { CorreoEstadoBadge, ReenviarCorreoDialog, useCorreoEstado } from '../components/CorreoResultado';
+import { REENVIABLES } from './evaluations/correoResultado';
+import { descargarCertificado } from './evaluations/certificado';
 import {
   X,
   Download,
-  Share2,
+  Mail,
+  FileDown,
+  Loader2,
   BrainCircuit,
   TrendingUp,
   ChevronDown,
@@ -167,6 +174,27 @@ export default function SectionAnalysis({ evaluation, onClose }: Props) {
   const [expandedSection, setExpandedSection] = useState<number | null>(null);
   const [evaluatedUser, setEvaluatedUser] = useState<any>(null);
   const [evaluatorUser, setEvaluatorUser] = useState<any>(null);
+  const { user } = useAuth();
+  const [typeKey, setTypeKey] = useState<string | null>(null);
+  const [reenviando, setReenviando] = useState(false);
+  const [certBusy, setCertBusy] = useState(false);
+  const [certError, setCertError] = useState<string | null>(null);
+  const roleLower = (user?.role || '').toLowerCase();
+  const puedeGestionar = roleLower === 'admin' || roleLower.includes('administrador') || evaluation.evaluator_id === user?.id;
+  const { info: correo, loading: correoLoading, reload: recargarCorreo } = useCorreoEstado(puedeGestionar ? evaluation.period_id : null, evaluation.evaluator_id);
+
+  useEffect(() => {
+    let alive = true;
+    supabase.from('evaluation_templates').select('type').eq('id', evaluation.template_id).maybeSingle().then(({ data }) => { if (alive) setTypeKey((data as any)?.type ?? null); });
+    return () => { alive = false; };
+  }, [evaluation.template_id]);
+
+  const descargar = async () => {
+    setCertBusy(true); setCertError(null);
+    try { await descargarCertificado(evaluation.id); }
+    catch (e) { setCertError(e instanceof Error ? e.message : 'No se pudo generar el certificado.'); }
+    finally { setCertBusy(false); }
+  };
 
   useEffect(() => { load(); }, [evaluation.id]);
 
@@ -320,6 +348,8 @@ export default function SectionAnalysis({ evaluation, onClose }: Props) {
             <div className="flex items-center gap-2 mb-1">
               <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-0.5 rounded uppercase tracking-wide">Evaluación Finalizada</span>
               <span className="text-slate-400 text-xs">{new Date(evaluation.created_at).toLocaleDateString()}</span>
+              {typeKey && <EvalTypeBadge typeKey={typeKey} />}
+              {puedeGestionar && evaluation.period_id && <CorreoEstadoBadge info={correo} loading={correoLoading} />}
             </div>
             <h2 className="text-2xl font-bold text-slate-800">Resultados de Desempeño</h2>
             <p className="text-slate-500 text-sm">Evaluado: <span className="font-semibold text-slate-700">{evaluatedUser?.full_name}</span></p>
@@ -327,12 +357,25 @@ export default function SectionAnalysis({ evaluation, onClose }: Props) {
           </div>
 
           <div className="flex gap-3">
-            <button
-              onClick={() => alert('Función de compartir próximamente')}
-              className="flex items-center gap-2 px-4 py-2 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl font-medium text-sm transition-colors border border-slate-200"
-            >
-              <Share2 className="w-4 h-4" /> Compartir
-            </button>
+            {puedeGestionar && (
+              <>
+                <button
+                  onClick={descargar}
+                  disabled={certBusy}
+                  className="flex items-center gap-2 px-4 py-2 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl font-medium text-sm transition-colors border border-slate-200 disabled:opacity-60"
+                >
+                  {certBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />} Certificado
+                </button>
+                {correo && REENVIABLES.includes(correo.estado) && (
+                  <button
+                    onClick={() => setReenviando(true)}
+                    className="flex items-center gap-2 px-4 py-2 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl font-medium text-sm transition-colors border border-slate-200"
+                  >
+                    <Mail className="w-4 h-4" /> Reenviar correo
+                  </button>
+                )}
+              </>
+            )}
             <button
               onClick={exportCSV}
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium text-sm transition-colors shadow-lg shadow-blue-600/20"
@@ -347,6 +390,8 @@ export default function SectionAnalysis({ evaluation, onClose }: Props) {
             </button>
           </div>
         </div>
+
+        {certError && <div role="alert" className="border-b border-red-100 bg-red-50 px-6 py-2 text-[13px] text-red-700">{certError}</div>}
 
         {/* SCROLLABLE CONTENT */}
         <div className="flex-1 overflow-y-auto p-6 sm:p-8 bg-slate-50/50">
@@ -529,6 +574,16 @@ export default function SectionAnalysis({ evaluation, onClose }: Props) {
         </div>
 
       </div>
+
+      {reenviando && evaluation.period_id && (
+        <ReenviarCorreoDialog
+          objetivos={[{ userId: evaluation.evaluator_id, nombre: evaluatorUser?.full_name || 'la persona evaluadora', info: correo }]}
+          periodId={evaluation.period_id}
+          propio={evaluation.evaluator_id === user?.id}
+          onClose={() => setReenviando(false)}
+          onDone={recargarCorreo}
+        />
+      )}
     </div>
   );
 }
