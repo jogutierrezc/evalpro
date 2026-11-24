@@ -3,6 +3,19 @@ import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 
+// Tras publicar una versión nueva, una pestaña abierta pide archivos (chunks) del build anterior que ya no existen.
+// Vite lanza este evento; se recarga una sola vez para tomar el build nuevo (el sello evita un bucle de recargas).
+window.addEventListener('vite:preloadError', (event) => {
+  try {
+    const last = Number(sessionStorage.getItem('chunk-reload-at') || 0);
+    if (Date.now() - last > 30000) {
+      sessionStorage.setItem('chunk-reload-at', String(Date.now()));
+      event.preventDefault();
+      window.location.reload();
+    }
+  } catch { /* sin sessionStorage: se deja pasar el error */ }
+});
+
 // Global error handler
 window.addEventListener('error', (event) => {
   console.error('Global error:', event.error);
