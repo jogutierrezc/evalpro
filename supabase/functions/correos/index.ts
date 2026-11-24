@@ -2,6 +2,7 @@
 //
 // Acciones (POST JSON con { action, adminId, adminIdentification, ... }):
 //   bootstrap, templates_list, template_save, template_create, template_delete, template_reset, settings_save,
+//   usuario_bienvenida (correo de bienvenida al crear usuarios, ver migración 20261126000000),
 //   audience_preview, campaign_create, campaign_start, campaign_pause, campaign_resume, campaign_cancel, campaign_send_batch,
 //   campaigns_list, log_list, log_detail, send_test,
 //   otp_trace_list, otp_trace_detail, cert_list, cert_generate, cert_download, cert_revoke
@@ -165,7 +166,7 @@ const getLimits = async () => {
   return { per_minute: clamp(l.per_minute, 1, 30, 20), daily_cap: clamp(l.daily_cap, 10, 9000, 1500) };
 };
 const sentToday = async () => {
-  const { count } = await admin.from('mail_log').select('id', { count: 'exact', head: true }).in('kind', ['campaign', 'test']).eq('status', 'sent').gte('sent_at', inicioDiaColombia());
+  const { count } = await admin.from('mail_log').select('id', { count: 'exact', head: true }).in('kind', ['campaign', 'test', 'bienvenida']).eq('status', 'sent').gte('sent_at', inicioDiaColombia());
   return count ?? 0;
 };
 
@@ -795,6 +796,70 @@ async function copiaEnviar(b: any, caller: CopiaUser) {
   } finally { try { transporter.close(); } catch { /* cerrado */ } }
 }
 
+/* ---------- bienvenida de usuarios nuevos ---------- */
+
+/**
+ * Correo «Ya estás registrado en Aluna Eval» a uno o varios usuarios recién creados (hasta 10 por llamada; el navegador
+ * los manda por lotes y espera `waitMs` para respetar el límite por minuto).
+ * La clave llega en el cuerpo, se usa para renderizar y NO se guarda: mail_log.vars no la incluye ni se escribe en logs.
+ * Nunca lanza por un correo fallido: devuelve el estado por usuario (sent | failed | skipped) para que la creación no se pierda.
+ */
+async function usuarioBienvenida(b: any, who: { id: string }) {
+  const entries = (Array.isArray(b.users) ? b.users : []).slice(0, 10) as { userId?: string; password?: string }[];
+  if (!entries.length) throw new HttpError(400, 'No hay usuarios para notificar.');
+  const smtp = smtpConfig();
+  if (!smtp || !smtp.from) throw new HttpError(503, 'El servidor de correo no está configurado (variables SMTP).');
+  const { data: tpl } = await admin.from('mail_templates').select('subject, html').eq('key', 'usuario_registrado').maybeSingle();
+  if (!tpl) throw new HttpError(409, 'Falta la plantilla «usuario_registrado». Aplica la migración 20261126000000_usuario_registrado.');
+  const limits = await getLimits();
+  const today = await sentToday();
+  if (today >= limits.daily_cap) throw new HttpError(429, `Se alcanzó el tope diario de ${limits.daily_cap} correos. Reintenta mañana.`);
+
+  const { data: per } = await admin.from('evaluation_periods').select('id, year, end_date').eq('is_active', true).order('start_date', { ascending: false }).limit(1).maybeSingle();
+  const periodo = per ? `periodo ${per.year}` : 'periodo vigente';
+
+  const transporter = transporterOf(smtp);
+  const results: { userId: string; status: 'sent' | 'failed' | 'skipped'; error?: string }[] = [];
+  const t0 = Date.now();
+  let attempted = 0, streak = 0;
+  try {
+    for (const en of entries) {
+      const userId = str(en.userId, 60);
+      const clave = String(en.password ?? '');
+      const { data: u } = userId ? await admin.from('users').select('id, full_name, email').eq('id', userId).maybeSingle() : { data: null };
+      const to = String(u?.email ?? '').trim().toLowerCase();
+      if (!u) { results.push({ userId, status: 'failed', error: 'El usuario no existe.' }); continue; }
+      if (!clave) { results.push({ userId, status: 'failed', error: 'Falta la clave inicial.' }); continue; }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to) || to.endsWith('@evaluation.local')) { results.push({ userId, status: 'skipped', error: 'No tiene un correo real registrado.' }); continue; }
+      if (streak >= 3) { results.push({ userId, status: 'failed', error: 'El servidor de correo está fallando; reintenta más tarde.' }); continue; }
+
+      // Conteo real de evaluaciones del periodo activo (misma lógica del módulo Pendientes); si no se puede, texto genérico.
+      let n = 0;
+      if (per) { const { data: c } = await admin.rpc('pendientes_de_usuario', { p_user: u.id, p_period: per.id }); n = Number(c) || 0; }
+      const disponibles = n > 0
+        ? `Tienes ${n} ${n === 1 ? 'evaluación disponible' : 'evaluaciones disponibles'} por realizar en el ${periodo}.`
+        : 'Tu cuenta ya tiene evaluaciones disponibles por realizar.';
+      const publicVars: Record<string, string> = { nombre: titleCase(u.full_name || ''), correo: to, periodo, disponibles_texto: disponibles, enlace: APP_URL, logo: `${APP_URL}brand/aluna-color.png` };
+      const subject = render(tpl.subject, publicVars, false);
+      // vars (columna) sin la clave: solo el correo enviado la lleva.
+      const { data: log } = await admin.from('mail_log').insert({ kind: 'bienvenida', template_key: 'usuario_registrado', to_email: to, to_name: publicVars.nombre, user_id: u.id, subject, status: 'sending', vars: publicVars, created_by: who.id }).select('id, token').single();
+      attempted++;
+      try {
+        const messageId = await deliver(transporter, smtp, to, subject, instrument(render(tpl.html, { ...publicVars, clave }), log!.token));
+        await admin.from('mail_log').update({ status: 'sent', sent_at: new Date().toISOString(), message_id: messageId || null, error: null }).eq('id', log!.id);
+        await admin.from('mail_events').insert({ log_id: log!.id, type: 'sent' });
+        results.push({ userId, status: 'sent' }); streak = 0;
+      } catch (e) {
+        await admin.from('mail_log').update({ status: 'failed', error: errText(e) }).eq('id', log!.id);
+        await admin.from('mail_events').insert({ log_id: log!.id, type: 'failed', meta: { error: errText(e) } });
+        results.push({ userId, status: 'failed', error: 'No se pudo entregar al servidor de correo.' }); streak++;
+      }
+    }
+  } finally { try { transporter.close(); } catch { /* cerrado */ } }
+  const waitMs = Math.max(0, Math.round((attempted * 60000) / limits.per_minute - (Date.now() - t0)));
+  return { results, waitMs };
+}
+
 /* ---------- servidor ---------- */
 
 const GIF = Uint8Array.from(atob('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'), (c) => c.charCodeAt(0));
@@ -908,6 +973,7 @@ serve(async (req) => {
       case 'log_list': return json(await logList(b));
       case 'log_detail': return json(await logDetail(b));
       case 'send_test': return json(await sendTest(b, who));
+      case 'usuario_bienvenida': return json(await usuarioBienvenida(b, who));
 
       case 'otp_trace_list': return json(await otpTraceList());
       case 'otp_trace_detail': return json(await otpTraceDetail(b));

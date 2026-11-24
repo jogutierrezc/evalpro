@@ -1,7 +1,34 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase, User, Office, UserRole, Role } from '../../lib/supabase';
-import { Plus, Edit2, Trash2, Search, Upload, X, ChevronLeft, ChevronRight, Users, Filter, Download, Save } from 'lucide-react';
+import { Plus, Edit2, Trash2, Search, Upload, X, ChevronLeft, ChevronRight, Users, Filter, Download, Save, Mail, CheckCircle2, AlertTriangle, RotateCw } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { useAuth } from '../../contexts/AuthContext';
+import { callCorreos } from '../correos/api';
+
+/** Un usuario recién creado al que se le envía (o se le intentó enviar) el correo de bienvenida. La clave solo vive en memoria. */
+type MailEntry = { id: string; name: string; email: string; password: string; status: 'pending' | 'sending' | 'sent' | 'failed' | 'skipped'; error?: string };
+/** Resultado de un alta (individual o masiva) que se muestra al administrador. */
+type Alta = { title: string; working: boolean; step: string; created: number; updated: number; rowErrors: string[]; mails: MailEntry[]; progress: { done: number; total: number } | null };
+
+/** Convierte el error técnico (Postgres, PostgREST, Edge Function) en una frase que diga qué falló y qué hacer. */
+function friendlyError(e: any): string {
+  const raw = String(e?.message || e?.error || (typeof e === 'string' ? e : '') || '').trim();
+  const code = String(e?.code || '');
+  const text = `${raw} ${e?.details || ''}`;
+  if (code === '23505' || /duplicate key/i.test(text)) {
+    if (/identification/i.test(text)) return 'Ya existe un usuario con esa cédula.';
+    if (/email/i.test(text)) return 'Ya existe un usuario con ese correo.';
+    return 'Ya existe un usuario con esos datos (cédula o correo repetidos).';
+  }
+  if (code === '42501' || /row-level security|permission denied/i.test(text)) return 'La base de datos rechazó el guardado por permisos (RLS). Tu usuario debe tener rol administrador.';
+  if (code === '23503' || /foreign key/i.test(text)) return 'El rol, la oficina o el jefe elegido no existe en la base de datos.';
+  if (code === '23514' || /check constraint/i.test(text)) return 'Un valor no cumple una restricción de la base de datos (por ejemplo, el rol).';
+  if (code === 'PGRST204' || /column .* does not exist|schema cache/i.test(text)) return 'La tabla de usuarios no tiene una columna que la app intenta guardar: falta aplicar migraciones.';
+  if (/Failed to send a request|FunctionsFetchError|Failed to fetch|NetworkError/i.test(text)) return 'No se pudo contactar la función «admin-users». Revisa que esté desplegada en el servidor y que haya conexión.';
+  if (/non-2xx/i.test(text)) return 'La función «admin-users» respondió con un error sin detalle. Revisa su despliegue y sus registros.';
+  return raw || 'Error desconocido (revisa la consola del navegador).';
+}
+
 
 export function UsersManagement() {
   const [users, setUsers] = useState<(User & { office?: Office; offices?: Office[]; manager?: User; managers?: User[] })[]>([]);
@@ -27,6 +54,12 @@ export function UsersManagement() {
   const [managerQuery, setManagerQuery] = useState('');
   const [selectedManagerId, setSelectedManagerId] = useState<string>('');
   const [campusFilter, setCampusFilter] = useState<string>('');
+  const { user: adminUser } = useAuth();
+  const [formError, setFormError] = useState<string | null>(null);
+  const [alta, setAlta] = useState<Alta | null>(null);
+  const [importProgress, setImportProgress] = useState<{ done: number; total: number } | null>(null);
+  const altaRef = useRef<Alta | null>(null);
+  altaRef.current = alta;
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
@@ -56,8 +89,12 @@ export function UsersManagement() {
     const { data, error } = await supabase.functions.invoke('admin-users', { body: { action: 'create', ...opts } });
     if (error) {
       let message = error.message;
+      const status = (error as any).context?.status ?? 400;
       try { message = (await (error as any).context?.json())?.error || message; } catch { /* sin cuerpo */ }
-      return { data: null as any, error: { message, status: (error as any).context?.status ?? 400 } as any };
+      if (status === 404) message = 'La función «admin-users» no está desplegada en el servidor (404). Despliégala con: bash supabase/subir-funcion.sh admin-users';
+      else if (status === 401 || status === 403) message = message || 'Tu sesión no tiene permiso de administrador para crear usuarios.';
+      else if (message === error.message) message = friendlyError(error);
+      return { data: null as any, error: { message, status } as any };
     }
     return { data: { user: { id: data.id } } as any, error: null };
   };
@@ -389,8 +426,51 @@ export function UsersManagement() {
     return Array.from(map.values());
   };
 
+  const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const makeEntry = (id: string, name: string, email: string, password: string): MailEntry => {
+    const real = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && !email.toLowerCase().endsWith('@evaluation.local');
+    return { id, name, email, password, status: real ? 'pending' : 'skipped', error: real ? undefined : 'No tiene un correo real registrado.' };
+  };
+
+  // Envía el correo de bienvenida por lotes. Un fallo nunca deshace la creación: el usuario queda creado y se marca «sin enviar».
+  const sendWelcome = async (entries: MailEntry[]) => {
+    const targets = entries.filter((m) => m.status === 'pending' || m.status === 'failed');
+    if (!adminUser || targets.length === 0) { setAlta((a) => (a ? { ...a, working: false, step: '' } : a)); return; }
+    const patch = (ids: string[], f: (m: MailEntry) => MailEntry) => setAlta((a) => (a ? { ...a, mails: a.mails.map((m) => (ids.includes(m.id) ? f(m) : m)) } : a));
+    setAlta((a) => (a ? { ...a, working: true, step: 'Enviando correos de bienvenida' } : a));
+    const BATCH = 8;
+    for (let i = 0; i < targets.length; i += BATCH) {
+      const part = targets.slice(i, i + BATCH);
+      const ids = part.map((m) => m.id);
+      patch(ids, (m) => ({ ...m, status: 'sending', error: undefined }));
+      let wait = 0;
+      try {
+        const res: any = await callCorreos(adminUser, 'usuario_bienvenida', { users: part.map((m) => ({ userId: m.id, password: m.password })) });
+        const byId: Record<string, any> = {};
+        (res?.results ?? []).forEach((r: any) => { byId[r.userId] = r; });
+        patch(ids, (m) => {
+          const r = byId[m.id];
+          if (!r) return { ...m, status: 'failed', error: 'El servidor no devolvió resultado.' };
+          return { ...m, status: r.status === 'sent' ? 'sent' : r.status === 'skipped' ? 'skipped' : 'failed', error: r.error };
+        });
+        wait = Math.min(Number(res?.waitMs) || 0, 30000);
+      } catch (e: any) {
+        patch(ids, (m) => ({ ...m, status: 'failed', error: e?.message || 'No se pudo contactar el servicio de correos.' }));
+      }
+      if (wait > 0 && i + BATCH < targets.length) await pause(wait);
+    }
+    setAlta((a) => (a ? { ...a, working: false, step: '' } : a));
+  };
+
+  const retryFailedMails = () => {
+    const failed = (altaRef.current?.mails ?? []).filter((m) => m.status === 'failed');
+    if (failed.length) void sendWelcome(failed);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError(null);
+    let createdEntry: MailEntry | null = null;
 
     try {
       // Map the selected role to a canonical role.key from `roles` table
@@ -433,121 +513,46 @@ export function UsersManagement() {
         await upsertUserManagers(editingUser.id, formData.manager_ids, formData.office_ids);
         await ensureCollaboratorOffices(editingUser.id, formData.office_ids);
       } else {
-        if (formData.role === 'admin') {
-          // Create auth user for admin
-          const identification = formData.identification.trim();
-          const emailToUse = (formData.email || '').trim() || `${identification}@evaluation.local`;
-          const passwordToUse = identification; // requirement: cedula as password
+        // La cuenta de acceso (Auth) usa como clave inicial la cédula; users.id debe coincidir con la cuenta.
+        const identification = formData.identification.trim();
+        const emailToUse = (formData.email || '').trim() || `${identification}@evaluation.local`;
+        const passwordToUse = identification;
+        if (!identification) throw new Error('Falta la cédula.');
+        if (passwordToUse.length < 6) throw new Error('La cédula debe tener al menos 6 caracteres: se usa como clave inicial de acceso.');
 
-          console.debug('Creating auth user with email:', emailToUse);
+        const { data: signUpData, error: signUpError } = await signUpPreserveCreator({ email: emailToUse, password: passwordToUse });
+        if (signUpError) throw new Error(signUpError.message);
+        const createdUserId: string | null = (signUpData as any)?.user?.id || null;
+        if (!createdUserId) throw new Error('La función admin-users no devolvió el id de la cuenta creada.');
 
-          const { data: signUpData, error: signUpError } = await signUpPreserveCreator({
-            email: emailToUse,
-            password: passwordToUse,
-          });
-
-          let createdUserId = null as string | null;
-          if (signUpError) {
-            console.warn('Auth signUp returned error, attempting fallback by email lookup:', signUpError);
-            // Try to find existing user id from users table by email
-            try {
-              const { data: existingUser } = await supabase.from('users').select('id').eq('email', emailToUse).maybeSingle();
-              if (existingUser && existingUser.id) {
-                createdUserId = existingUser.id;
-              } else {
-                throw signUpError;
-              }
-            } catch (e) {
-              console.error('Fallback lookup failed after signUp error:', e);
-              throw signUpError;
-            }
-          } else {
-            createdUserId = (signUpData as any)?.user?.id || (signUpData as any)?.id || (signUpData as any)?.userId || null;
-          }
-          if (!createdUserId) {
-            console.warn('Could not determine created user id from signUp response:', signUpData);
-          }
-
-          const { error: userError } = await supabase.from('users').insert([{ ...userData, id: createdUserId || undefined, email: emailToUse, role: roleToSave }]);
-          if (userError) {
-            console.error('Error inserting into users table:', userError);
-            throw userError;
-          }
-          // If this user is a manager, ensure a corresponding colaboradores row exists
-          await upsertCollaboratorForUser(createdUserId, {
-            identification: formData.identification,
-            full_name: formData.full_name,
-            email: emailToUse,
-            role: roleToSave,
-            campus: formData.campus || null,
-            manager_id: formData.manager_ids && formData.manager_ids.length > 0 ? formData.manager_ids[0] : null,
-          });
-          await ensureCollaboratorOffices(createdUserId, formData.office_ids);
-          await upsertUserManagers(createdUserId, formData.manager_ids, formData.office_ids);
-        } else {
-          // For non-admin users, create an auth user first so users.id FK is valid
-          const identification = formData.identification.trim();
-          const emailToUse = (formData.email || '').trim() || `${identification}@evaluation.local`;
-          const passwordToUse = identification;
-
-          try {
-            const { data: signUpData, error: signUpError } = await signUpPreserveCreator({
-              email: emailToUse,
-              password: passwordToUse,
-            });
-
-            let createdUserId: string | null = null;
-
-            if (signUpError) {
-              console.error('Auth signUp error (non-admin):', signUpError);
-              // fallback: try to get existing users.id by email
-              try {
-                const { data: existingUser } = await supabase.from('users').select('id').eq('email', emailToUse).maybeSingle();
-                if (existingUser && existingUser.id) {
-                  createdUserId = existingUser.id;
-                } else {
-                  throw signUpError;
-                }
-              } catch (e) {
-                console.error('Fallback lookup failed after signUp error:', e);
-                throw signUpError;
-              }
-            } else {
-              createdUserId = (signUpData as any)?.user?.id || (signUpData as any)?.id || (signUpData as any)?.userId || null;
-            }
-
-            if (!createdUserId) {
-              console.warn('Could not determine created user id from signUp response:', signUpData);
-            }
-
-            const { error: userError } = await supabase.from('users').insert([{ ...userData, id: createdUserId || undefined, email: emailToUse, role: roleToSave }]);
-            if (userError) {
-              console.error('Error inserting into users table:', userError);
-              throw userError;
-            }
-            // Ensure colaboradores entry for managers
-            await upsertCollaboratorForUser(createdUserId, {
-              identification: formData.identification,
-              full_name: formData.full_name,
-              email: emailToUse,
-              role: roleToSave,
-              campus: formData.campus || null,
-              manager_id: formData.manager_ids && formData.manager_ids.length > 0 ? formData.manager_ids[0] : null,
-            });
-            await ensureCollaboratorOffices(createdUserId, formData.office_ids);
-            await upsertUserManagers(createdUserId, formData.manager_ids, formData.office_ids);
-          } catch (e) {
-            throw e;
-          }
+        const { error: userError } = await supabase.from('users').insert([{ ...userData, id: createdUserId, email: emailToUse, role: roleToSave }]);
+        if (userError) {
+          console.error('Error inserting into users table:', userError);
+          throw new Error(`La cuenta de acceso se creó pero no se pudo guardar el perfil: ${friendlyError(userError)} (puedes reintentar: la cuenta se reutiliza).`);
         }
+        await upsertCollaboratorForUser(createdUserId, {
+          identification: formData.identification,
+          full_name: formData.full_name,
+          email: emailToUse,
+          role: roleToSave,
+          campus: formData.campus || null,
+          manager_id: formData.manager_ids && formData.manager_ids.length > 0 ? formData.manager_ids[0] : null,
+        });
+        await ensureCollaboratorOffices(createdUserId, formData.office_ids);
+        await upsertUserManagers(createdUserId, formData.manager_ids, formData.office_ids);
+        createdEntry = makeEntry(createdUserId, formData.full_name, emailToUse, passwordToUse);
       }
 
       resetForm();
       loadData();
+      if (createdEntry) {
+        const entry = createdEntry;
+        setAlta({ title: 'Usuario creado', working: entry.status === 'pending', step: '', created: 1, updated: 0, rowErrors: [], mails: [entry], progress: null });
+        void sendWelcome([entry]);
+      }
     } catch (error: any) {
       console.error('Error saving user:', error);
-      const msg = error && (error.message || error.error || JSON.stringify(error));
-      alert('Error al guardar el usuario: ' + (msg || 'ver detalles en la consola'));
+      setFormError(friendlyError(error));
     }
   };
 
@@ -580,7 +585,7 @@ export function UsersManagement() {
       loadData();
     } catch (error: any) {
       console.error('Error deleting user:', error);
-      alert('Error al eliminar el usuario: ' + (error?.message || 'ver consola'));
+      alert('Error al eliminar el usuario: ' + friendlyError(error));
     }
   };
 
@@ -595,6 +600,7 @@ export function UsersManagement() {
       campus: '',
     });
     setEditingUser(null);
+    setFormError(null);
     setShowForm(false);
   };
 
@@ -644,16 +650,17 @@ export function UsersManagement() {
   const handleImport = async () => {
     if (!importFile) return;
 
-    let successCount = 0;
-    let failureCount = 0;
-    const errors: string[] = [];
+    const rowErrors: string[] = [];
+    const created: MailEntry[] = [];
+    let updated = 0;
 
     try {
       const data = await importFile.arrayBuffer();
       const workbook = XLSX.read(data);
       const sheetName = workbook.SheetNames[0];
       const sheet = workbook.Sheets[sheetName];
-      const jsonData = XLSX.utils.sheet_to_json(sheet);
+      const jsonData = XLSX.utils.sheet_to_json(sheet) as any[];
+      if (jsonData.length === 0) { alert('El archivo no tiene filas para importar.'); return; }
 
       // Build import role resolver using canonical roles loaded from DB
       const importResolveRole = (labelOrKey: string) => {
@@ -678,99 +685,57 @@ export function UsersManagement() {
         return acc;
       }, {} as Record<string, string>);
 
-      for (const row of jsonData as any[]) {
+      const seenIdent = new Set<string>();
+      setImportProgress({ done: 0, total: jsonData.length });
+
+      // Cada fila es independiente: un error en una no detiene las demás y se reporta con su número de fila del Excel.
+      for (let idx = 0; idx < jsonData.length; idx++) {
+        const row = jsonData[idx];
         const identification = row['No. de Cedula']?.toString().trim();
         const full_name = row['Nombre Completo']?.toString().trim();
-        const email = row['Correo']?.toString().trim() || null;
-        const roleStr = row['Rol']?.toString().trim();
-        const officeName = row['Oficina']?.toString().trim();
-        const managerName = row['Jefe Inmediato']?.toString().trim();
-        const campus = row['Campus']?.toString().trim() || null;
-
-        if (!identification || !full_name || !roleStr) {
-          failureCount++;
-          errors.push(`Fila incompleta: ${full_name || 'Sin nombre'} - Falta cédula, nombre o rol.`);
-          continue;
-        }
-
-        const role = importResolveRole(roleStr);
-        if (!role) {
-          failureCount++;
-          errors.push(`Rol desconocido para: ${full_name} (${roleStr})`);
-          continue;
-        }
-
-        // Support multiple offices in the 'Oficina' column separated by commas/semicolons
-        const officeNames = officeName ? officeName.split(/[;,|]/).map((s: string) => s.trim()).filter(Boolean) : [];
-        const office_ids = officeNames.map((n: string) => officeMap[n.toLowerCase()]).filter(Boolean);
-        const office_id = office_ids.length > 0 ? office_ids[0] : null;
-        // Support multiple managers separated by commas/semicolons
-        const managerNames = managerName ? managerName.split(/[;,|]/).map((s: string) => s.trim()).filter(Boolean) : [];
-        const manager_ids = managerNames
-          .map((n: string) => managerMap[n.toLowerCase()])
-          .filter(Boolean);
-        const manager_id = manager_ids.length > 0 ? manager_ids[0] : null;
-
-        const emailToUse = email || `${identification}@evaluation.local`;
-        const passwordToUse = identification;
-
+        const label = `Fila ${idx + 2} (${full_name || identification || 'sin nombre'})`;
         try {
-          // Attempt to create Auth user
-          const { data: signUpData, error: signUpError } = await signUpPreserveCreator({
-            email: emailToUse,
-            password: passwordToUse,
-          });
+          const email = row['Correo']?.toString().trim() || null;
+          const roleStr = row['Rol']?.toString().trim();
+          const officeName = row['Oficina']?.toString().trim();
+          const managerName = row['Jefe Inmediato']?.toString().trim();
+          const campus = row['Campus']?.toString().trim() || null;
 
-          let createdUserId = (signUpData as any)?.user?.id || (signUpData as any)?.id;
+          if (!identification || !full_name || !roleStr) throw new Error('Falta cédula, nombre o rol.');
+          if (identification.length < 6) throw new Error('La cédula debe tener al menos 6 caracteres: se usa como clave inicial.');
+          if (seenIdent.has(identification)) throw new Error('La cédula está repetida en el archivo.');
+          seenIdent.add(identification);
+          if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error(`El correo «${email}» no es válido.`);
 
+          const role = importResolveRole(roleStr);
+
+          // Support multiple offices in the 'Oficina' column separated by commas/semicolons
+          const officeNames = officeName ? officeName.split(/[;,|]/).map((x: string) => x.trim()).filter(Boolean) : [];
+          const office_ids = officeNames.map((n: string) => officeMap[n.toLowerCase()]).filter(Boolean);
+          const office_id = office_ids.length > 0 ? office_ids[0] : null;
+          // Support multiple managers separated by commas/semicolons
+          const managerNames = managerName ? managerName.split(/[;,|]/).map((x: string) => x.trim()).filter(Boolean) : [];
+          const manager_ids = managerNames.map((n: string) => managerMap[n.toLowerCase()]).filter(Boolean);
+          const manager_id = manager_ids.length > 0 ? manager_ids[0] : null;
+
+          const emailToUse = email || `${identification}@evaluation.local`;
+          const passwordToUse = identification;
+
+          let createdUserId: string | null = null;
+          let isNew = true;
+          const { data: signUpData, error: signUpError } = await signUpPreserveCreator({ email: emailToUse, password: passwordToUse });
           if (signUpError) {
-            // If user already exists, try to recover ID
-            if (signUpError.message.includes('already registered') || signUpError.status === 422 || signUpError.status === 400) {
-              // 1. Try public.users lookup
-              const { data: existingUser } = await supabase.from('users').select('id').eq('email', emailToUse).maybeSingle();
-              if (existingUser && existingUser.id) {
-                createdUserId = existingUser.id;
-              } else {
-                // 2. Try SignIn recovery (Zombie Auth User)
-                // We need to save session again because signIn will overwrite it
-                const { data: currentSessionData } = await supabase.auth.getSession();
-                const adminSession = currentSessionData.session;
-
-                const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-                  email: emailToUse,
-                  password: passwordToUse
-                });
-
-                if (signInData.user) {
-                  createdUserId = signInData.user.id;
-                  // Restore admin session immediately
-                  if (adminSession) {
-                    await supabase.auth.setSession({
-                      access_token: adminSession.access_token,
-                      refresh_token: adminSession.refresh_token,
-                    });
-                  }
-                } else {
-                  // Restore session if sign in failed
-                  if (adminSession) {
-                    await supabase.auth.setSession({
-                      access_token: adminSession.access_token,
-                      refresh_token: adminSession.refresh_token,
-                    });
-                  }
-                  throw new Error(`Usuario ya existe en Auth pero no se pudo recuperar ID (posible contraseña diferente): ${signInError?.message || signUpError.message}`);
-                }
-              }
-            } else {
-              throw signUpError;
-            }
+            if (signUpError.status !== 409) throw new Error(signUpError.message);
+            // Ya existe el usuario con ese correo: se actualiza su perfil y no se le envía correo (su clave actual se desconoce).
+            const { data: existingUser } = await supabase.from('users').select('id').eq('email', emailToUse).maybeSingle();
+            if (!existingUser?.id) throw new Error(signUpError.message);
+            createdUserId = existingUser.id;
+            isNew = false;
+          } else {
+            createdUserId = (signUpData as any)?.user?.id || null;
           }
+          if (!createdUserId) throw new Error('No se pudo obtener el id de la cuenta creada.');
 
-          if (!createdUserId) {
-            throw new Error('No se pudo obtener el ID del usuario.');
-          }
-
-          // Upsert into public.users
           const { error: userError } = await supabase.from('users').upsert([{
             id: createdUserId,
             identification,
@@ -782,44 +747,31 @@ export function UsersManagement() {
             campus,
             updated_at: new Date().toISOString()
           }]);
+          if (userError) throw new Error(`La cuenta de acceso se creó pero el perfil falló: ${friendlyError(userError)}`);
 
-          if (userError) throw userError;
-
-          // Handle relations
-          await upsertCollaboratorForUser(createdUserId, {
-            identification,
-            full_name,
-            email: emailToUse,
-            role,
-            campus,
-            manager_id,
-            office_id,
-          });
+          await upsertCollaboratorForUser(createdUserId, { identification, full_name, email: emailToUse, role, campus, manager_id, office_id });
           await ensureCollaboratorOffices(createdUserId, office_ids);
           await upsertUserManagers(createdUserId, manager_ids, office_ids);
 
-          successCount++;
-
+          if (isNew) created.push(makeEntry(createdUserId, full_name, emailToUse, passwordToUse));
+          else updated++;
         } catch (rowError: any) {
-          console.error(`Error importando ${full_name}:`, rowError);
-          failureCount++;
-          errors.push(`Error con ${full_name}: ${rowError.message || 'Error desconocido'}`);
+          console.error(`Error importando ${label}:`, rowError);
+          rowErrors.push(`${label}: ${friendlyError(rowError)}`);
         }
+        setImportProgress({ done: idx + 1, total: jsonData.length });
       }
 
-      let message = `Importación finalizada.\nExitosos: ${successCount}\nFallidos: ${failureCount}`;
-      if (errors.length > 0) {
-        message += `\n\nErrores:\n${errors.slice(0, 10).join('\n')}`;
-        if (errors.length > 10) message += `\n... y ${errors.length - 10} más.`;
-      }
-      alert(message);
-
+      setImportProgress(null);
       setShowImport(false);
       setImportFile(null);
       loadData();
+      setAlta({ title: 'Resultado de la carga masiva', working: created.some((m) => m.status === 'pending'), step: '', created: created.length, updated, rowErrors, mails: created, progress: null });
+      void sendWelcome(created);
     } catch (error: any) {
       console.error('Error importing:', error);
-      alert(`Error crítico al importar: ${error.message}`);
+      setImportProgress(null);
+      alert(`No se pudo leer o procesar el archivo: ${friendlyError(error)}`);
     }
   };
 
@@ -1062,6 +1014,12 @@ export function UsersManagement() {
             </div>
 
             <form onSubmit={handleSubmit} className="p-8 space-y-6">
+              {formError && (
+                <div role="alert" className="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 animate-in fade-in duration-200">
+                  <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
+                  <div><p className="font-bold">No se pudo guardar el usuario</p><p className="mt-0.5">{formError}</p></div>
+                </div>
+              )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <label className="block text-sm font-semibold text-slate-700">Cédula / Identificación</label>
@@ -1311,7 +1269,8 @@ export function UsersManagement() {
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-xl font-bold text-slate-800">Importar Usuarios</h3>
               <button
-                onClick={() => { setShowImport(false); setImportFile(null); }}
+                onClick={() => { if (!importProgress) { setShowImport(false); setImportFile(null); } }}
+                disabled={!!importProgress}
                 className="p-2 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-colors"
               >
                 <X className="w-5 h-5" />
@@ -1353,16 +1312,101 @@ export function UsersManagement() {
               <div className="flex gap-3">
                 <button
                   onClick={handleImport}
-                  disabled={!importFile}
-                  className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-green-600/20 transition-all"
+                  disabled={!importFile || !!importProgress}
+                  className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-green-600/20 transition-[background-color,transform] active:scale-[0.97] motion-reduce:transition-none"
                 >
-                  Importar Datos
+                  {importProgress ? `Creando usuarios… ${importProgress.done} de ${importProgress.total}` : 'Importar Datos'}
                 </button>
               </div>
             </div>
           </div>
         </div>
       )}
+      {/* Resultado del alta: usuarios creados, correos de bienvenida y errores por fila */}
+      {alta && (() => {
+        const sent = alta.mails.filter((m) => m.status === 'sent').length;
+        const failed = alta.mails.filter((m) => m.status === 'failed');
+        const skipped = alta.mails.filter((m) => m.status === 'skipped');
+        const sending = alta.mails.filter((m) => m.status === 'sending' || m.status === 'pending').length;
+        const total = alta.mails.length;
+        const settled = total - sending;
+        const pct = total ? settled / total : 1;
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div role="dialog" aria-modal="true" aria-label={alta.title} className="bg-white rounded-3xl shadow-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-200 border border-slate-100 p-8">
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h3 className="text-xl font-bold text-slate-800">{alta.title}</h3>
+                  <p className="text-sm text-slate-500 mt-1" aria-live="polite">{alta.working ? `${alta.step || 'Procesando'}…` : 'Proceso terminado'}</p>
+                </div>
+                <button onClick={() => setAlta(null)} disabled={alta.working} aria-label="Cerrar" className="p-2 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3 mb-5">
+                {[
+                  { label: 'Usuarios creados', value: alta.created, tone: 'text-slate-800' },
+                  { label: 'Correos enviados', value: sent, tone: 'text-green-700' },
+                  { label: 'Sin enviar', value: failed.length + skipped.length + alta.rowErrors.length, tone: failed.length + skipped.length + alta.rowErrors.length ? 'text-red-700' : 'text-slate-400' },
+                ].map((c) => (
+                  <div key={c.label} className="rounded-2xl bg-slate-50 border border-slate-100 p-4">
+                    <p className={`text-2xl font-bold tabular-nums ${c.tone}`}>{c.value}</p>
+                    <p className="text-xs text-slate-500 mt-1">{c.label}</p>
+                  </div>
+                ))}
+              </div>
+
+              {total > 0 && (
+                <div className="mb-5">
+                  <div className="h-2 rounded-full bg-slate-100 overflow-hidden" role="progressbar" aria-valuemin={0} aria-valuemax={total} aria-valuenow={settled} aria-label="Correos procesados">
+                    <div className="h-full w-full origin-left bg-blue-600 transition-transform duration-300 ease-out motion-reduce:transition-none" style={{ transform: `scaleX(${pct})` }} />
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1.5 tabular-nums">{settled} de {total} correos procesados</p>
+                </div>
+              )}
+
+              {alta.updated > 0 && (
+                <p className="text-sm text-slate-600 mb-4 flex items-start gap-2"><CheckCircle2 className="w-4 h-4 mt-0.5 text-slate-400 shrink-0" />{alta.updated} {alta.updated === 1 ? 'usuario ya existía y se actualizó' : 'usuarios ya existían y se actualizaron'} (no se les envió correo).</p>
+              )}
+
+              {failed.length > 0 && (
+                <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                  <p className="text-sm font-bold text-amber-900 flex items-center gap-2"><Mail className="w-4 h-4" />Usuario creado, correo no enviado ({failed.length})</p>
+                  <ul className="mt-2 space-y-1 text-xs text-amber-900 max-h-40 overflow-y-auto">
+                    {failed.map((m) => <li key={m.id}><b>{m.name}</b> ({m.email}): {m.error || 'error desconocido'}</li>)}
+                  </ul>
+                </div>
+              )}
+              {skipped.length > 0 && (
+                <div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-sm font-bold text-slate-700">Sin correo real ({skipped.length})</p>
+                  <p className="text-xs text-slate-500 mt-1">Se crearon, pero no tienen un correo registrado, así que no se les pudo avisar: {skipped.slice(0, 5).map((m) => m.name).join(', ')}{skipped.length > 5 ? ` y ${skipped.length - 5} más` : ''}.</p>
+                </div>
+              )}
+              {alta.rowErrors.length > 0 && (
+                <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4">
+                  <p className="text-sm font-bold text-red-800 flex items-center gap-2"><AlertTriangle className="w-4 h-4" />Filas con error ({alta.rowErrors.length})</p>
+                  <ul className="mt-2 space-y-1 text-xs text-red-800 max-h-48 overflow-y-auto">
+                    {alta.rowErrors.map((er, i) => <li key={i}>{er}</li>)}
+                  </ul>
+                </div>
+              )}
+
+              <div className="flex gap-3 mt-6">
+                {failed.length > 0 && (
+                  <button onClick={retryFailedMails} disabled={alta.working} className="flex-1 inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-6 py-3 rounded-xl font-bold transition-[background-color,transform] active:scale-[0.97] motion-reduce:transition-none">
+                    <RotateCw className="w-4 h-4" />Reintentar {failed.length === 1 ? 'el correo fallido' : `los ${failed.length} correos fallidos`}
+                  </button>
+                )}
+                <button onClick={() => setAlta(null)} disabled={alta.working} className="flex-1 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700 px-6 py-3 rounded-xl font-bold transition-[background-color,transform] active:scale-[0.97] motion-reduce:transition-none">
+                  Cerrar
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

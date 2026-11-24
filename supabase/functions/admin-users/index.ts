@@ -58,13 +58,16 @@ async function findAuthByEmail(email: string) {
 async function createAccount(email: string, password: string) {
   email = email.trim();
   if (!email || !password) throw new HttpError(400, 'Faltan correo o contraseña.');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, `El correo «${email}» no es válido.`);
+  // La clave inicial es la cédula: Auth exige un mínimo (6 por defecto) y rechaza cédulas más cortas.
+  if (password.length < 6) throw new HttpError(400, 'La clave inicial (la cédula) debe tener al menos 6 caracteres.');
 
   const { data, error } = await admin.auth.admin.createUser({ email, password, email_confirm: true });
   if (!error && data.user) return { id: data.user.id, reused: false };
 
   // Correo ya registrado: solo se reutiliza si no tiene perfil (cuenta huérfana).
   const existing = await findAuthByEmail(email);
-  if (!existing) throw new HttpError(400, error?.message ?? 'No se pudo crear la cuenta.');
+  if (!existing) throw new HttpError(400, `No se pudo crear la cuenta de acceso: ${error?.message ?? 'error desconocido'}`);
   const { data: profile } = await admin.from('users').select('id').eq('id', existing.id).maybeSingle();
   if (profile) throw new HttpError(409, 'Ya existe un usuario con ese correo.');
   const { error: upErr } = await admin.auth.admin.updateUserById(existing.id, { password, email_confirm: true });
